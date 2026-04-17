@@ -39,3 +39,23 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# cloudflare / opennext
+/.open-next
+/.wrangler
+.dev.vars
+worker-configuration.d.ts
+cloudflare-env.d.ts
+
+# vite build output
+/dist
+
+# prisma local dev db
+/dev.db
+/dev.db-journal
+/prisma/dev.db
+/prisma/dev.db-journal
+/prisma/migrations_local/
+
+# claude code
+/.claude

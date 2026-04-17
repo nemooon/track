@@ -1,0 +1,68 @@
+// Toggl-like time tracker schema (Cloudflare D1)
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id           String      @id @default(cuid())
+  email        String      @unique
+  name         String?
+  passwordHash String
+  workStart    Int         @default(9)  // 定時開始 (0-23)
+  workEnd      Int         @default(18) // 定時終了 (0-23)
+  workDays     String      @default("1,2,3,4,5") // 使う曜日 (0=Sun..6=Sat) CSV
+  createdAt    DateTime    @default(now())
+  clients      Client[]
+  projects     Project[]
+  entries      TimeEntry[]
+}
+
+model Client {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  archived  Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  projects  Project[]
+
+  @@index([userId])
+}
+
+model Project {
+  id        String      @id @default(cuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId  String
+  client    Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name      String
+  color     String
+  archived  Boolean     @default(false)
+  createdAt DateTime    @default(now())
+  entries   TimeEntry[]
+
+  @@index([userId])
+  @@index([clientId])
+}
+
+model TimeEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  start     DateTime
+  end       DateTime
+  title     String?
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, start])
+  @@index([projectId])
+}
