@@ -506,20 +506,20 @@ export function WeekCalendar({
               {/* work hours background — gray outside work range */}
               {workStart != null && workEnd != null && (
                 <>
-                  {workStart > DAY_START_HOUR && (
+                  {workStart / 60 > DAY_START_HOUR && (
                     <div
                       className="pointer-events-none absolute inset-x-0 top-0 bg-neutral-100"
                       style={{
-                        height: (workStart - DAY_START_HOUR) * HOUR_PX,
+                        height: (workStart / 60 - DAY_START_HOUR) * HOUR_PX,
                       }}
                     />
                   )}
-                  {workEnd < DAY_END_HOUR && (
+                  {workEnd / 60 < DAY_END_HOUR && (
                     <div
                       className="pointer-events-none absolute inset-x-0 bg-neutral-100"
                       style={{
-                        top: (workEnd - DAY_START_HOUR) * HOUR_PX,
-                        height: (DAY_END_HOUR - workEnd) * HOUR_PX,
+                        top: (workEnd / 60 - DAY_START_HOUR) * HOUR_PX,
+                        height: (DAY_END_HOUR - workEnd / 60) * HOUR_PX,
                       }}
                     />
                   )}

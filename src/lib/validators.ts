@@ -74,8 +74,8 @@ export const reportsQuerySchema = z.object({
 });
 
 export const settingsUpdateSchema = z.object({
-  workStart: z.number().int().min(0).max(23).optional(),
-  workEnd: z.number().int().min(0).max(23).optional(),
+  workStart: z.number().int().min(0).max(1440).optional(),
+  workEnd: z.number().int().min(0).max(1440).optional(),
   workDays: z.array(z.number().int().min(0).max(6)).optional(),
 });
 

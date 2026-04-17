@@ -9,6 +9,17 @@ import type { UserProfile } from "@/types";
 
 const DAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
+function minutesToTime(mins: number): string {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function timeToMinutes(value: string): number {
+  const [h, m] = value.split(":").map(Number);
+  return h * 60 + m;
+}
+
 export function AccountPage() {
   const qc = useQueryClient();
   const { data: user, isLoading } = useQuery({
@@ -26,9 +37,9 @@ export function AccountPage() {
     }
   }, [user]);
 
-  // Work schedule form
-  const [workStart, setWorkStart] = useState(9);
-  const [workEnd, setWorkEnd] = useState(18);
+  // Work schedule form (minutes since midnight)
+  const [workStart, setWorkStart] = useState(540);
+  const [workEnd, setWorkEnd] = useState(1080);
   const [workDays, setWorkDays] = useState<number[]>([1, 2, 3, 4, 5]);
   useEffect(() => {
     if (user) {
@@ -136,27 +147,21 @@ export function AccountPage() {
           <div className="flex gap-4">
             <div className="space-y-1">
               <Label>定時開始</Label>
-              <select
-                className="rounded-md border border-neutral-200 px-3 py-2 text-sm"
-                value={workStart}
-                onChange={(e) => setWorkStart(Number(e.target.value))}
-              >
-                {Array.from({ length: 24 }, (_, i) => (
-                  <option key={i} value={i}>{`${i}:00`}</option>
-                ))}
-              </select>
+              <Input
+                type="time"
+                step={1800}
+                value={minutesToTime(workStart)}
+                onChange={(e) => setWorkStart(timeToMinutes(e.target.value))}
+              />
             </div>
             <div className="space-y-1">
               <Label>定時終了</Label>
-              <select
-                className="rounded-md border border-neutral-200 px-3 py-2 text-sm"
-                value={workEnd}
-                onChange={(e) => setWorkEnd(Number(e.target.value))}
-              >
-                {Array.from({ length: 24 }, (_, i) => (
-                  <option key={i} value={i}>{`${i}:00`}</option>
-                ))}
-              </select>
+              <Input
+                type="time"
+                step={1800}
+                value={minutesToTime(workEnd)}
+                onChange={(e) => setWorkEnd(timeToMinutes(e.target.value))}
+              />
             </div>
           </div>
           <div className="space-y-1">

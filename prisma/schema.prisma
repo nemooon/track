@@ -13,8 +13,8 @@ model User {
   email        String      @unique
   name         String?
   passwordHash String
-  workStart    Int         @default(9)  // 定時開始 (0-23)
-  workEnd      Int         @default(18) // 定時終了 (0-23)
+  workStart    Int         @default(540)  // 定時開始 (分, 0-1440)
+  workEnd      Int         @default(1080) // 定時終了 (分, 0-1440)
   workDays     String      @default("1,2,3,4,5") // 使う曜日 (0=Sun..6=Sat) CSV
   createdAt    DateTime    @default(now())
   clients      Client[]
