@@ -1,1 +1,0 @@
-ALTER TABLE TimeEntry ADD COLUMN title TEXT;

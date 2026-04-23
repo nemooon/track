@@ -17,7 +17,7 @@ projects.get("/", async (c) => {
 
   const list = await prisma.project.findMany({
     where,
-    include: { client: true },
+    include: { client: true, tags: { include: { tag: true } } },
     orderBy: { createdAt: "asc" },
   });
   return c.json(list);
@@ -31,9 +31,14 @@ projects.post("/", async (c) => {
     return c.json({ error: "invalid_input", issues: parsed.error.flatten() }, 400);
   }
   const prisma = getPrisma(c.env.DB);
+  const { tagIds, ...projectData } = parsed.data;
   const created = await prisma.project.create({
-    data: { ...parsed.data, userId },
-    include: { client: true },
+    data: {
+      ...projectData,
+      userId,
+      tags: tagIds?.length ? { create: tagIds.map((tagId) => ({ tagId })) } : undefined,
+    },
+    include: { client: true, tags: { include: { tag: true } } },
   });
   return c.json(created, 201);
 });
@@ -49,10 +54,18 @@ projects.patch("/:id", async (c) => {
   const prisma = getPrisma(c.env.DB);
   const existing = await prisma.project.findFirst({ where: { id, userId } });
   if (!existing) return c.json({ error: "not_found" }, 404);
+  const { tagIds, ...updateData } = parsed.data;
+  const data: Record<string, unknown> = { ...updateData };
+  if (tagIds !== undefined) {
+    data.tags = {
+      deleteMany: {},
+      create: tagIds.map((tagId: string) => ({ tagId })),
+    };
+  }
   const updated = await prisma.project.update({
     where: { id },
-    data: parsed.data,
-    include: { client: true },
+    data,
+    include: { client: true, tags: { include: { tag: true } } },
   });
   return c.json(updated);
 });

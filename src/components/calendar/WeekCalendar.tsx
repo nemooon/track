@@ -6,13 +6,11 @@ import { format, addDays, isSameDay } from "date-fns";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/fetcher";
 import { DAY_END_HOUR, DAY_START_HOUR, SNAP_MIN, getWeekRange } from "@/lib/time";
-import type { Project, TimeEntry } from "@/types";
+import type { Project, Tag, TimeEntry } from "@/types";
 import { TimeGutter } from "./TimeGutter";
 import { EntryBlock } from "./EntryBlock";
 import { ProjectPickerPopover } from "./ProjectPickerPopover";
 import {
-  HOUR_PX,
-  SNAP_PX,
   clampToVisible,
   makeDateAt,
   minutesFromDayStart,
@@ -20,7 +18,7 @@ import {
   yToMinutes,
 } from "./geometry";
 import { layoutEntries } from "./layout";
-import { useCalendarStore } from "./calendarStore";
+import { useCalendarStore, ZOOM_LEVELS } from "./calendarStore";
 import { cn } from "@/lib/utils";
 
 type Interaction =
@@ -58,10 +56,23 @@ type Interaction =
       dayIndex: number;
     };
 
+function useCurrentMinutes() {
+  const [now, setNow] = React.useState(() => new Date());
+  React.useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const minutes = now.getHours() * 60 + now.getMinutes() - DAY_START_HOUR * 60;
+  const visible =
+    minutes >= 0 && minutes <= (DAY_END_HOUR - DAY_START_HOUR) * 60;
+  return { now, minutes, visible };
+}
+
 export function WeekCalendar({
   anchor,
   onNavigate,
   projects,
+  tags,
   workStart,
   workEnd,
   workDays,
@@ -69,6 +80,7 @@ export function WeekCalendar({
   anchor: Date;
   onNavigate: (next: Date) => void;
   projects: Project[];
+  tags: Tag[];
   workStart?: number;
   workEnd?: number;
   workDays?: number[];
@@ -102,7 +114,12 @@ export function WeekCalendar({
   const [interaction, setInteraction] = React.useState<Interaction>({ kind: "idle" });
   const selectedEntryId = useCalendarStore((s) => s.selectedEntryId);
   const setSelected = useCalendarStore((s) => s.setSelected);
+  const zoomIndex = useCalendarStore((s) => s.zoomIndex);
+  const zoomIn = useCalendarStore((s) => s.zoomIn);
+  const zoomOut = useCalendarStore((s) => s.zoomOut);
+  const hourPx = ZOOM_LEVELS[zoomIndex].hourPx;
   const [editingEntryId, setEditingEntryId] = React.useState<string | null>(null);
+  const currentTime = useCurrentMinutes();
 
   // -- mutations --
   const createEntry = useMutation({
@@ -111,6 +128,7 @@ export function WeekCalendar({
       start: string;
       end: string;
       title?: string;
+      tagIds?: string[];
     }) =>
       apiFetch<TimeEntry>("/api/entries", {
         method: "POST",
@@ -186,7 +204,7 @@ export function WeekCalendar({
     const target = e.currentTarget;
     target.setPointerCapture(e.pointerId);
     const y = dayColumnYFromClient(target, e.clientY);
-    const minute = yToMinutes(y);
+    const minute = yToMinutes(y, hourPx);
     setInteraction({
       kind: "creating",
       dayIndex,
@@ -199,7 +217,7 @@ export function WeekCalendar({
     if (interaction.kind === "creating") {
       const target = e.currentTarget;
       const y = dayColumnYFromClient(target, e.clientY);
-      const minute = clampToVisible(yToMinutes(y));
+      const minute = clampToVisible(yToMinutes(y, hourPx));
       setInteraction({ ...interaction, currentMin: minute });
     }
   }
@@ -219,7 +237,7 @@ export function WeekCalendar({
         return;
       }
       const anchorLeft = rect.left + rect.width / 2;
-      const anchorTop = rect.top + minutesToY(endMin) + 4;
+      const anchorTop = rect.top + minutesToY(endMin, hourPx) + 4;
       setInteraction({
         kind: "picking",
         dayIndex,
@@ -244,7 +262,7 @@ export function WeekCalendar({
           minutesFromDayStart(interaction.originalEnd) -
           minutesFromDayStart(interaction.originalStart);
         const newStart = clampToVisible(
-          yToMinutes(y) - interaction.pointerOffsetMin,
+          yToMinutes(y, hourPx) - interaction.pointerOffsetMin,
         );
         const maxStart = (DAY_END_HOUR - DAY_START_HOUR) * 60 - duration;
         const clampedStart = Math.max(0, Math.min(newStart, maxStart));
@@ -257,7 +275,7 @@ export function WeekCalendar({
         const col = dayColRefs.current[interaction.dayIndex];
         if (!col) return;
         const y = dayColumnYFromClient(col, e.clientY);
-        const minute = clampToVisible(yToMinutes(y));
+        const minute = clampToVisible(yToMinutes(y, hourPx));
         if (interaction.edge === "top") {
           const newStart = Math.min(minute, interaction.endMin - SNAP_MIN);
           setInteraction({ ...interaction, startMin: Math.max(0, newStart) });
@@ -302,7 +320,7 @@ export function WeekCalendar({
       window.removeEventListener("pointerup", onUp);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [interaction]);
+  }, [interaction, hourPx]);
 
   function onEntryPointerDown(e: React.PointerEvent, entry: TimeEntry) {
     if (e.button !== 0) return;
@@ -315,7 +333,7 @@ export function WeekCalendar({
     const col = dayColRefs.current[dayIndex];
     if (!col) return;
     const y = dayColumnYFromClient(col, e.clientY);
-    const pointerMin = yToMinutes(y);
+    const pointerMin = yToMinutes(y, hourPx);
     const pointerOffsetMin = pointerMin - minutesFromDayStart(start);
     setInteraction({
       kind: "moving",
@@ -455,7 +473,22 @@ export function WeekCalendar({
 
       {/* Day header */}
       <div className="flex border-b border-neutral-200">
-        <div style={{ width: 60 }} />
+        <div className="flex shrink-0 items-center justify-center gap-0.5" style={{ width: 60 }}>
+          <button
+            onClick={zoomOut}
+            disabled={zoomIndex === 0}
+            className="rounded px-1 py-0.5 text-xs text-neutral-500 hover:bg-neutral-100 disabled:opacity-30"
+          >
+            −
+          </button>
+          <button
+            onClick={zoomIn}
+            disabled={zoomIndex === ZOOM_LEVELS.length - 1}
+            className="rounded px-1 py-0.5 text-xs text-neutral-500 hover:bg-neutral-100 disabled:opacity-30"
+          >
+            +
+          </button>
+        </div>
         {days.map((d) => (
           <div
             key={d.toISOString()}
@@ -472,7 +505,7 @@ export function WeekCalendar({
 
       {/* Grid */}
       <div className="flex flex-1 overflow-auto">
-        <TimeGutter />
+        <TimeGutter hourPx={hourPx} />
         <div className="flex flex-1">
           {days.map((day, dayIndex) => (
             <div
@@ -482,8 +515,8 @@ export function WeekCalendar({
               }}
               className="relative flex-1 border-l border-neutral-200 select-none"
               style={{
-                height: (DAY_END_HOUR - DAY_START_HOUR) * HOUR_PX + 1,
-                backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${HOUR_PX - 1}px, #e5e5e5 ${HOUR_PX - 1}px, #e5e5e5 ${HOUR_PX}px)`,
+                height: (DAY_END_HOUR - DAY_START_HOUR) * hourPx + 1,
+                backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${hourPx - 1}px, #e5e5e5 ${hourPx - 1}px, #e5e5e5 ${hourPx}px)`,
                 touchAction: "none",
               }}
               onPointerDown={(e) => {
@@ -493,15 +526,26 @@ export function WeekCalendar({
               onPointerMove={onDayPointerMove}
               onPointerUp={onDayPointerUp}
             >
-              {/* half-hour ticks */}
+              {/* sub-hour ticks */}
               <div
                 className="pointer-events-none absolute inset-0"
                 style={{
-                  backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${HOUR_PX / 2 - 1}px, #f5f5f5 ${HOUR_PX / 2 - 1}px, #f5f5f5 ${HOUR_PX / 2}px)`,
-                  backgroundPosition: `0 ${HOUR_PX / 2}px`,
-                  backgroundSize: `100% ${HOUR_PX}px`,
+                  backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${hourPx / 2 - 1}px, #f5f5f5 ${hourPx / 2 - 1}px, #f5f5f5 ${hourPx / 2}px)`,
+                  backgroundPosition: `0 ${hourPx / 2}px`,
+                  backgroundSize: `100% ${hourPx}px`,
                 }}
               />
+              {/* quarter-hour ticks (visible at 15min zoom) */}
+              {hourPx >= 192 && (
+                <div
+                  className="pointer-events-none absolute inset-0"
+                  style={{
+                    backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${hourPx / 4 - 1}px, #fafafa ${hourPx / 4 - 1}px, #fafafa ${hourPx / 4}px)`,
+                    backgroundPosition: `0 ${hourPx / 4}px`,
+                    backgroundSize: `100% ${hourPx / 2}px`,
+                  }}
+                />
+              )}
 
               {/* work hours background — gray outside work range */}
               {workStart != null && workEnd != null && (
@@ -510,7 +554,7 @@ export function WeekCalendar({
                     <div
                       className="pointer-events-none absolute inset-x-0 top-0 bg-neutral-100"
                       style={{
-                        height: (workStart / 60 - DAY_START_HOUR) * HOUR_PX,
+                        height: (workStart / 60 - DAY_START_HOUR) * hourPx,
                       }}
                     />
                   )}
@@ -518,8 +562,8 @@ export function WeekCalendar({
                     <div
                       className="pointer-events-none absolute inset-x-0 bg-neutral-100"
                       style={{
-                        top: (workEnd / 60 - DAY_START_HOUR) * HOUR_PX,
-                        height: (DAY_END_HOUR - workEnd / 60) * HOUR_PX,
+                        top: (workEnd / 60 - DAY_START_HOUR) * hourPx,
+                        height: (DAY_END_HOUR - workEnd / 60) * hourPx,
                       }}
                     />
                   )}
@@ -540,6 +584,7 @@ export function WeekCalendar({
                         selected={selectedEntryId === entry.id && !isGhost}
                         ghost={!!isGhost}
                         editing={editingEntryId === entry.id && !isGhost}
+                        hourPx={hourPx}
                         onSelect={() => setSelected(entry.id)}
                         onDoubleClick={() => {
                           setSelected(entry.id);
@@ -563,14 +608,25 @@ export function WeekCalendar({
                 });
               })()}
 
+              {/* current time line */}
+              {currentTime.visible && isSameDay(day, currentTime.now) && (
+                <div
+                  className="pointer-events-none absolute inset-x-0 z-20"
+                  style={{ top: minutesToY(currentTime.minutes, hourPx) }}
+                >
+                  <div className="absolute -left-1.25 -top-1.25 h-2.5 w-2.5 rounded-full bg-red-500" />
+                  <div className="absolute inset-x-0 -top-px h-0.5 bg-red-500" />
+                </div>
+              )}
+
               {/* drag-create ghost */}
               {interaction.kind === "creating" && interaction.dayIndex === dayIndex && (
                 <div
                   className="pointer-events-none absolute inset-x-1 rounded border-2 border-dashed border-neutral-500 bg-neutral-300/30"
                   style={{
-                    top: minutesToY(Math.min(interaction.anchorMin, interaction.currentMin)),
+                    top: minutesToY(Math.min(interaction.anchorMin, interaction.currentMin), hourPx),
                     height: Math.max(
-                      minutesToY(Math.abs(interaction.currentMin - interaction.anchorMin)),
+                      minutesToY(Math.abs(interaction.currentMin - interaction.anchorMin), hourPx),
                       2,
                     ),
                   }}
@@ -586,8 +642,9 @@ export function WeekCalendar({
         <ProjectPickerPopover
           anchor={interaction.anchor}
           projects={projects}
+          tags={tags}
           onCancel={() => setInteraction({ kind: "idle" })}
-          onPick={(projectId, title) => {
+          onPick={(projectId, title, tagIds) => {
             const day = days[interaction.dayIndex];
             const start = makeDateAt(day, interaction.startMin);
             const end = makeDateAt(day, interaction.endMin);
@@ -597,6 +654,7 @@ export function WeekCalendar({
               start: start.toISOString(),
               end: end.toISOString(),
               ...(trimmed ? { title: trimmed } : {}),
+              ...(tagIds.length > 0 ? { tagIds } : {}),
             });
             setInteraction({ kind: "idle" });
           }}

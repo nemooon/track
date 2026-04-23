@@ -11,6 +11,23 @@ export type Project = {
   color: string;
   archived: boolean;
   client: Client;
+  tags?: TagOnProject[];
+};
+
+export type Tag = {
+  id: string;
+  name: string;
+  color: string;
+};
+
+export type TagOnEntry = {
+  tagId: string;
+  tag: Tag;
+};
+
+export type TagOnProject = {
+  tagId: string;
+  tag: Tag;
 };
 
 export type TimeEntry = {
@@ -21,6 +38,7 @@ export type TimeEntry = {
   title: string | null;
   note: string | null;
   project: Project | null;
+  tags: TagOnEntry[];
 };
 
 export type ReportRow = {

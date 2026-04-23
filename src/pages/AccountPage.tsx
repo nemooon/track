@@ -1,5 +1,9 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  startRegistration,
+  type PublicKeyCredentialCreationOptionsJSON,
+} from "@simplewebauthn/browser";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,12 +24,27 @@ function timeToMinutes(value: string): number {
   return h * 60 + m;
 }
 
+type PasskeyInfo = { id: string; createdAt: string };
+type InvitationInfo = { id: string; email: string; createdAt: string };
+
 export function AccountPage() {
   const qc = useQueryClient();
   const { data: user, isLoading } = useQuery({
     queryKey: ["account"],
     queryFn: () => apiFetch<UserProfile>("/api/account"),
   });
+
+  const { data: passkeys = [] } = useQuery({
+    queryKey: ["passkeys"],
+    queryFn: () => apiFetch<PasskeyInfo[]>("/api/passkeys"),
+  });
+
+  const { data: myInvitations = [] } = useQuery({
+    queryKey: ["invitations"],
+    queryFn: () => apiFetch<InvitationInfo[]>("/api/invitations"),
+  });
+
+  const [inviteEmail, setInviteEmail] = useState("");
 
   // Profile form
   const [name, setName] = useState("");
@@ -38,8 +57,8 @@ export function AccountPage() {
   }, [user]);
 
   // Work schedule form (minutes since midnight)
-  const [workStart, setWorkStart] = useState(540);
-  const [workEnd, setWorkEnd] = useState(1080);
+  const [workStart, setWorkStart] = useState(600);
+  const [workEnd, setWorkEnd] = useState(1110);
   const [workDays, setWorkDays] = useState<number[]>([1, 2, 3, 4, 5]);
   useEffect(() => {
     if (user) {
@@ -48,10 +67,6 @@ export function AccountPage() {
       setWorkDays(user.workDays);
     }
   }, [user]);
-
-  // Password form
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
 
   const updateProfile = useMutation({
     mutationFn: (data: { name?: string; email?: string }) =>
@@ -79,21 +94,77 @@ export function AccountPage() {
     onError: () => toast.error("更新に失敗しました"),
   });
 
-  const changePassword = useMutation({
-    mutationFn: (data: { currentPassword: string; newPassword: string }) =>
-      apiFetch("/api/account/password", { method: "POST", body: JSON.stringify(data) }),
+  const addPasskey = useMutation({
+    mutationFn: async () => {
+      const options = await apiFetch("/api/passkeys/register-options", {
+        method: "POST",
+        body: "{}",
+      });
+      const credential = await startRegistration({
+        optionsJSON: options as PublicKeyCredentialCreationOptionsJSON,
+      });
+      return apiFetch("/api/passkeys/register-verify", {
+        method: "POST",
+        body: JSON.stringify(credential),
+      });
+    },
     onSuccess: () => {
-      setCurrentPassword("");
-      setNewPassword("");
-      toast.success("パスワードを変更しました");
+      qc.invalidateQueries({ queryKey: ["passkeys"] });
+      toast.success("パスキーを追加しました");
     },
     onError: (err) => {
-      if ((err as Error).message.includes("wrong_password")) {
-        toast.error("現在のパスワードが違います");
+      const msg = (err as Error).message;
+      if (msg.includes("NotAllowedError") || msg.includes("cancelled")) {
+        return; // user cancelled, no toast needed
+      }
+      toast.error("パスキーの追加に失敗しました");
+    },
+  });
+
+  const deletePasskey = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch(`/api/passkeys/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["passkeys"] });
+      toast.success("パスキーを削除しました");
+    },
+    onError: (err) => {
+      if ((err as Error).message.includes("last_credential")) {
+        toast.error("最後のパスキーは削除できません");
       } else {
-        toast.error("変更に失敗しました");
+        toast.error("削除に失敗しました");
       }
     },
+  });
+
+  const sendInvite = useMutation({
+    mutationFn: (email: string) =>
+      apiFetch("/api/invitations", { method: "POST", body: JSON.stringify({ email }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["invitations"] });
+      setInviteEmail("");
+      toast.success("招待しました");
+    },
+    onError: (err) => {
+      const msg = (err as Error).message;
+      if (msg.includes("already_registered")) {
+        toast.error("このメールアドレスは既に登録済みです");
+      } else if (msg.includes("already_invited")) {
+        toast.error("このメールアドレスは既に招待済みです");
+      } else {
+        toast.error("招待に失敗しました");
+      }
+    },
+  });
+
+  const deleteInvite = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch(`/api/invitations/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["invitations"] });
+      toast.success("招待を取り消しました");
+    },
+    onError: () => toast.error("取り消しに失敗しました"),
   });
 
   function toggleDay(day: number) {
@@ -191,37 +262,85 @@ export function AccountPage() {
         </form>
       </section>
 
-      {/* Password */}
+      {/* Passkeys */}
       <section>
-        <h2 className="mb-4 text-lg font-semibold">パスワード変更</h2>
+        <h2 className="mb-4 text-lg font-semibold">パスキー</h2>
+        <div className="space-y-3">
+          {passkeys.map((pk) => (
+            <div
+              key={pk.id}
+              className="flex items-center justify-between rounded-md border border-neutral-200 px-3 py-2"
+            >
+              <span className="text-sm text-neutral-700">
+                登録日: {new Date(pk.createdAt).toLocaleDateString("ja-JP")}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-red-600 hover:text-red-700"
+                onClick={() => deletePasskey.mutate(pk.id)}
+                disabled={passkeys.length <= 1}
+              >
+                削除
+              </Button>
+            </div>
+          ))}
+          {passkeys.length === 0 && (
+            <p className="text-sm text-neutral-500">パスキーが登録されていません</p>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => addPasskey.mutate()}
+            disabled={addPasskey.isPending}
+          >
+            パスキーを追加
+          </Button>
+        </div>
+      </section>
+
+      {/* Invitations */}
+      <section>
+        <h2 className="mb-4 text-lg font-semibold">メンバー招待</h2>
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            changePassword.mutate({ currentPassword, newPassword });
+            if (inviteEmail) sendInvite.mutate(inviteEmail);
           }}
-          className="space-y-3"
+          className="flex gap-2"
         >
-          <div className="space-y-1">
-            <Label>現在のパスワード</Label>
-            <Input
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              required
-            />
-          </div>
-          <div className="space-y-1">
-            <Label>新しいパスワード (8文字以上)</Label>
-            <Input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              required
-              minLength={8}
-            />
-          </div>
-          <Button type="submit" size="sm">変更</Button>
+          <Input
+            type="email"
+            placeholder="メールアドレス"
+            value={inviteEmail}
+            onChange={(e) => setInviteEmail(e.target.value)}
+            required
+            className="flex-1"
+          />
+          <Button type="submit" size="sm" disabled={sendInvite.isPending}>
+            招待
+          </Button>
         </form>
+        {myInvitations.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {myInvitations.map((inv) => (
+              <div
+                key={inv.id}
+                className="flex items-center justify-between rounded-md border border-neutral-200 px-3 py-2"
+              >
+                <span className="text-sm text-neutral-700">{inv.email}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-red-600 hover:text-red-700"
+                  onClick={() => deleteInvite.mutate(inv.id)}
+                >
+                  取消
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );

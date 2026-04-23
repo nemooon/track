@@ -1,10 +1,8 @@
 import { Hono } from "hono";
-import bcrypt from "bcryptjs";
 import { getPrisma } from "../db";
 import {
   settingsUpdateSchema,
   profileUpdateSchema,
-  passwordChangeSchema,
 } from "@/lib/validators";
 import type { Env, AuthVars } from "../types";
 
@@ -75,25 +73,6 @@ account.patch("/settings", async (c) => {
     ...updated,
     workDays: updated.workDays.split(",").map(Number).filter((n) => !isNaN(n)),
   });
-});
-
-// POST /api/account/password — change password
-account.post("/password", async (c) => {
-  const userId = c.get("userId");
-  const body = await c.req.json().catch(() => null);
-  const parsed = passwordChangeSchema.safeParse(body);
-  if (!parsed.success) return c.json({ error: "invalid_input", issues: parsed.error.flatten() }, 400);
-
-  const prisma = getPrisma(c.env.DB);
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) return c.json({ error: "not_found" }, 404);
-
-  const ok = await bcrypt.compare(parsed.data.currentPassword, user.passwordHash);
-  if (!ok) return c.json({ error: "wrong_password" }, 401);
-
-  const newHash = await bcrypt.hash(parsed.data.newPassword, 10);
-  await prisma.user.update({ where: { id: userId }, data: { passwordHash: newHash } });
-  return c.json({ ok: true });
 });
 
 export { account };

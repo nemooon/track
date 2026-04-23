@@ -2,6 +2,7 @@ import { Link, Outlet, useLocation, useNavigate } from "react-router";
 import { CalendarDays, BarChart3, FolderKanban, LogOut, UserCog } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
+import { useFaviconStatus } from "@/lib/useFaviconStatus";
 
 const links = [
   { href: "/calendar", label: "カレンダー", icon: CalendarDays },
@@ -14,6 +15,7 @@ export function AppLayout() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
+  useFaviconStatus();
 
   return (
     <div className="flex h-svh">

@@ -13,6 +13,7 @@ export function EntryBlock({
   selected,
   ghost = false,
   editing = false,
+  hourPx,
   onPointerDown,
   onTopHandleDown,
   onBottomHandleDown,
@@ -28,6 +29,7 @@ export function EntryBlock({
   selected?: boolean;
   ghost?: boolean;
   editing?: boolean;
+  hourPx?: number;
   onPointerDown?: (e: React.PointerEvent) => void;
   onTopHandleDown?: (e: React.PointerEvent) => void;
   onBottomHandleDown?: (e: React.PointerEvent) => void;
@@ -39,8 +41,8 @@ export function EntryBlock({
 }) {
   const start = new Date(entry.start);
   const end = new Date(entry.end);
-  const top = minutesToY(minutesFromDayStart(start));
-  const height = Math.max(minutesToY(minutesFromDayStart(end) - minutesFromDayStart(start)), 14);
+  const top = minutesToY(minutesFromDayStart(start), hourPx);
+  const height = Math.max(minutesToY(minutesFromDayStart(end) - minutesFromDayStart(start), hourPx), 14);
 
   const width = `calc(${100 / laneCount}% - 2px)`;
   const left = `calc(${(laneIndex / laneCount) * 100}% + 1px)`;
@@ -99,6 +101,18 @@ export function EntryBlock({
           {entry.title ? `${projectName} · ` : ""}
           {format(start, "HH:mm")}–{format(end, "HH:mm")} · {durLabel}
         </div>
+        {entry.tags && entry.tags.length > 0 && (
+          <div className="mt-0.5 flex flex-wrap gap-0.5">
+            {entry.tags.map((te) => (
+              <span
+                key={te.tagId}
+                className="inline-block rounded-sm bg-white/25 px-1 text-[8px] leading-tight"
+              >
+                {te.tag.name}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
       {onBottomHandleDown && !ghost && !editing && (
         <div

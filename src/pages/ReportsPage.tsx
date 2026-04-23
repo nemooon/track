@@ -21,7 +21,7 @@ function formatDuration(min: number) {
 export function ReportsPage() {
   const [range, setRange] = useState<"week" | "month">("week");
   const [anchor, setAnchor] = useState(() => new Date());
-  const [groupBy, setGroupBy] = useState<"client" | "project">("project");
+  const [groupBy, setGroupBy] = useState<"client" | "project" | "tag">("project");
 
   const { data, isLoading } = useQuery({
     queryKey: ["reports", range, anchor.toISOString(), groupBy],
@@ -62,13 +62,13 @@ export function ReportsPage() {
           ))}
         </div>
         <div className="flex gap-1 rounded-md border border-neutral-200 p-0.5">
-          {(["client", "project"] as const).map((g) => (
+          {(["client", "project", "tag"] as const).map((g) => (
             <button
               key={g}
               onClick={() => setGroupBy(g)}
               className={`rounded px-3 py-1 text-sm ${groupBy === g ? "bg-neutral-900 text-white" : "text-neutral-600 hover:bg-neutral-100"}`}
             >
-              {g === "client" ? "クライアント" : "プロジェクト"}
+              {g === "client" ? "クライアント" : g === "project" ? "プロジェクト" : "タグ"}
             </button>
           ))}
         </div>

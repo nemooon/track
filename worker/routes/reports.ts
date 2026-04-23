@@ -26,7 +26,10 @@ reports.get("/", async (c) => {
       start: { lt: to },
       end: { gt: from },
     },
-    include: { project: { include: { client: true } } },
+    include: {
+      project: { include: { client: true, tags: { include: { tag: true } } } },
+      tags: { include: { tag: true } },
+    },
   });
 
   const map = new Map<string, { label: string; color?: string; totalMinutes: number }>();
@@ -36,6 +39,41 @@ reports.get("/", async (c) => {
     const clampedStart = entry.start < from ? from : entry.start;
     const clampedEnd = entry.end > to ? to : entry.end;
     const mins = Math.round((clampedEnd.getTime() - clampedStart.getTime()) / 60_000);
+
+    if (groupBy === "tag") {
+      // Merge entry tags + project tags, deduplicated by tagId
+      const tagMap = new Map<string, { name: string; color: string }>();
+      for (const te of entry.tags) {
+        tagMap.set(te.tagId, { name: te.tag.name, color: te.tag.color });
+      }
+      if (entry.project) {
+        for (const tp of (entry.project as unknown as { tags: { tagId: string; tag: { name: string; color: string } }[] }).tags) {
+          if (!tagMap.has(tp.tagId)) {
+            tagMap.set(tp.tagId, { name: tp.tag.name, color: tp.tag.color });
+          }
+        }
+      }
+
+      if (tagMap.size === 0) {
+        const existing = map.get("__none__");
+        if (existing) {
+          existing.totalMinutes += mins;
+        } else {
+          map.set("__none__", { label: "タグなし", color: "#9ca3af", totalMinutes: mins });
+        }
+      } else {
+        for (const [tagId, tag] of tagMap) {
+          const existing = map.get(tagId);
+          if (existing) {
+            existing.totalMinutes += mins;
+          } else {
+            map.set(tagId, { label: tag.name, color: tag.color, totalMinutes: mins });
+          }
+        }
+      }
+      totalMinutes += mins;
+      continue;
+    }
 
     let key: string;
     let label: string;

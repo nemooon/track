@@ -9,17 +9,42 @@ datasource db {
 }
 
 model User {
-  id           String      @id @default(cuid())
-  email        String      @unique
+  id           String       @id @default(cuid())
+  email        String       @unique
   name         String?
-  passwordHash String
-  workStart    Int         @default(540)  // 定時開始 (分, 0-1440)
-  workEnd      Int         @default(1080) // 定時終了 (分, 0-1440)
-  workDays     String      @default("1,2,3,4,5") // 使う曜日 (0=Sun..6=Sat) CSV
-  createdAt    DateTime    @default(now())
+  workStart    Int          @default(600)  // 定時開始 (分, 0-1440) 10:00
+  workEnd      Int          @default(1110) // 定時終了 (分, 0-1440) 18:30
+  workDays     String       @default("1,2,3,4,5") // 使う曜日 (0=Sun..6=Sat) CSV
+  createdAt    DateTime     @default(now())
   clients      Client[]
   projects     Project[]
   entries      TimeEntry[]
+  credentials  Credential[]
+  invitations  Invitation[]
+  tags         Tag[]
+}
+
+model Credential {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId    String   @unique // base64url-encoded
+  publicKey       String   // base64url-encoded
+  counter         Int      @default(0)
+  transports      String?  // JSON array e.g. ["internal","hybrid"]
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Invitation {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  invitedById String
+  invitedBy   User     @relation(fields: [invitedById], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@index([email])
 }
 
 model Client {
@@ -45,24 +70,64 @@ model Project {
   archived  Boolean     @default(false)
   createdAt DateTime    @default(now())
   entries   TimeEntry[]
+  tags      TagOnProject[]
 
   @@index([userId])
   @@index([clientId])
 }
 
 model TimeEntry {
-  id        String   @id @default(cuid())
+  id        String       @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   projectId String?
-  project   Project? @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  project   Project?     @relation(fields: [projectId], references: [id], onDelete: Restrict)
   start     DateTime
   end       DateTime
   title     String?
   note      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  tags      TagOnEntry[]
 
   @@index([userId, start])
   @@index([projectId])
+}
+
+model Tag {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  color     String       // hex #RRGGBB
+  createdAt DateTime     @default(now())
+  entries   TagOnEntry[]
+  projects  TagOnProject[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model TagOnEntry {
+  id      String    @id @default(cuid())
+  tagId   String
+  tag     Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  entryId String
+  entry   TimeEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@unique([tagId, entryId])
+  @@index([entryId])
+  @@index([tagId])
+}
+
+model TagOnProject {
+  id        String  @id @default(cuid())
+  tagId     String
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([tagId, projectId])
+  @@index([projectId])
+  @@index([tagId])
 }

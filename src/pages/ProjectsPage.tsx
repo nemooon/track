@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { apiFetch } from "@/lib/fetcher";
 import { PROJECT_COLORS, randomColor } from "@/lib/utils";
-import type { Client, Project } from "@/types";
+import type { Client, Project, Tag } from "@/types";
 
 /* ── Client CRUD ─────────────────────────────────────── */
 
@@ -28,12 +28,22 @@ function useProjects() {
   });
 }
 
+/* ── Tags CRUD ──────────────────────────────────────── */
+
+function useTags() {
+  return useQuery({
+    queryKey: ["tags"],
+    queryFn: () => apiFetch<Tag[]>("/api/tags"),
+  });
+}
+
 /* ── Page ─────────────────────────────────────────────── */
 
 export function ProjectsPage() {
   const qc = useQueryClient();
   const { data: clients = [] } = useClients();
   const { data: projects = [] } = useProjects();
+  const { data: tags = [] } = useTags();
 
   const [clientDialogOpen, setClientDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
@@ -44,6 +54,12 @@ export function ProjectsPage() {
   const [projectName, setProjectName] = useState("");
   const [projectClientId, setProjectClientId] = useState("");
   const [projectColor, setProjectColor] = useState(randomColor());
+  const [projectTagIds, setProjectTagIds] = useState<string[]>([]);
+
+  const [tagDialogOpen, setTagDialogOpen] = useState(false);
+  const [editingTag, setEditingTag] = useState<Tag | null>(null);
+  const [tagName, setTagName] = useState("");
+  const [tagColor, setTagColor] = useState(randomColor());
 
   // Client mutations
   const createClient = useMutation({
@@ -76,7 +92,7 @@ export function ProjectsPage() {
 
   // Project mutations
   const createProject = useMutation({
-    mutationFn: (data: { clientId: string; name: string; color: string }) =>
+    mutationFn: (data: { clientId: string; name: string; color: string; tagIds?: string[] }) =>
       apiFetch("/api/projects", { method: "POST", body: JSON.stringify(data) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["projects"] });
@@ -85,7 +101,7 @@ export function ProjectsPage() {
   });
 
   const updateProject = useMutation({
-    mutationFn: ({ id, ...data }: { id: string; name?: string; color?: string; clientId?: string }) =>
+    mutationFn: ({ id, ...data }: { id: string; name?: string; color?: string; clientId?: string; tagIds?: string[] }) =>
       apiFetch(`/api/projects/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["projects"] });
@@ -107,6 +123,65 @@ export function ProjectsPage() {
       }
     },
   });
+
+  // Tag mutations
+  const createTag = useMutation({
+    mutationFn: (data: { name: string; color: string }) =>
+      apiFetch("/api/tags", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tags"] });
+      toast.success("タグを作成しました");
+    },
+    onError: (err) => {
+      if ((err as Error).message.includes("tag_already_exists")) {
+        toast.error("同じ名前のタグが既にあります");
+      } else {
+        toast.error("作成に失敗しました");
+      }
+    },
+  });
+
+  const updateTag = useMutation({
+    mutationFn: ({ id, ...data }: { id: string; name?: string; color?: string }) =>
+      apiFetch(`/api/tags/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tags"] });
+      qc.invalidateQueries({ queryKey: ["entries"] });
+      toast.success("タグを更新しました");
+    },
+  });
+
+  const deleteTag = useMutation({
+    mutationFn: (id: string) => apiFetch(`/api/tags/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tags"] });
+      qc.invalidateQueries({ queryKey: ["entries"] });
+      toast.success("タグを削除しました");
+    },
+    onError: () => toast.error("削除に失敗しました"),
+  });
+
+  function openNewTag() {
+    setEditingTag(null);
+    setTagName("");
+    setTagColor(randomColor());
+    setTagDialogOpen(true);
+  }
+  function openEditTag(tag: Tag) {
+    setEditingTag(tag);
+    setTagName(tag.name);
+    setTagColor(tag.color);
+    setTagDialogOpen(true);
+  }
+  function submitTag() {
+    if (!tagName.trim()) return;
+    if (editingTag) {
+      updateTag.mutate({ id: editingTag.id, name: tagName.trim(), color: tagColor });
+    } else {
+      createTag.mutate({ name: tagName.trim(), color: tagColor });
+    }
+    setTagDialogOpen(false);
+  }
 
   function openNewClient() {
     setEditingClient(null);
@@ -133,6 +208,7 @@ export function ProjectsPage() {
     setProjectName("");
     setProjectClientId(clients[0]?.id ?? "");
     setProjectColor(randomColor());
+    setProjectTagIds([]);
     setProjectDialogOpen(true);
   }
   function openEditProject(project: Project) {
@@ -140,8 +216,15 @@ export function ProjectsPage() {
     setProjectName(project.name);
     setProjectClientId(project.clientId);
     setProjectColor(project.color);
+    setProjectTagIds(project.tags?.map((t) => t.tagId) ?? []);
     setProjectDialogOpen(true);
   }
+  function toggleProjectTag(tagId: string) {
+    setProjectTagIds((prev) =>
+      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId],
+    );
+  }
+
   function submitProject() {
     if (!projectName.trim() || !projectClientId) return;
     if (editingProject) {
@@ -150,12 +233,14 @@ export function ProjectsPage() {
         name: projectName.trim(),
         clientId: projectClientId,
         color: projectColor,
+        tagIds: projectTagIds,
       });
     } else {
       createProject.mutate({
         clientId: projectClientId,
         name: projectName.trim(),
         color: projectColor,
+        tagIds: projectTagIds.length > 0 ? projectTagIds : undefined,
       });
     }
     setProjectDialogOpen(false);
@@ -224,6 +309,19 @@ export function ProjectsPage() {
                   <span className="text-sm">
                     {project.client.name} / {project.name}
                   </span>
+                  {project.tags && project.tags.length > 0 && (
+                    <div className="flex gap-1">
+                      {project.tags.map((t) => (
+                        <span
+                          key={t.tagId}
+                          className="rounded-full px-1.5 py-0.5 text-[10px] text-white"
+                          style={{ backgroundColor: t.tag.color }}
+                        >
+                          {t.tag.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-1">
                   <button
@@ -236,6 +334,51 @@ export function ProjectsPage() {
                     onClick={() => {
                       if (confirm(`「${project.name}」を削除しますか？`)) {
                         deleteProject.mutate(project.id);
+                      }
+                    }}
+                    className="rounded p-1 text-neutral-400 hover:bg-red-50 hover:text-red-600"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* Tags */}
+      <section>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">タグ</h2>
+          <Button size="sm" onClick={openNewTag}>
+            <Plus className="mr-1 h-4 w-4" /> 追加
+          </Button>
+        </div>
+        {tags.length === 0 ? (
+          <p className="text-sm text-neutral-400">タグがありません</p>
+        ) : (
+          <ul className="divide-y divide-neutral-100 rounded-md border border-neutral-200">
+            {tags.map((tag) => (
+              <li key={tag.id} className="flex items-center justify-between px-4 py-2">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="inline-block h-3 w-3 rounded-full"
+                    style={{ background: tag.color }}
+                  />
+                  <span className="text-sm">{tag.name}</span>
+                </div>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => openEditTag(tag)}
+                    className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm(`「${tag.name}」を削除しますか？`)) {
+                        deleteTag.mutate(tag.id);
                       }
                     }}
                     className="rounded p-1 text-neutral-400 hover:bg-red-50 hover:text-red-600"
@@ -320,8 +463,71 @@ export function ProjectsPage() {
                 ))}
               </div>
             </div>
+            {tags.length > 0 && (
+              <div className="space-y-1">
+                <Label>タグ</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {tags.map((tag) => (
+                    <button
+                      key={tag.id}
+                      type="button"
+                      onClick={() => toggleProjectTag(tag.id)}
+                      className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                        projectTagIds.includes(tag.id)
+                          ? "border-transparent text-white"
+                          : "border-neutral-200 text-neutral-600 hover:bg-neutral-50"
+                      }`}
+                      style={
+                        projectTagIds.includes(tag.id) ? { backgroundColor: tag.color } : undefined
+                      }
+                    >
+                      {tag.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <Button type="submit" className="w-full">
               {editingProject ? "更新" : "作成"}
+            </Button>
+          </form>
+        </div>
+      </Dialog>
+      {/* Tag Dialog */}
+      <Dialog open={tagDialogOpen} onOpenChange={setTagDialogOpen}>
+        <div>
+          <DialogHeader>
+            <DialogTitle>{editingTag ? "タグ編集" : "タグ追加"}</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              submitTag();
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-1">
+              <Label>名前</Label>
+              <Input value={tagName} onChange={(e) => setTagName(e.target.value)} autoFocus />
+            </div>
+            <div className="space-y-1">
+              <Label>カラー</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {PROJECT_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setTagColor(c)}
+                    className={`h-7 w-7 rounded-full border-2 ${
+                      tagColor === c ? "border-neutral-900" : "border-transparent"
+                    }`}
+                    style={{ background: c }}
+                  />
+                ))}
+              </div>
+            </div>
+            <Button type="submit" className="w-full">
+              {editingTag ? "更新" : "作成"}
             </Button>
           </form>
         </div>

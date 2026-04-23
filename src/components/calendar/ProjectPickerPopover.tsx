@@ -2,22 +2,25 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import type { Project } from "@/types";
+import type { Project, Tag } from "@/types";
 
 export function ProjectPickerPopover({
   anchor,
   projects,
+  tags,
   onPick,
   onCancel,
 }: {
   anchor: { left: number; top: number };
   projects: Project[];
-  onPick: (projectId: string | null, title: string) => void;
+  tags: Tag[];
+  onPick: (projectId: string | null, title: string, tagIds: string[]) => void;
   onCancel: () => void;
 }) {
   const [mounted, setMounted] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [title, setTitle] = React.useState("");
+  const [selectedTagIds, setSelectedTagIds] = React.useState<string[]>([]);
   const ref = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => setMounted(true), []);
@@ -37,6 +40,12 @@ export function ProjectPickerPopover({
       document.removeEventListener("keydown", onKey);
     };
   }, [onCancel]);
+
+  function toggleTag(tagId: string) {
+    setSelectedTagIds((prev) =>
+      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId],
+    );
+  }
 
   const filtered = projects.filter((p) => {
     if (!query) return true;
@@ -81,7 +90,7 @@ export function ProjectPickerPopover({
       />
       <div className="max-h-[280px] overflow-auto py-1">
         <button
-          onClick={() => onPick(null, title)}
+          onClick={() => onPick(null, title, selectedTagIds)}
           className="flex w-full items-center gap-2 border-b border-neutral-200 px-3 py-1.5 text-left text-sm hover:bg-neutral-100"
         >
           <span
@@ -102,7 +111,7 @@ export function ProjectPickerPopover({
             {ps.map((p) => (
               <button
                 key={p.id}
-                onClick={() => onPick(p.id, title)}
+                onClick={() => onPick(p.id, title, selectedTagIds)}
                 className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-neutral-100"
               >
                 <span
@@ -115,6 +124,32 @@ export function ProjectPickerPopover({
           </div>
         ))}
       </div>
+      {tags.length > 0 && (
+        <div className="border-t border-neutral-200 px-3 py-2">
+          <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-neutral-400">
+            タグ
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {tags.map((tag) => (
+              <button
+                key={tag.id}
+                type="button"
+                onClick={() => toggleTag(tag.id)}
+                className={`rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
+                  selectedTagIds.includes(tag.id)
+                    ? "border-transparent text-white"
+                    : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"
+                }`}
+                style={
+                  selectedTagIds.includes(tag.id) ? { backgroundColor: tag.color } : undefined
+                }
+              >
+                {tag.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>,
     document.body,
   );

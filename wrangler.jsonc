@@ -11,10 +11,10 @@
 	},
 	"d1_databases": [
 		{
-			"binding": "DB",
-			"database_name": "track",
-			"database_id": "c62f2a41-fe7e-415b-8748-48f7b47edd31",
-			"migrations_dir": "migrations"
+				"binding": "DB",
+				"database_name": "track",
+				"database_id": "6d84881e-5d91-4080-bbe0-3d4562f3f847",
+				"migrations_dir": "migrations"
 		}
 	]
 }

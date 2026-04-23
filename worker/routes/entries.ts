@@ -19,7 +19,7 @@ entries.get("/", async (c) => {
       start: { lt: new Date(to) },
       end: { gt: new Date(from) },
     },
-    include: { project: { include: { client: true } } },
+    include: { project: { include: { client: true } }, tags: { include: { tag: true } } },
     orderBy: { start: "asc" },
   });
   return c.json(list);
@@ -38,6 +38,7 @@ entries.post("/", async (c) => {
     return c.json({ error: "entry_must_be_same_day" }, 400);
   }
   const prisma = getPrisma(c.env.DB);
+  const tagIds = parsed.data.tagIds ?? [];
   const created = await prisma.timeEntry.create({
     data: {
       userId,
@@ -46,8 +47,9 @@ entries.post("/", async (c) => {
       end,
       title: parsed.data.title,
       note: parsed.data.note,
+      tags: tagIds.length > 0 ? { create: tagIds.map((tagId) => ({ tagId })) } : undefined,
     },
-    include: { project: { include: { client: true } } },
+    include: { project: { include: { client: true } }, tags: { include: { tag: true } } },
   });
   return c.json(created, 201);
 });
@@ -77,10 +79,17 @@ entries.patch("/:id", async (c) => {
     return c.json({ error: "entry_must_be_same_day" }, 400);
   }
 
+  if (parsed.data.tagIds !== undefined) {
+    data.tags = {
+      deleteMany: {},
+      create: parsed.data.tagIds.map((tagId: string) => ({ tagId })),
+    };
+  }
+
   const updated = await prisma.timeEntry.update({
     where: { id },
     data,
-    include: { project: { include: { client: true } } },
+    include: { project: { include: { client: true } }, tags: { include: { tag: true } } },
   });
   return c.json(updated);
 });
