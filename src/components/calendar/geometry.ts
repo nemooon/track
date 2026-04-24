@@ -3,6 +3,8 @@ import { DAY_END_HOUR, DAY_START_HOUR, SNAP_MIN } from "@/lib/time";
 export const HOUR_PX = 48;
 export const SNAP_PX = (HOUR_PX * SNAP_MIN) / 60;
 export const VISIBLE_HEIGHT = (DAY_END_HOUR - DAY_START_HOUR) * HOUR_PX;
+// Fixed-pixel buffer above 0:00 and below 24:00
+export const BUFFER_PX = 32;
 
 export function snapPx(hourPx: number): number {
   return (hourPx * SNAP_MIN) / 60;

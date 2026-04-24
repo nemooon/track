@@ -1,5 +1,5 @@
 import { DAY_END_HOUR, DAY_START_HOUR } from "@/lib/time";
-import { HOUR_PX } from "./geometry";
+import { BUFFER_PX, HOUR_PX } from "./geometry";
 
 export function TimeGutter({ hourPx = HOUR_PX }: { hourPx?: number }) {
   const hours: number[] = [];
@@ -12,13 +12,13 @@ export function TimeGutter({ hourPx = HOUR_PX }: { hourPx?: number }) {
   return (
     <div
       className="relative shrink-0"
-      style={{ width: 60, height: (DAY_END_HOUR - DAY_START_HOUR) * hourPx + 1 }}
+      style={{ width: 60, height: (DAY_END_HOUR - DAY_START_HOUR) * hourPx + 1 + BUFFER_PX * 2 }}
     >
       {hours.map((h) => (
         <div
           key={h}
           className="absolute right-2 -translate-y-1/2 text-[10px] text-neutral-600 tabular-nums"
-          style={{ top: (h - DAY_START_HOUR) * hourPx }}
+          style={{ top: BUFFER_PX + (h - DAY_START_HOUR) * hourPx }}
         >
           {h.toString().padStart(2, "0")}:00
         </div>
@@ -31,7 +31,7 @@ export function TimeGutter({ hourPx = HOUR_PX }: { hourPx?: number }) {
               <div
                 key={`${h}-${m}`}
                 className="absolute right-2 -translate-y-1/2 text-[9px] text-neutral-400 tabular-nums"
-                style={{ top: (h - DAY_START_HOUR) * hourPx + (m / 60) * hourPx }}
+                style={{ top: BUFFER_PX + (h - DAY_START_HOUR) * hourPx + (m / 60) * hourPx }}
               >
                 {h.toString().padStart(2, "0")}:{m.toString().padStart(2, "0")}
               </div>,

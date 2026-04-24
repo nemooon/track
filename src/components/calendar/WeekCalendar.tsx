@@ -11,6 +11,7 @@ import { TimeGutter } from "./TimeGutter";
 import { EntryBlock } from "./EntryBlock";
 import { ProjectPickerPopover } from "./ProjectPickerPopover";
 import {
+  BUFFER_PX,
   clampToVisible,
   makeDateAt,
   minutesFromDayStart,
@@ -19,6 +20,7 @@ import {
 } from "./geometry";
 import { layoutEntries } from "./layout";
 import { useCalendarStore, ZOOM_LEVELS } from "./calendarStore";
+import { EntryEditDialog } from "./EntryEditDialog";
 import { cn } from "@/lib/utils";
 
 type Interaction =
@@ -118,8 +120,21 @@ export function WeekCalendar({
   const zoomIn = useCalendarStore((s) => s.zoomIn);
   const zoomOut = useCalendarStore((s) => s.zoomOut);
   const hourPx = ZOOM_LEVELS[zoomIndex].hourPx;
-  const [editingEntryId, setEditingEntryId] = React.useState<string | null>(null);
+  const [dialogEntry, setDialogEntry] = React.useState<TimeEntry | null>(null);
+  const [hoverState, setHoverState] = React.useState<{ dayIndex: number; minute: number } | null>(null);
   const currentTime = useCurrentMinutes();
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+
+  // Scroll to a sensible initial position: 1 hour before the earlier of work start and current time
+  React.useEffect(() => {
+    if (!scrollRef.current) return;
+    const now = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    const anchorMin = workStart != null ? Math.min(workStart, nowMin) : nowMin;
+    const targetMin = Math.max(0, anchorMin - 60);
+    scrollRef.current.scrollTop = BUFFER_PX + minutesToY(targetMin, hourPx);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // -- mutations --
   const createEntry = useMutation({
@@ -143,7 +158,7 @@ export function WeekCalendar({
   });
 
   const updateEntry = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: Partial<TimeEntry> & { start?: string; end?: string } }) =>
+    mutationFn: ({ id, body }: { id: string; body: Partial<TimeEntry> & { start?: string; end?: string; tagIds?: string[] } }) =>
       apiFetch<TimeEntry>(`/api/entries/${id}`, {
         method: "PATCH",
         body: JSON.stringify(body),
@@ -164,6 +179,7 @@ export function WeekCalendar({
       qc.setQueryData<TimeEntry[]>(["entries", weekKey], (old) =>
         (old ?? []).map((e) => (e.id === updated.id ? updated : e)),
       );
+      toast.success("保存しました");
     },
   });
 
@@ -431,7 +447,9 @@ export function WeekCalendar({
         } else {
           const newStart = new Date(start.getTime() + delta * 60000);
           const newEnd = new Date(end.getTime() + delta * 60000);
-          if (newStart.getHours() < DAY_START_HOUR || newEnd.getHours() >= DAY_END_HOUR + 1) return;
+          const dayFloor = new Date(start); dayFloor.setHours(0, 0, 0, 0);
+          const dayCeil = new Date(start); dayCeil.setHours(DAY_END_HOUR, 0, 0, 0);
+          if (newStart < dayFloor || newEnd > dayCeil) return;
           updateEntry.mutate({
             id: selected.id,
             body: { start: newStart.toISOString(), end: newEnd.toISOString() },
@@ -445,7 +463,14 @@ export function WeekCalendar({
   }, [selectedEntryId, entries]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div
+      className="flex h-full flex-col"
+      onPointerDown={(e) => {
+        if (selectedEntryId && !(e.target as HTMLElement).closest("[data-entry]")) {
+          setSelected(null);
+        }
+      }}
+    >
       {/* Week navigation */}
       <div className="flex items-center gap-2 border-b border-neutral-200 px-6 py-3">
         <button
@@ -504,16 +529,18 @@ export function WeekCalendar({
       </div>
 
       {/* Grid */}
-      <div className="flex flex-1 overflow-auto">
+      <div ref={scrollRef} className="flex flex-1 overflow-auto">
         <TimeGutter hourPx={hourPx} />
         <div className="flex flex-1">
           {days.map((day, dayIndex) => (
+            <div key={day.toISOString()} className="relative flex-1 border-l border-neutral-200">
+              {/* top buffer — before 0:00 */}
+              <div style={{ height: BUFFER_PX, backgroundImage: "repeating-linear-gradient(45deg, #e5e5e5 0, #e5e5e5 4px, #f5f5f5 4px, #f5f5f5 10px)" }} />
             <div
-              key={day.toISOString()}
               ref={(el) => {
                 dayColRefs.current[dayIndex] = el;
               }}
-              className="relative flex-1 border-l border-neutral-200 select-none"
+              className="relative cursor-crosshair select-none"
               style={{
                 height: (DAY_END_HOUR - DAY_START_HOUR) * hourPx + 1,
                 backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${hourPx - 1}px, #e5e5e5 ${hourPx - 1}px, #e5e5e5 ${hourPx}px)`,
@@ -523,7 +550,16 @@ export function WeekCalendar({
                 if ((e.target as HTMLElement).closest("[data-entry]")) return;
                 onDayPointerDown(e, dayIndex);
               }}
-              onPointerMove={onDayPointerMove}
+              onPointerMove={(e) => {
+                onDayPointerMove(e);
+                if (interaction.kind === "idle") {
+                  const y = dayColumnYFromClient(e.currentTarget, e.clientY);
+                  setHoverState({ dayIndex, minute: yToMinutes(y, hourPx) });
+                }
+              }}
+              onPointerLeave={() => {
+                if (interaction.kind === "idle") setHoverState(null);
+              }}
               onPointerUp={onDayPointerUp}
             >
               {/* sub-hour ticks */}
@@ -552,7 +588,7 @@ export function WeekCalendar({
                 <>
                   {workStart / 60 > DAY_START_HOUR && (
                     <div
-                      className="pointer-events-none absolute inset-x-0 top-0 bg-neutral-100"
+                      className="pointer-events-none absolute inset-x-0 top-0 bg-neutral-400/20"
                       style={{
                         height: (workStart / 60 - DAY_START_HOUR) * hourPx,
                       }}
@@ -560,7 +596,7 @@ export function WeekCalendar({
                   )}
                   {workEnd / 60 < DAY_END_HOUR && (
                     <div
-                      className="pointer-events-none absolute inset-x-0 bg-neutral-100"
+                      className="pointer-events-none absolute inset-x-0 bg-neutral-400/20"
                       style={{
                         top: (workEnd / 60 - DAY_START_HOUR) * hourPx,
                         height: (DAY_END_HOUR - workEnd / 60) * hourPx,
@@ -583,22 +619,12 @@ export function WeekCalendar({
                         laneCount={laneCount}
                         selected={selectedEntryId === entry.id && !isGhost}
                         ghost={!!isGhost}
-                        editing={editingEntryId === entry.id && !isGhost}
                         hourPx={hourPx}
                         onSelect={() => setSelected(entry.id)}
                         onDoubleClick={() => {
                           setSelected(entry.id);
-                          setEditingEntryId(entry.id);
+                          setDialogEntry(entry);
                         }}
-                        onTitleCommit={(title) => {
-                          setEditingEntryId(null);
-                          if ((entry.title ?? "") === title) return;
-                          updateEntry.mutate({
-                            id: entry.id,
-                            body: { title } as Partial<TimeEntry>,
-                          });
-                        }}
-                        onEditCancel={() => setEditingEntryId(null)}
                         onPointerDown={(e) => onEntryPointerDown(e, entry)}
                         onTopHandleDown={(e) => onResizeDown(e, entry, "top")}
                         onBottomHandleDown={(e) => onResizeDown(e, entry, "bottom")}
@@ -614,8 +640,25 @@ export function WeekCalendar({
                   className="pointer-events-none absolute inset-x-0 z-20"
                   style={{ top: minutesToY(currentTime.minutes, hourPx) }}
                 >
-                  <div className="absolute -left-1.25 -top-1.25 h-2.5 w-2.5 rounded-full bg-red-500" />
-                  <div className="absolute inset-x-0 -top-px h-0.5 bg-red-500" />
+                  <div className="absolute inset-x-0 top-0 h-px bg-red-500" />
+                </div>
+              )}
+
+              {/* hover time line */}
+              {interaction.kind === "idle" && hoverState?.dayIndex === dayIndex && (
+                <div
+                  className="pointer-events-none absolute inset-x-0 z-10"
+                  style={{ top: minutesToY(hoverState.minute, hourPx) }}
+                >
+                  <div className="absolute inset-x-0 -top-px h-px bg-neutral-400" />
+                  <div className="absolute left-1 -translate-y-full rounded bg-neutral-700 px-1 py-0.5 text-[9px] leading-tight text-white tabular-nums">
+                    {(() => {
+                      const total = hoverState.minute + DAY_START_HOUR * 60;
+                      const h = Math.floor(total / 60);
+                      const m = total % 60;
+                      return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+                    })()}
+                  </div>
                 </div>
               )}
 
@@ -632,10 +675,39 @@ export function WeekCalendar({
                   }}
                 />
               )}
+
+              {/* picking placeholder */}
+              {interaction.kind === "picking" && interaction.dayIndex === dayIndex && (
+                <div
+                  className="pointer-events-none absolute inset-x-1 rounded border-2 border-dashed border-neutral-400 bg-neutral-200/50"
+                  style={{
+                    top: minutesToY(interaction.startMin, hourPx),
+                    height: Math.max(minutesToY(interaction.endMin - interaction.startMin, hourPx), 2),
+                  }}
+                />
+              )}
+            </div>
+              {/* bottom buffer — after 24:00 */}
+              <div style={{ height: BUFFER_PX, backgroundImage: "repeating-linear-gradient(45deg, #e5e5e5 0, #e5e5e5 4px, #f5f5f5 4px, #f5f5f5 10px)" }} />
             </div>
           ))}
         </div>
       </div>
+
+      {/* Entry edit dialog */}
+      <EntryEditDialog
+        entry={dialogEntry}
+        projects={projects}
+        tags={tags}
+        onClose={() => setDialogEntry(null)}
+        onSave={(id, patch) => {
+          updateEntry.mutate({ id, body: patch });
+        }}
+        onDelete={(id) => {
+          deleteEntry.mutate(id);
+          setSelected(null);
+        }}
+      />
 
       {/* Project picker popover */}
       {interaction.kind === "picking" && (

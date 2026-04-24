@@ -78,6 +78,11 @@ export function ProjectPickerPopover({
         autoFocus
         value={title}
         onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+            onPick(null, title, selectedTagIds);
+          }
+        }}
         maxLength={100}
         placeholder="タイトル（例: 定例ミーティング）"
         className="w-full border-b border-neutral-200 px-3 py-2 text-sm focus:outline-none"

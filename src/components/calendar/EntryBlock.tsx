@@ -12,15 +12,12 @@ export function EntryBlock({
   laneCount,
   selected,
   ghost = false,
-  editing = false,
   hourPx,
   onPointerDown,
   onTopHandleDown,
   onBottomHandleDown,
   onSelect,
   onDoubleClick,
-  onTitleCommit,
-  onEditCancel,
   style,
 }: {
   entry: TimeEntry;
@@ -28,15 +25,12 @@ export function EntryBlock({
   laneCount: number;
   selected?: boolean;
   ghost?: boolean;
-  editing?: boolean;
   hourPx?: number;
   onPointerDown?: (e: React.PointerEvent) => void;
   onTopHandleDown?: (e: React.PointerEvent) => void;
   onBottomHandleDown?: (e: React.PointerEvent) => void;
   onSelect?: () => void;
   onDoubleClick?: () => void;
-  onTitleCommit?: (title: string) => void;
-  onEditCancel?: () => void;
   style?: React.CSSProperties;
 }) {
   const start = new Date(entry.start);
@@ -56,12 +50,12 @@ export function EntryBlock({
 
   return (
     <div
-      onPointerDown={editing ? undefined : onPointerDown}
+      onPointerDown={onPointerDown}
       onClick={onSelect}
       onDoubleClick={onDoubleClick}
       className={cn(
-        "absolute rounded-md border-l-4 px-1.5 py-0.5 text-[10px] text-white shadow-sm transition-shadow",
-        !ghost && !editing && "cursor-grab hover:shadow",
+        "absolute rounded-md border-l-4 px-1.5 py-0.5 text-xs text-white shadow-sm transition-shadow",
+        !ghost && "cursor-grab hover:shadow",
         ghost && "cursor-grabbing opacity-60",
         selected && "ring-2 ring-neutral-900 ring-offset-1",
       )}
@@ -76,7 +70,7 @@ export function EntryBlock({
         ...style,
       }}
     >
-      {onTopHandleDown && !ghost && !editing && (
+      {onTopHandleDown && !ghost && (
         <div
           onPointerDown={(e) => {
             e.stopPropagation();
@@ -86,17 +80,9 @@ export function EntryBlock({
         />
       )}
       <div className="overflow-hidden">
-        {editing ? (
-          <TitleInput
-            initial={entry.title ?? ""}
-            onCommit={(v) => onTitleCommit?.(v)}
-            onCancel={() => onEditCancel?.()}
-          />
-        ) : (
-          <div className="truncate font-medium leading-tight">
-            {entry.title ? entry.title : projectName}
-          </div>
-        )}
+        <div className="truncate font-medium leading-tight">
+          {entry.title ? entry.title : projectName}
+        </div>
         <div className="truncate opacity-80 leading-tight">
           {entry.title ? `${projectName} · ` : ""}
           {format(start, "HH:mm")}–{format(end, "HH:mm")} · {durLabel}
@@ -106,7 +92,7 @@ export function EntryBlock({
             {entry.tags.map((te) => (
               <span
                 key={te.tagId}
-                className="inline-block rounded-sm bg-white/25 px-1 text-[8px] leading-tight"
+                className="inline-block rounded-sm bg-white/25 px-1 text-[10px] leading-tight"
               >
                 {te.tag.name}
               </span>
@@ -114,7 +100,7 @@ export function EntryBlock({
           </div>
         )}
       </div>
-      {onBottomHandleDown && !ghost && !editing && (
+      {onBottomHandleDown && !ghost && (
         <div
           onPointerDown={(e) => {
             e.stopPropagation();
@@ -127,36 +113,3 @@ export function EntryBlock({
   );
 }
 
-function TitleInput({
-  initial,
-  onCommit,
-  onCancel,
-}: {
-  initial: string;
-  onCommit: (value: string) => void;
-  onCancel: () => void;
-}) {
-  const [value, setValue] = React.useState(initial);
-  return (
-    <input
-      autoFocus
-      value={value}
-      maxLength={100}
-      onChange={(e) => setValue(e.target.value)}
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => e.stopPropagation()}
-      onBlur={() => onCommit(value.trim())}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          onCommit(value.trim());
-        } else if (e.key === "Escape") {
-          e.preventDefault();
-          onCancel();
-        }
-      }}
-      placeholder="タイトル"
-      className="w-full rounded-sm bg-white/20 px-1 text-[10px] font-medium text-white placeholder-white/60 focus:bg-white/30 focus:outline-none"
-    />
-  );
-}

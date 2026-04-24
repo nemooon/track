@@ -10,8 +10,8 @@ import {
 } from "date-fns";
 
 export const SNAP_MIN = 15;
-export const DAY_START_HOUR = 8;
-export const DAY_END_HOUR = 22;
+export const DAY_START_HOUR = 0;
+export const DAY_END_HOUR = 24;
 export const VISIBLE_HOURS = DAY_END_HOUR - DAY_START_HOUR;
 
 export function snapToQuarter(d: Date): Date {

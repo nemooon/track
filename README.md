@@ -1,36 +1,76 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Track — 工数管理アプリ
 
-## Getting Started
+Vite + React / Cloudflare Workers + D1 構成の工数管理アプリ。
 
-First, run the development server:
+## セットアップ
+
+### 1. 依存パッケージのインストール
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Prismaクライアントの生成
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npx prisma generate
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+> `DATABASE_URL` が必要なため `.env` ファイルを先に作成すること（下記参照）。
 
-## Learn More
+### 3. 環境変数の設定
 
-To learn more about Next.js, take a look at the following resources:
+`.env` ファイルをプロジェクトルートに作成：
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```env
+DATABASE_URL=file:./prisma/dev.db
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+> `DATABASE_URL` はPrisma CLIがローカルで使用するもの。アプリ実行時はCloudflare D1を使うため不要。
 
-## Deploy on Vercel
+### 4. ローカルDBにマイグレーションを適用
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm run db:migrate:local
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 5. 開発サーバーの起動
+
+ターミナルを2つ使って同時に起動：
+
+```bash
+# フロントエンド (Vite)
+npm run dev
+
+# バックエンド (Cloudflare Workers)
+npm run dev:worker
+```
+
+フロントエンド: http://localhost:5173  
+バックエンド: http://localhost:8787
+
+---
+
+## コマンド一覧
+
+| コマンド | 内容 |
+|---|---|
+| `npm run dev` | Vite devサーバー起動 |
+| `npm run dev:worker` | Wrangler devサーバー起動 |
+| `npm run db:migrate:local` | ローカルD1にマイグレーション適用 |
+| `npm run db:migrate:remote` | 本番D1にマイグレーション適用 |
+| `npx prisma generate` | Prismaクライアント再生成 |
+| `npm run deploy` | ビルド＆Cloudflareへデプロイ |
+
+## デプロイ
+
+```bash
+npx wrangler login   # 初回のみ
+npm run deploy
+```
+
+本番DBへのマイグレーション適用：
+
+```bash
+npm run db:migrate:remote
+```

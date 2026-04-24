@@ -39,8 +39,8 @@ export const entryCreateSchema = z
     projectId: z.string().min(1).nullable().optional(),
     start: z.string().datetime(),
     end: z.string().datetime(),
-    title: z.string().max(100).optional(),
-    note: z.string().max(500).optional(),
+    title: z.string().max(100).nullable().optional(),
+    note: z.string().max(500).nullable().optional(),
     tagIds: z.array(z.string().min(1)).optional(),
   })
   .refine((v) => new Date(v.end) > new Date(v.start), "end must be after start");
@@ -50,8 +50,8 @@ export const entryUpdateSchema = z
     projectId: z.string().min(1).nullable().optional(),
     start: z.string().datetime().optional(),
     end: z.string().datetime().optional(),
-    title: z.string().max(100).optional(),
-    note: z.string().max(500).optional(),
+    title: z.string().max(100).nullable().optional(),
+    note: z.string().max(500).nullable().optional(),
     tagIds: z.array(z.string().min(1)).optional(),
   })
   .refine(
