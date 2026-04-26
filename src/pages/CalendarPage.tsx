@@ -6,6 +6,7 @@ import type { Project, Tag, UserSettings } from "@/types";
 
 export function CalendarPage() {
   const [anchor, setAnchor] = useState(() => new Date());
+  const [dayCount, setDayCount] = useState<1 | 3 | "week" | 7>("week");
 
   const { data: projects = [], isLoading: projectsLoading } = useQuery({
     queryKey: ["projects"],
@@ -34,6 +35,8 @@ export function CalendarPage() {
     <WeekCalendar
       anchor={anchor}
       onNavigate={setAnchor}
+      dayCount={dayCount}
+      onDayCountChange={setDayCount}
       projects={projects}
       tags={tags}
       workStart={settings?.workStart}

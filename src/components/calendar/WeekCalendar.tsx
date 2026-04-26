@@ -73,6 +73,8 @@ function useCurrentMinutes() {
 export function WeekCalendar({
   anchor,
   onNavigate,
+  dayCount,
+  onDayCountChange,
   projects,
   tags,
   workStart,
@@ -81,6 +83,8 @@ export function WeekCalendar({
 }: {
   anchor: Date;
   onNavigate: (next: Date) => void;
+  dayCount: 1 | 3 | "week" | 7;
+  onDayCountChange: (n: 1 | 3 | "week" | 7) => void;
   projects: Project[];
   tags: Tag[];
   workStart?: number;
@@ -88,18 +92,18 @@ export function WeekCalendar({
   workDays?: number[];
 }) {
   const qc = useQueryClient();
-  const { from, to } = React.useMemo(() => getWeekRange(anchor), [anchor]);
-  const allDays = React.useMemo(
-    () => Array.from({ length: 7 }, (_, i) => addDays(from, i)),
-    [from],
-  );
-  const days = React.useMemo(
-    () =>
-      workDays
-        ? allDays.filter((d) => workDays.includes(d.getDay()))
-        : allDays,
-    [allDays, workDays],
-  );
+  const { from, to } = React.useMemo(() => {
+    if (dayCount === "week" || dayCount === 7) return getWeekRange(anchor);
+    const start = new Date(anchor);
+    start.setHours(0, 0, 0, 0);
+    return { from: start, to: addDays(start, dayCount) };
+  }, [anchor, dayCount]);
+  const days = React.useMemo(() => {
+    const all = Array.from({ length: 7 }, (_, i) => addDays(from, i));
+    if (dayCount === "week") return workDays ? all.filter((d) => workDays.includes(d.getDay())) : all;
+    if (dayCount === 7) return all;
+    return Array.from({ length: dayCount }, (_, i) => addDays(from, i));
+  }, [from, dayCount, workDays]);
   const weekKey = from.toISOString();
 
   const entriesQ = useQuery<TimeEntry[]>({
@@ -474,7 +478,7 @@ export function WeekCalendar({
       {/* Week navigation */}
       <div className="flex items-center gap-2 border-b border-neutral-200 px-6 py-3">
         <button
-          onClick={() => onNavigate(addDays(anchor, -7))}
+          onClick={() => onNavigate(addDays(anchor, dayCount === 1 || dayCount === 3 ? -dayCount : -7))}
           className="rounded border border-neutral-200 px-2 py-1 text-sm hover:bg-neutral-50"
         >
           ‹
@@ -483,16 +487,41 @@ export function WeekCalendar({
           onClick={() => onNavigate(new Date())}
           className="rounded border border-neutral-200 px-3 py-1 text-sm hover:bg-neutral-50"
         >
-          今週
+          {dayCount === 1 || dayCount === 3 ? "今日" : "今週"}
         </button>
         <button
-          onClick={() => onNavigate(addDays(anchor, 7))}
+          onClick={() => onNavigate(addDays(anchor, dayCount === 1 || dayCount === 3 ? dayCount : 7))}
           className="rounded border border-neutral-200 px-2 py-1 text-sm hover:bg-neutral-50"
         >
           ›
         </button>
         <div className="ml-3 text-sm font-medium">
-          {format(from, "yyyy/MM/dd")} – {format(addDays(from, 6), "MM/dd")}
+          {dayCount === 1
+            ? format(from, "yyyy/MM/dd")
+            : `${format(from, "yyyy/MM/dd")} – ${format(addDays(from, 6), "MM/dd")}`}
+        </div>
+        <div className="ml-auto flex gap-1">
+          {(
+            [
+              { key: 1, label: "1日" },
+              { key: 3, label: "3日" },
+              { key: "week", label: `${workDays?.length ?? 7}日` },
+              { key: 7, label: "7日" },
+            ] as const
+          ).map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => onDayCountChange(key)}
+              className={cn(
+                "rounded border px-2 py-1 text-sm",
+                dayCount === key
+                  ? "border-neutral-700 bg-neutral-700 text-white"
+                  : "border-neutral-200 hover:bg-neutral-50",
+              )}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -519,6 +548,7 @@ export function WeekCalendar({
             key={d.toISOString()}
             className={cn(
               "flex-1 border-l border-neutral-200 px-2 py-2 text-center text-xs",
+              (workDays != null || workStart != null) && (!workDays || !workDays.includes(d.getDay())) && "bg-neutral-200",
               isSameDay(d, new Date()) && "bg-amber-50",
             )}
           >
@@ -531,8 +561,11 @@ export function WeekCalendar({
       {/* Grid */}
       <div ref={scrollRef} className="flex flex-1 overflow-auto">
         <TimeGutter hourPx={hourPx} />
-        <div className="flex flex-1">
-          {days.map((day, dayIndex) => (
+        <div className="flex flex-1 items-start">
+          {days.map((day, dayIndex) => {
+            const isWorkDay = !workDays || workDays.includes(day.getDay());
+            const hasWorkSettings = workStart != null && workEnd != null;
+            return (
             <div key={day.toISOString()} className="relative flex-1 border-l border-neutral-200">
               {/* top buffer — before 0:00 */}
               <div style={{ height: BUFFER_PX, backgroundImage: "repeating-linear-gradient(45deg, #e5e5e5 0, #e5e5e5 4px, #f5f5f5 4px, #f5f5f5 10px)" }} />
@@ -543,7 +576,7 @@ export function WeekCalendar({
               className="relative cursor-crosshair select-none"
               style={{
                 height: (DAY_END_HOUR - DAY_START_HOUR) * hourPx + 1,
-                backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${hourPx - 1}px, #e5e5e5 ${hourPx - 1}px, #e5e5e5 ${hourPx}px)`,
+                backgroundColor: (workDays != null || hasWorkSettings) ? "rgba(163,163,163,0.2)" : undefined,
                 touchAction: "none",
               }}
               onPointerDown={(e) => {
@@ -562,13 +595,30 @@ export function WeekCalendar({
               }}
               onPointerUp={onDayPointerUp}
             >
-              {/* sub-hour ticks */}
+              {/* work hours — white overlay on work days only (rendered first so grid lines appear above) */}
+              {isWorkDay && hasWorkSettings && (
+                <div
+                  className="pointer-events-none absolute inset-x-0 bg-white"
+                  style={{
+                    top: (workStart! / 60 - DAY_START_HOUR) * hourPx,
+                    height: (workEnd! / 60 - workStart! / 60) * hourPx,
+                  }}
+                />
+              )}
+              {/* 30-min ticks */}
               <div
                 className="pointer-events-none absolute inset-0"
                 style={{
-                  backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${hourPx / 2 - 1}px, #f5f5f5 ${hourPx / 2 - 1}px, #f5f5f5 ${hourPx / 2}px)`,
-                  backgroundPosition: `0 ${hourPx / 2}px`,
+                  backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${hourPx / 2 - 1}px, #e5e5e5 ${hourPx / 2 - 1}px, #e5e5e5 ${hourPx / 2}px)`,
                   backgroundSize: `100% ${hourPx}px`,
+                  backgroundPosition: `0 ${hourPx / 2}px`,
+                }}
+              />
+              {/* hour grid lines (darker, drawn after 30-min so they're on top) */}
+              <div
+                className="pointer-events-none absolute inset-0"
+                style={{
+                  backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${hourPx - 1}px, #c8c8c8 ${hourPx - 1}px, #c8c8c8 ${hourPx}px)`,
                 }}
               />
               {/* quarter-hour ticks (visible at 15min zoom) */}
@@ -581,29 +631,6 @@ export function WeekCalendar({
                     backgroundSize: `100% ${hourPx / 2}px`,
                   }}
                 />
-              )}
-
-              {/* work hours background — gray outside work range */}
-              {workStart != null && workEnd != null && (
-                <>
-                  {workStart / 60 > DAY_START_HOUR && (
-                    <div
-                      className="pointer-events-none absolute inset-x-0 top-0 bg-neutral-400/20"
-                      style={{
-                        height: (workStart / 60 - DAY_START_HOUR) * hourPx,
-                      }}
-                    />
-                  )}
-                  {workEnd / 60 < DAY_END_HOUR && (
-                    <div
-                      className="pointer-events-none absolute inset-x-0 bg-neutral-400/20"
-                      style={{
-                        top: (workEnd / 60 - DAY_START_HOUR) * hourPx,
-                        height: (DAY_END_HOUR - workEnd / 60) * hourPx,
-                      }}
-                    />
-                  )}
-                </>
               )}
 
               {/* entries */}
@@ -690,7 +717,8 @@ export function WeekCalendar({
               {/* bottom buffer — after 24:00 */}
               <div style={{ height: BUFFER_PX, backgroundImage: "repeating-linear-gradient(45deg, #e5e5e5 0, #e5e5e5 4px, #f5f5f5 4px, #f5f5f5 10px)" }} />
             </div>
-          ))}
+          );
+          })}
         </div>
       </div>
 
