@@ -505,8 +505,8 @@ export function WeekCalendar({
             [
               { key: 1, label: "1日" },
               { key: 3, label: "3日" },
-              { key: "week", label: `${workDays?.length ?? 7}日` },
-              { key: 7, label: "7日" },
+              { key: "week", label: "稼働日" },
+              { key: 7, label: "1週間" },
             ] as const
           ).map(({ key, label }) => (
             <button
@@ -568,7 +568,7 @@ export function WeekCalendar({
             return (
             <div key={day.toISOString()} className="relative flex-1 border-l border-neutral-200">
               {/* top buffer — before 0:00 */}
-              <div style={{ height: BUFFER_PX, backgroundImage: "repeating-linear-gradient(45deg, #e5e5e5 0, #e5e5e5 4px, #f5f5f5 4px, #f5f5f5 10px)" }} />
+              <div style={{ height: BUFFER_PX, backgroundImage: "repeating-linear-gradient(45deg, #99a1af50 0, #99a1af50 4px, #f5f5f5 4px, #f5f5f5 10px)" }} />
             <div
               ref={(el) => {
                 dayColRefs.current[dayIndex] = el;
@@ -609,7 +609,7 @@ export function WeekCalendar({
               <div
                 className="pointer-events-none absolute inset-0"
                 style={{
-                  backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${hourPx / 2 - 1}px, #e5e5e5 ${hourPx / 2 - 1}px, #e5e5e5 ${hourPx / 2}px)`,
+                  backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${hourPx / 2 - 1}px, #99a1af18 ${hourPx / 2 - 1}px, #99a1af18 ${hourPx / 2}px)`,
                   backgroundSize: `100% ${hourPx}px`,
                   backgroundPosition: `0 ${hourPx / 2}px`,
                 }}
@@ -618,7 +618,7 @@ export function WeekCalendar({
               <div
                 className="pointer-events-none absolute inset-0"
                 style={{
-                  backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${hourPx - 1}px, #c8c8c8 ${hourPx - 1}px, #c8c8c8 ${hourPx}px)`,
+                  backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${hourPx - 1}px, #99a1af50 ${hourPx - 1}px, #99a1af50 ${hourPx}px)`,
                 }}
               />
               {/* quarter-hour ticks (visible at 15min zoom) */}
@@ -626,7 +626,7 @@ export function WeekCalendar({
                 <div
                   className="pointer-events-none absolute inset-0"
                   style={{
-                    backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${hourPx / 4 - 1}px, #fafafa ${hourPx / 4 - 1}px, #fafafa ${hourPx / 4}px)`,
+                    backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${hourPx / 4 - 1}px, #99a1af18 ${hourPx / 4 - 1}px, #99a1af18 ${hourPx / 4}px)`,
                     backgroundPosition: `0 ${hourPx / 4}px`,
                     backgroundSize: `100% ${hourPx / 2}px`,
                   }}
@@ -715,7 +715,7 @@ export function WeekCalendar({
               )}
             </div>
               {/* bottom buffer — after 24:00 */}
-              <div style={{ height: BUFFER_PX, backgroundImage: "repeating-linear-gradient(45deg, #e5e5e5 0, #e5e5e5 4px, #f5f5f5 4px, #f5f5f5 10px)" }} />
+              <div style={{ height: BUFFER_PX, backgroundImage: "repeating-linear-gradient(45deg, #99a1af50 0, #99a1af50 4px, #f5f5f5 4px, #f5f5f5 10px)" }} />
             </div>
           );
           })}
