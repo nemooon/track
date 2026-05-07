@@ -39,6 +39,8 @@ export type TimeEntry = {
   note: string | null;
   project: Project | null;
   tags: TagOnEntry[];
+  externalEventId: string | null;
+  externalEventSource: ExternalEventSource | null;
 };
 
 export type ReportRow = {
@@ -87,4 +89,23 @@ export type UserProfile = {
   workStart: number;
   workEnd: number;
   workDays: number[];
+};
+
+export type ExternalEventSource = "kot" | "outlook";
+
+export type ExternalEventKind =
+  | "timecard-in"
+  | "timecard-out"
+  | "schedule-allday"
+  | "schedule-halfday"
+  | "meeting";
+
+export type ExternalEvent = {
+  id: string;
+  source: ExternalEventSource;
+  kind: ExternalEventKind;
+  start: string; // ISO
+  end: string; // ISO (== start for timecard pins)
+  label: string;
+  readOnly: true;
 };

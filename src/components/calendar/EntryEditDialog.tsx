@@ -98,6 +98,16 @@ export function EntryEditDialog({ entry, projects, tags, onClose, onSave, onDele
         <DialogTitle>予定を編集</DialogTitle>
       </DialogHeader>
 
+      {entry?.externalEventSource === "outlook" && (
+        <div
+          className="mb-3 inline-flex w-fit items-center gap-1.5 rounded border border-violet-300 bg-violet-50 px-2 py-1 text-xs text-violet-800"
+          title={`Outlook イベント (ID: ${entry.externalEventId ?? ""}) から作成された記録です`}
+        >
+          <span className="size-1.5 rounded-full bg-violet-500" />
+          Outlook イベントから作成
+        </div>
+      )}
+
       <div className="flex flex-col gap-4">
         {/* Title */}
         <div className="flex flex-col gap-1">

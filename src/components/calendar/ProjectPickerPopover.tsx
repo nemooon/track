@@ -8,18 +8,20 @@ export function ProjectPickerPopover({
   anchor,
   projects,
   tags,
+  initialTitle,
   onPick,
   onCancel,
 }: {
   anchor: { left: number; top: number };
   projects: Project[];
   tags: Tag[];
+  initialTitle?: string;
   onPick: (projectId: string | null, title: string, tagIds: string[]) => void;
   onCancel: () => void;
 }) {
   const [mounted, setMounted] = React.useState(false);
   const [query, setQuery] = React.useState("");
-  const [title, setTitle] = React.useState("");
+  const [title, setTitle] = React.useState(initialTitle ?? "");
   const [selectedTagIds, setSelectedTagIds] = React.useState<string[]>([]);
   const ref = React.useRef<HTMLDivElement>(null);
 

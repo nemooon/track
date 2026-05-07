@@ -47,6 +47,8 @@ entries.post("/", async (c) => {
       end,
       title: parsed.data.title,
       note: parsed.data.note,
+      externalEventId: parsed.data.externalEventId,
+      externalEventSource: parsed.data.externalEventSource,
       tags: tagIds.length > 0 ? { create: tagIds.map((tagId) => ({ tagId })) } : undefined,
     },
     include: { project: { include: { client: true } }, tags: { include: { tag: true } } },

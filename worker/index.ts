@@ -8,6 +8,7 @@ import { reports } from "./routes/reports";
 import { tags } from "./routes/tags";
 import { account } from "./routes/account";
 import { invitations } from "./routes/invitations";
+import { external } from "./routes/external";
 import type { Env, AuthVars } from "./types";
 
 const app = new Hono<{ Bindings: Env; Variables: AuthVars }>();
@@ -25,5 +26,6 @@ app.route("/api/tags", tags);
 app.route("/api/account", account);
 app.route("/api/passkeys", passkeyManage);
 app.route("/api/invitations", invitations);
+app.route("/api/external", external);
 
 export default app;

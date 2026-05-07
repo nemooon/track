@@ -77,21 +77,24 @@ model Project {
 }
 
 model TimeEntry {
-  id        String       @id @default(cuid())
-  userId    String
-  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  projectId String?
-  project   Project?     @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  start     DateTime
-  end       DateTime
-  title     String?
-  note      String?
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-  tags      TagOnEntry[]
+  id                  String       @id @default(cuid())
+  userId              String
+  user                User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId           String?
+  project             Project?     @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  start               DateTime
+  end                 DateTime
+  title               String?
+  note                String?
+  externalEventId     String?
+  externalEventSource String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  tags                TagOnEntry[]
 
   @@index([userId, start])
   @@index([projectId])
+  @@index([externalEventId])
 }
 
 model Tag {

@@ -42,6 +42,8 @@ export const entryCreateSchema = z
     title: z.string().max(100).nullable().optional(),
     note: z.string().max(500).nullable().optional(),
     tagIds: z.array(z.string().min(1)).optional(),
+    externalEventId: z.string().min(1).max(200).optional(),
+    externalEventSource: z.enum(["kot", "outlook"]).optional(),
   })
   .refine((v) => new Date(v.end) > new Date(v.start), "end must be after start");
 

@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { apiFetch } from "@/lib/fetcher";
 import { DAY_END_HOUR, DAY_START_HOUR, SNAP_MIN, getWeekRange } from "@/lib/time";
 import { getHolidayName, isHoliday } from "@/lib/holidays";
-import type { Project, Tag, TimeEntry } from "@/types";
+import type { ExternalEvent, Project, Tag, TimeEntry } from "@/types";
 import { TimeGutter } from "./TimeGutter";
 import { EntryBlock } from "./EntryBlock";
 import { ProjectPickerPopover } from "./ProjectPickerPopover";
@@ -39,6 +39,9 @@ type Interaction =
       startMin: number;
       endMin: number;
       anchor: { left: number; top: number };
+      initialTitle?: string;
+      externalEventId?: string;
+      externalEventSource?: "kot" | "outlook";
     }
   | {
       kind: "moving";
@@ -118,6 +121,46 @@ export function WeekCalendar({
 
   const entries = entriesQ.data ?? [];
 
+  const showKot = useCalendarStore((s) => s.showKot);
+  const toggleShowKot = useCalendarStore((s) => s.toggleShowKot);
+  const showOutlook = useCalendarStore((s) => s.showOutlook);
+  const toggleShowOutlook = useCalendarStore((s) => s.toggleShowOutlook);
+  const kotEventsQ = useQuery<ExternalEvent[]>({
+    queryKey: ["external", "kot", weekKey, to.toISOString()],
+    queryFn: () =>
+      apiFetch<ExternalEvent[]>(
+        `/api/external/kot/events?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`,
+      ),
+    enabled: showKot,
+  });
+  const outlookEventsQ = useQuery<ExternalEvent[]>({
+    queryKey: ["external", "outlook", weekKey, to.toISOString()],
+    queryFn: () =>
+      apiFetch<ExternalEvent[]>(
+        `/api/external/outlook/events?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`,
+      ),
+    enabled: showOutlook,
+  });
+  const kotEvents = showKot ? kotEventsQ.data ?? [] : [];
+  const kotByDay = days.map((day) =>
+    kotEvents.filter((e) => isSameDay(new Date(e.start), day)),
+  );
+  const linkedExternalIds = React.useMemo(
+    () =>
+      new Set(
+        (entriesQ.data ?? [])
+          .map((e) => e.externalEventId)
+          .filter((id): id is string => !!id),
+      ),
+    [entriesQ.data],
+  );
+  const outlookEvents = showOutlook
+    ? (outlookEventsQ.data ?? []).filter((e) => !linkedExternalIds.has(e.id))
+    : [];
+  const outlookByDay = days.map((day) =>
+    outlookEvents.filter((e) => isSameDay(new Date(e.start), day)),
+  );
+
   const dayColRefs = React.useRef<(HTMLDivElement | null)[]>([]);
   const [interaction, setInteraction] = React.useState<Interaction>({ kind: "idle" });
   const selectedEntryId = useCalendarStore((s) => s.selectedEntryId);
@@ -161,6 +204,8 @@ export function WeekCalendar({
       end: string;
       title?: string;
       tagIds?: string[];
+      externalEventId?: string;
+      externalEventSource?: "kot" | "outlook";
     }) =>
       apiFetch<TimeEntry>("/api/entries", {
         method: "POST",
@@ -425,6 +470,14 @@ export function WeekCalendar({
     renderedEntries.filter((e) => isSameDay(new Date(e.start), day)),
   );
 
+  // Total worked minutes per day (excludes ghost overlap — uses each entry once)
+  const totalMinutesByDay = entriesByDay.map((dayEntries) =>
+    dayEntries.reduce((sum, e) => {
+      const ms = new Date(e.end).getTime() - new Date(e.start).getTime();
+      return sum + Math.max(0, ms / 60000);
+    }, 0),
+  );
+
   // Keyboard shortcuts
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -513,6 +566,30 @@ export function WeekCalendar({
             ? format(from, "yyyy/MM/dd")
             : `${format(from, "yyyy/MM/dd")} – ${format(addDays(from, 6), "MM/dd")}`}
         </div>
+        <button
+          onClick={toggleShowKot}
+          title="KING OF TIME の打刻・スケジュール（モックデータ）を表示"
+          className={cn(
+            "ml-3 rounded border px-2 py-1 text-sm",
+            showKot
+              ? "border-sky-300 bg-sky-100 text-sky-800"
+              : "border-neutral-200 text-neutral-500 hover:bg-neutral-50",
+          )}
+        >
+          KING OF TIME 連携（モック）
+        </button>
+        <button
+          onClick={toggleShowOutlook}
+          title="Outlook の予定（モックデータ）を表示"
+          className={cn(
+            "ml-1 rounded border px-2 py-1 text-sm",
+            showOutlook
+              ? "border-violet-300 bg-violet-100 text-violet-800"
+              : "border-neutral-200 text-neutral-500 hover:bg-neutral-50",
+          )}
+        >
+          Outlook 連携（モック）
+        </button>
         <div className="ml-auto flex gap-1">
           {(
             [
@@ -556,8 +633,19 @@ export function WeekCalendar({
             +
           </button>
         </div>
-        {days.map((d) => {
+        {days.map((d, dayIndex) => {
           const holidayName = getHolidayName(d);
+          const totalMin = Math.round(totalMinutesByDay[dayIndex] ?? 0);
+          const h = Math.floor(totalMin / 60);
+          const m = totalMin % 60;
+          const durLabel = totalMin === 0 ? "" : h > 0 ? `${h}h${m ? ` ${m}m` : ""}` : `${m}m`;
+          const kotBadges = kotByDay[dayIndex].filter(
+            (e) => e.kind === "schedule-allday" || e.kind === "schedule-halfday",
+          );
+          const outlookBadges = outlookByDay[dayIndex].filter(
+            (e) => e.kind === "schedule-allday",
+          );
+          const hasBadges = kotBadges.length > 0 || outlookBadges.length > 0;
           return (
           <div
             key={d.toISOString()}
@@ -566,14 +654,47 @@ export function WeekCalendar({
               isSameDay(d, new Date()) && "bg-amber-50",
             )}
           >
-            <div className="flex items-center gap-2 leading-none">
-              <div className="" title={format(d, "PPPP", { locale: ja })}>
-                <div className="flex items-center justify-center size-8 rounded-full bg-neutral-200/50 text-base font-bold">{format(d, "d")}</div>
+            <div className="flex items-start gap-2">
+              <div title={format(d, "PPPP", { locale: ja })}>
+                <div className="flex items-center justify-center size-10 rounded-full bg-neutral-200/50 text-lg font-bold">{format(d, "d")}</div>
               </div>
-              <div className="text-center text-neutral-500 font-semibold">{format(d, "EEEEE", { locale: ja })}</div>
-              <div className="px-0.5 min-w-0 truncate rounded-sm bg-red-400 text-right text-xs text-white font-semibold" title={holidayName ?? undefined}>
-                {holidayName}
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
+                <div className="flex items-center gap-2 leading-none">
+                  <div className="text-neutral-500 font-semibold">{format(d, "EEEEE", { locale: ja })}</div>
+                  {holidayName && (
+                    <div className="rounded bg-red-400 px-1 py-0.5 text-[10px] leading-tight text-white" title={holidayName}>
+                      {holidayName}
+                    </div>
+                  )}
+                </div>
+                {hasBadges && (
+                  <div className="flex flex-wrap gap-1">
+                    {kotBadges.map((e) => (
+                      <div
+                        key={e.id}
+                        className="rounded bg-sky-100 px-1 py-0.5 text-[10px] leading-tight text-sky-800"
+                        title={`KoT: ${e.label}`}
+                      >
+                        {e.label}
+                      </div>
+                    ))}
+                    {outlookBadges.map((e) => (
+                      <div
+                        key={e.id}
+                        className="rounded bg-violet-100 px-1 py-0.5 text-[10px] leading-tight text-violet-800"
+                        title={`Outlook: ${e.label}`}
+                      >
+                        {e.label}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
+              {durLabel && (
+                <div className="self-end text-xs text-neutral-600 font-semibold tabular-nums">
+                  {durLabel}
+                </div>
+              )}
             </div>
           </div>
           );
@@ -617,16 +738,29 @@ export function WeekCalendar({
               }}
               onPointerUp={onDayPointerUp}
             >
-              {/* work hours — white overlay on work days only (rendered first so grid lines appear above) */}
-              {isWorkDay && hasWorkSettings && (
-                <div
-                  className="pointer-events-none absolute inset-x-0 bg-white"
-                  style={{
-                    top: (workStart! / 60 - DAY_START_HOUR) * hourPx,
-                    height: (workEnd! / 60 - workStart! / 60) * hourPx,
-                  }}
-                />
-              )}
+              {/* work hours — white overlay on work days only (rendered first so grid lines appear above).
+                  KoT clock-in shifts start; clock-out caps end. With clock-in only, end = clock-in + (workEnd - workStart). */}
+              {isWorkDay && hasWorkSettings && (() => {
+                const inEvt = kotByDay[dayIndex].find((e) => e.kind === "timecard-in");
+                const outEvt = kotByDay[dayIndex].find((e) => e.kind === "timecard-out");
+                const inMin = inEvt
+                  ? new Date(inEvt.start).getHours() * 60 + new Date(inEvt.start).getMinutes()
+                  : null;
+                const outMin = outEvt
+                  ? new Date(outEvt.start).getHours() * 60 + new Date(outEvt.start).getMinutes()
+                  : null;
+                const startMin = inMin ?? workStart!;
+                const endMin = outMin ?? startMin + (workEnd! - workStart!);
+                return (
+                  <div
+                    className="pointer-events-none absolute inset-x-0 bg-white"
+                    style={{
+                      top: (startMin / 60 - DAY_START_HOUR) * hourPx,
+                      height: Math.max(0, ((endMin - startMin) / 60) * hourPx),
+                    }}
+                  />
+                );
+              })()}
               {/* 30-min ticks */}
               <div
                 className="pointer-events-none absolute inset-0"
@@ -655,6 +789,48 @@ export function WeekCalendar({
                 />
               )}
 
+              {/* Outlook meeting overlays — clickable to create a TimeEntry pre-filled with the subject */}
+              {outlookByDay[dayIndex]
+                .filter((e) => e.kind === "meeting")
+                .map((e) => {
+                  const startMin = minutesFromDayStart(new Date(e.start));
+                  const endMin = minutesFromDayStart(new Date(e.end));
+                  const t = new Date(e.start);
+                  return (
+                    <div
+                      key={e.id}
+                      data-outlook-event
+                      className="absolute inset-x-1 z-0 cursor-pointer overflow-hidden rounded border border-dashed border-violet-400 bg-violet-100/70 px-1 py-0.5 text-[10px] leading-tight text-violet-900 hover:bg-violet-200/80"
+                      style={{
+                        top: minutesToY(startMin, hourPx),
+                        height: Math.max(minutesToY(endMin - startMin, hourPx), 12),
+                      }}
+                      title={`クリックで記録を作成: ${e.label} (${format(t, "HH:mm")}–${format(new Date(e.end), "HH:mm")})`}
+                      onPointerDown={(ev) => {
+                        if (ev.button !== 0) return;
+                        ev.stopPropagation();
+                        ev.preventDefault();
+                        const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+                        setInteraction({
+                          kind: "picking",
+                          dayIndex,
+                          startMin,
+                          endMin,
+                          anchor: { left: rect.left, top: rect.bottom + 4 },
+                          initialTitle: e.label,
+                          externalEventId: e.id,
+                          externalEventSource: "outlook",
+                        });
+                      }}
+                    >
+                      <div className="truncate font-medium">{e.label}</div>
+                      <div className="text-[9px] tabular-nums opacity-70">
+                        {format(t, "HH:mm")}–{format(new Date(e.end), "HH:mm")}
+                      </div>
+                    </div>
+                  );
+                })}
+
               {/* entries */}
               {(() => {
                 const laid = layoutEntries(entriesByDay[dayIndex]);
@@ -682,6 +858,62 @@ export function WeekCalendar({
                   );
                 });
               })()}
+
+              {/* KoT timecard pins — predicted clock-out when only clock-in is present */}
+              {hasWorkSettings && (() => {
+                const inEvt = kotByDay[dayIndex].find((e) => e.kind === "timecard-in");
+                const outEvt = kotByDay[dayIndex].find((e) => e.kind === "timecard-out");
+                if (!inEvt || outEvt) return null;
+                const inT = new Date(inEvt.start);
+                const inMin = inT.getHours() * 60 + inT.getMinutes();
+                const predictedMin = inMin + (workEnd! - workStart!);
+                const ph = Math.floor(predictedMin / 60);
+                const pm = predictedMin % 60;
+                return (
+                  <div
+                    className="pointer-events-none absolute inset-x-0 z-15"
+                    style={{ top: minutesToY(predictedMin - DAY_START_HOUR * 60, hourPx) }}
+                  >
+                    <div className="absolute inset-x-0 top-0 border-t border-dashed border-rose-400" />
+                    <div className="absolute right-1 top-px rounded bg-rose-400/80 px-1 py-0.5 text-[9px] leading-tight text-white tabular-nums">
+                      予定退勤 {ph.toString().padStart(2, "0")}:{pm.toString().padStart(2, "0")}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* KoT timecard pins */}
+              {kotByDay[dayIndex]
+                .filter((e) => e.kind === "timecard-in" || e.kind === "timecard-out")
+                .map((e) => {
+                  const t = new Date(e.start);
+                  const minute = minutesFromDayStart(t);
+                  const isIn = e.kind === "timecard-in";
+                  return (
+                    <div
+                      key={e.id}
+                      className="pointer-events-none absolute inset-x-0 z-15"
+                      style={{ top: minutesToY(minute, hourPx) }}
+                    >
+                      <div
+                        className={cn(
+                          "absolute inset-x-0 top-0 h-px",
+                          isIn ? "bg-emerald-500" : "bg-rose-500",
+                        )}
+                      />
+                      <div
+                        className={cn(
+                          "absolute rounded px-1 py-0.5 text-[9px] leading-tight text-white tabular-nums",
+                          isIn
+                            ? "left-1 -translate-y-full bg-emerald-500"
+                            : "right-1 top-px bg-rose-500",
+                        )}
+                      >
+                        {e.label} {format(t, "HH:mm")}
+                      </div>
+                    </div>
+                  );
+                })}
 
               {/* current time line */}
               {currentTime.visible && isSameDay(day, currentTime.now) && (
@@ -765,6 +997,7 @@ export function WeekCalendar({
           anchor={interaction.anchor}
           projects={projects}
           tags={tags}
+          initialTitle={interaction.initialTitle}
           onCancel={() => setInteraction({ kind: "idle" })}
           onPick={(projectId, title, tagIds) => {
             const day = days[interaction.dayIndex];
@@ -777,6 +1010,12 @@ export function WeekCalendar({
               end: end.toISOString(),
               ...(trimmed ? { title: trimmed } : {}),
               ...(tagIds.length > 0 ? { tagIds } : {}),
+              ...(interaction.externalEventId
+                ? { externalEventId: interaction.externalEventId }
+                : {}),
+              ...(interaction.externalEventSource
+                ? { externalEventSource: interaction.externalEventSource }
+                : {}),
             });
             setInteraction({ kind: "idle" });
           }}
