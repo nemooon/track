@@ -26,8 +26,8 @@ export function floorToQuarter(d: Date): Date {
 
 export function getWeekRange(anchor: Date): { from: Date; to: Date } {
   return {
-    from: startOfWeek(anchor, { weekStartsOn: 1 }),
-    to: addDays(startOfWeek(anchor, { weekStartsOn: 1 }), 7),
+    from: startOfWeek(anchor, { weekStartsOn: 0 }),
+    to: addDays(startOfWeek(anchor, { weekStartsOn: 0 }), 7),
   };
 }
 
