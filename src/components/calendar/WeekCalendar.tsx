@@ -575,7 +575,7 @@ export function WeekCalendar({
           className={cn(
             "ml-3 rounded border px-2 py-1 text-sm",
             showKot
-              ? "border-sky-300 bg-sky-100 text-sky-800"
+              ? "border-kot bg-kot/10 text-kot"
               : "border-neutral-200 text-neutral-500 hover:bg-neutral-50",
           )}
         >
@@ -587,7 +587,7 @@ export function WeekCalendar({
           className={cn(
             "ml-1 rounded border px-2 py-1 text-sm",
             showOutlook
-              ? "border-violet-300 bg-violet-100 text-violet-800"
+              ? "border-outlook bg-outlook/10 text-outlook"
               : "border-neutral-200 text-neutral-500 hover:bg-neutral-50",
           )}
         >
@@ -675,7 +675,7 @@ export function WeekCalendar({
                     {kotBadges.map((e) => (
                       <div
                         key={e.id}
-                        className="rounded bg-sky-100 px-1 py-0.5 text-[10px] leading-tight text-sky-800"
+                        className="rounded bg-kot/15 px-1 py-0.5 text-[10px] leading-tight text-kot"
                         title={`KoT: ${e.label}`}
                       >
                         {e.label}
@@ -684,7 +684,7 @@ export function WeekCalendar({
                     {outlookBadges.map((e) => (
                       <div
                         key={e.id}
-                        className="rounded bg-violet-100 px-1 py-0.5 text-[10px] leading-tight text-violet-800"
+                        className="rounded bg-outlook/15 px-1 py-0.5 text-[10px] leading-tight text-outlook"
                         title={`Outlook: ${e.label}`}
                       >
                         {e.label}
@@ -875,10 +875,10 @@ export function WeekCalendar({
                 return (
                   <div
                     className="pointer-events-none absolute inset-x-0 z-15"
-                    style={{ top: minutesToY(predictedMin - DAY_START_HOUR * 60, hourPx) }}
+                    style={{ top: minutesToY(predictedMin - DAY_START_HOUR * 60, hourPx) - 1 }}
                   >
-                    <div className="absolute inset-x-0 top-0 border-t border-dashed border-rose-400" />
-                    <div className="absolute right-1 top-px rounded bg-rose-400/80 px-1 py-0.5 text-[9px] leading-tight text-white tabular-nums">
+                    <div className="absolute inset-x-0 top-0 border-t border-dashed border-kot" />
+                    <div className="absolute right-1 top-px rounded-b bg-kot/80 px-1 py-0.5 text-[9px] leading-tight text-white tabular-nums">
                       予定退勤 {ph.toString().padStart(2, "0")}:{pm.toString().padStart(2, "0")}
                     </div>
                   </div>
@@ -896,20 +896,13 @@ export function WeekCalendar({
                     <div
                       key={e.id}
                       className="pointer-events-none absolute inset-x-0 z-15"
-                      style={{ top: minutesToY(minute, hourPx) }}
+                      style={{ top: minutesToY(minute, hourPx) - 1 }}
                     >
+                      <div className="absolute inset-x-0 top-0 h-px bg-kot" />
                       <div
                         className={cn(
-                          "absolute inset-x-0 top-0 h-px",
-                          isIn ? "bg-emerald-500" : "bg-rose-500",
-                        )}
-                      />
-                      <div
-                        className={cn(
-                          "absolute rounded px-1 py-0.5 text-[9px] leading-tight text-white tabular-nums",
-                          isIn
-                            ? "left-1 -translate-y-full bg-emerald-500"
-                            : "right-1 top-px bg-rose-500",
+                          "absolute bg-kot px-1 py-0.5 text-[9px] leading-tight text-white tabular-nums",
+                          isIn ? "left-1 -translate-y-full rounded-t" : "right-1 top-px rounded-b",
                         )}
                       >
                         {e.label} {format(t, "HH:mm")}

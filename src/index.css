@@ -1,1 +1,6 @@
 @import "tailwindcss";
+
+@theme {
+  --color-kot: #1d9e48;
+  --color-outlook: #0072c6;
+}
