@@ -104,7 +104,12 @@ reports.get("/", async (c) => {
   for (const entry of allEntries) {
     const clampedStart = entry.start < from ? from : entry.start;
     const clampedEnd = entry.end > to ? to : entry.end;
-    const mins = Math.round((clampedEnd.getTime() - clampedStart.getTime()) / 60_000);
+    const grossMins = Math.round((clampedEnd.getTime() - clampedStart.getTime()) / 60_000);
+    // Subtract embedded break only when the entry is fully inside the range; otherwise prorate.
+    const fullMs = entry.end.getTime() - entry.start.getTime();
+    const visMs = clampedEnd.getTime() - clampedStart.getTime();
+    const breakShare = fullMs > 0 ? Math.round((entry.breakMinutes ?? 0) * (visMs / fullMs)) : 0;
+    const mins = Math.max(0, grossMins - breakShare);
 
     if (groupBy === "tag") {
       // Merge entry tags + project tags, deduplicated by tagId
@@ -211,7 +216,11 @@ reports.get("/entries", async (c) => {
   const entries = allEntries.map((entry) => {
     const clampedStart = entry.start < from ? from : entry.start;
     const clampedEnd = entry.end > to ? to : entry.end;
-    const minutes = Math.round((clampedEnd.getTime() - clampedStart.getTime()) / 60_000);
+    const grossMinutes = Math.round((clampedEnd.getTime() - clampedStart.getTime()) / 60_000);
+    const fullMs = entry.end.getTime() - entry.start.getTime();
+    const visMs = clampedEnd.getTime() - clampedStart.getTime();
+    const breakShare = fullMs > 0 ? Math.round((entry.breakMinutes ?? 0) * (visMs / fullMs)) : 0;
+    const minutes = Math.max(0, grossMinutes - breakShare);
     totalMinutes += minutes;
     return {
       id: entry.id,

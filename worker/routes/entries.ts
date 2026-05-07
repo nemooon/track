@@ -49,6 +49,7 @@ entries.post("/", async (c) => {
       note: parsed.data.note,
       externalEventId: parsed.data.externalEventId,
       externalEventSource: parsed.data.externalEventSource,
+      breakMinutes: parsed.data.breakMinutes ?? 0,
       tags: tagIds.length > 0 ? { create: tagIds.map((tagId) => ({ tagId })) } : undefined,
     },
     include: { project: { include: { client: true } }, tags: { include: { tag: true } } },
@@ -74,6 +75,7 @@ entries.patch("/:id", async (c) => {
   if (parsed.data.note !== undefined) data.note = parsed.data.note;
   if (parsed.data.start) data.start = snapToQuarter(new Date(parsed.data.start));
   if (parsed.data.end) data.end = snapToQuarter(new Date(parsed.data.end));
+  if (parsed.data.breakMinutes !== undefined) data.breakMinutes = parsed.data.breakMinutes;
 
   const newStart = (data.start as Date) ?? existing.start;
   const newEnd = (data.end as Date) ?? existing.end;

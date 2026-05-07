@@ -41,10 +41,15 @@ export function EntryBlock({
   const width = `calc(${100 / laneCount}% - 6px)`;
   const left = `calc(${(laneIndex / laneCount) * 100}% + 3px)`;
 
-  const durationMin = Math.round((end.getTime() - start.getTime()) / 60000);
+  const breakMin = entry.breakMinutes ?? 0;
+  const grossMin = Math.round((end.getTime() - start.getTime()) / 60000);
+  const durationMin = Math.max(0, grossMin - breakMin);
   const hours = Math.floor(durationMin / 60);
   const mins = durationMin % 60;
   const durLabel = hours > 0 ? `${hours}h${mins ? ` ${mins}m` : ""}` : `${mins}m`;
+  const breakLabel = breakMin > 0
+    ? `（休憩 ${breakMin >= 60 ? `${Math.floor(breakMin / 60)}h${breakMin % 60 ? ` ${breakMin % 60}m` : ""}` : `${breakMin}m`} 込み）`
+    : "";
 
   const projectName = entry.project?.name ?? "プロジェクトなし";
 
@@ -85,7 +90,7 @@ export function EntryBlock({
         </div>
         <div className="truncate opacity-80 leading-tight">
           {entry.title ? `${projectName} · ` : ""}
-          {format(start, "HH:mm")}–{format(end, "HH:mm")} · {durLabel}
+          {format(start, "HH:mm")}–{format(end, "HH:mm")} · {durLabel}{breakLabel}
         </div>
         {entry.tags && entry.tags.length > 0 && (
           <div className="mt-0.5 flex flex-wrap gap-0.5">

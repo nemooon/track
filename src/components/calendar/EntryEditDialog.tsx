@@ -21,6 +21,7 @@ export interface EntryPatch {
   projectId: string | null;
   tagIds: string[];
   note: string | null;
+  breakMinutes: number;
 }
 
 function toTimeString(iso: string): string {
@@ -41,6 +42,7 @@ export function EntryEditDialog({ entry, projects, tags, onClose, onSave, onDele
   const [projectId, setProjectId] = React.useState<string>("");
   const [tagIds, setTagIds] = React.useState<string[]>([]);
   const [note, setNote] = React.useState("");
+  const [breakMinutes, setBreakMinutes] = React.useState(0);
 
   React.useEffect(() => {
     if (!entry) return;
@@ -50,6 +52,7 @@ export function EntryEditDialog({ entry, projects, tags, onClose, onSave, onDele
     setProjectId(entry.projectId ?? "");
     setTagIds(entry.tags.map((t) => t.tagId));
     setNote(entry.note ?? "");
+    setBreakMinutes(entry.breakMinutes ?? 0);
   }, [entry?.id]);
 
   React.useEffect(() => {
@@ -62,7 +65,7 @@ export function EntryEditDialog({ entry, projects, tags, onClose, onSave, onDele
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [entry, title, startTime, endTime, projectId, tagIds, note]);
+  }, [entry, title, startTime, endTime, projectId, tagIds, note, breakMinutes]);
 
   function handleSave() {
     if (!entry) return;
@@ -73,6 +76,7 @@ export function EntryEditDialog({ entry, projects, tags, onClose, onSave, onDele
       projectId: projectId || null,
       tagIds: [...new Set([...tagIds, ...lockedTagIds])],
       note: note.trim() || null,
+      breakMinutes,
     });
     onClose();
   }
@@ -124,7 +128,7 @@ export function EntryEditDialog({ entry, projects, tags, onClose, onSave, onDele
 
         {/* Times */}
         <div className="flex gap-3">
-          <div className="flex flex-1 flex-col gap-1">
+          <div className="flex flex-2 flex-col gap-1">
             <label className="text-sm font-medium text-neutral-700">開始</label>
             <input
               type="time"
@@ -134,13 +138,28 @@ export function EntryEditDialog({ entry, projects, tags, onClose, onSave, onDele
               className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-neutral-500 focus:outline-none"
             />
           </div>
-          <div className="flex flex-1 flex-col gap-1">
+          <div className="flex flex-2 flex-col gap-1">
             <label className="text-sm font-medium text-neutral-700">終了</label>
             <input
               type="time"
               step={900}
               value={endTime}
               onChange={(e) => setEndTime(e.target.value)}
+              className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-neutral-500 focus:outline-none"
+            />
+          </div>
+          <div className="flex flex-1 flex-col gap-1">
+            <label className="text-sm font-medium text-neutral-700">休憩 (分)</label>
+            <input
+              type="number"
+              min={0}
+              max={60}
+              step={15}
+              value={breakMinutes}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                setBreakMinutes(Number.isFinite(n) ? Math.max(0, Math.min(600, Math.floor(n))) : 0);
+              }}
               className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-neutral-500 focus:outline-none"
             />
           </div>

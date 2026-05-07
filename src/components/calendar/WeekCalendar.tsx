@@ -42,6 +42,7 @@ type Interaction =
       initialTitle?: string;
       externalEventId?: string;
       externalEventSource?: "kot" | "outlook";
+      breakMinutes?: number;
     }
   | {
       kind: "moving";
@@ -206,6 +207,7 @@ export function WeekCalendar({
       tagIds?: string[];
       externalEventId?: string;
       externalEventSource?: "kot" | "outlook";
+      breakMinutes?: number;
     }) =>
       apiFetch<TimeEntry>("/api/entries", {
         method: "POST",
@@ -470,11 +472,12 @@ export function WeekCalendar({
     renderedEntries.filter((e) => isSameDay(new Date(e.start), day)),
   );
 
-  // Total worked minutes per day (excludes ghost overlap — uses each entry once)
+  // Total worked minutes per day (excludes ghost overlap — uses each entry once).
+  // breakMinutes (e.g. 60min lunch embedded in a 直行直帰 block) is excluded from worked time.
   const totalMinutesByDay = entriesByDay.map((dayEntries) =>
     dayEntries.reduce((sum, e) => {
       const ms = new Date(e.end).getTime() - new Date(e.start).getTime();
-      return sum + Math.max(0, ms / 60000);
+      return sum + Math.max(0, ms / 60000 - (e.breakMinutes ?? 0));
     }, 0),
   );
 
@@ -1015,6 +1018,9 @@ export function WeekCalendar({
                 : {}),
               ...(interaction.externalEventSource
                 ? { externalEventSource: interaction.externalEventSource }
+                : {}),
+              ...(interaction.breakMinutes
+                ? { breakMinutes: interaction.breakMinutes }
                 : {}),
             });
             setInteraction({ kind: "idle" });

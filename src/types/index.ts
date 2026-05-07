@@ -41,6 +41,7 @@ export type TimeEntry = {
   tags: TagOnEntry[];
   externalEventId: string | null;
   externalEventSource: ExternalEventSource | null;
+  breakMinutes: number;
 };
 
 export type ReportRow = {

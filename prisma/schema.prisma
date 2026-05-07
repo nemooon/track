@@ -88,6 +88,7 @@ model TimeEntry {
   note                String?
   externalEventId     String?
   externalEventSource String?
+  breakMinutes        Int          @default(0)
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
   tags                TagOnEntry[]
