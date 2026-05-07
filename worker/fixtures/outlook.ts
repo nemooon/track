@@ -24,6 +24,7 @@ const MEETINGS: MeetingPattern[] = [
 ];
 
 const ALLDAY: AllDayPattern[] = [
+  { dayOfWeek: 3, subject: "全社会議" },
   { dayOfWeek: 5, subject: "オフサイト（社外）" },
 ];
 

@@ -20,7 +20,7 @@ import {
   minutesToY,
   yToMinutes,
 } from "./geometry";
-import { layoutEntries } from "./layout";
+import { layoutBlocks, layoutEntries } from "./layout";
 import { useCalendarStore, ZOOM_LEVELS } from "./calendarStore";
 import { EntryEditDialog } from "./EntryEditDialog";
 import { cn } from "@/lib/utils";
@@ -63,6 +63,19 @@ type Interaction =
       endMin: number;
       dayIndex: number;
     };
+
+type KotMeaning = "directwork" | "paidleave" | "halfday-am" | "halfday-pm" | "other";
+
+function kotMeaning(e: ExternalEvent): KotMeaning {
+  if (e.kind === "schedule-allday") {
+    if (e.label.includes("直行直帰")) return "directwork";
+    if (e.label.includes("有給")) return "paidleave";
+  }
+  if (e.kind === "schedule-halfday") {
+    return new Date(e.start).getHours() === 0 ? "halfday-am" : "halfday-pm";
+  }
+  return "other";
+}
 
 function useCurrentMinutes() {
   const [now, setNow] = React.useState(() => new Date());
@@ -142,10 +155,6 @@ export function WeekCalendar({
       ),
     enabled: showOutlook,
   });
-  const kotEvents = showKot ? kotEventsQ.data ?? [] : [];
-  const kotByDay = days.map((day) =>
-    kotEvents.filter((e) => isSameDay(new Date(e.start), day)),
-  );
   const linkedExternalIds = React.useMemo(
     () =>
       new Set(
@@ -154,6 +163,12 @@ export function WeekCalendar({
           .filter((id): id is string => !!id),
       ),
     [entriesQ.data],
+  );
+  const kotEvents = showKot
+    ? (kotEventsQ.data ?? []).filter((e) => !linkedExternalIds.has(e.id))
+    : [];
+  const kotByDay = days.map((day) =>
+    kotEvents.filter((e) => isSameDay(new Date(e.start), day)),
   );
   const outlookEvents = showOutlook
     ? (outlookEventsQ.data ?? []).filter((e) => !linkedExternalIds.has(e.id))
@@ -709,7 +724,18 @@ export function WeekCalendar({
         <TimeGutter hourPx={hourPx} />
         <div className="flex flex-1 items-start">
           {days.map((day, dayIndex) => {
-            const isWorkDay = (!workDays || workDays.includes(day.getDay())) && !isHoliday(day);
+            const dayMeanings = kotByDay[dayIndex].map(kotMeaning);
+            const hasPaidLeave = dayMeanings.includes("paidleave");
+            const hasDirectWork = dayMeanings.includes("directwork");
+            const halfdayKind: KotMeaning | null = dayMeanings.includes("halfday-am")
+              ? "halfday-am"
+              : dayMeanings.includes("halfday-pm")
+              ? "halfday-pm"
+              : null;
+            const isWorkDay =
+              (!workDays || workDays.includes(day.getDay())) &&
+              !isHoliday(day) &&
+              !hasPaidLeave;
             const hasWorkSettings = workStart != null && workEnd != null;
             return (
             <div key={day.toISOString()} className="relative flex-1 border-l border-neutral-200">
@@ -742,8 +768,42 @@ export function WeekCalendar({
               onPointerUp={onDayPointerUp}
             >
               {/* work hours — white overlay on work days only (rendered first so grid lines appear above).
-                  KoT clock-in shifts start; clock-out caps end. With clock-in only, end = clock-in + (workEnd - workStart). */}
+                  Half-day: 3:45 (=(workEnd-workStart-60)/2) of net work time, lunch-respecting for AM-works.
+                  Otherwise: KoT clock-in shifts start; clock-out caps end. With clock-in only, end = clock-in + (workEnd - workStart). */}
               {isWorkDay && hasWorkSettings && (() => {
+                if (halfdayKind) {
+                  const halfWorkMin = Math.max(0, Math.floor((workEnd! - workStart! - 60) / 2));
+                  const lunchStart = 12 * 60;
+                  const lunchEnd = 13 * 60;
+                  const blocks: { startMin: number; endMin: number }[] = [];
+                  if (halfdayKind === "halfday-am") {
+                    // AM is leave -> work in PM, post-lunch
+                    blocks.push({ startMin: lunchEnd, endMin: lunchEnd + halfWorkMin });
+                  } else {
+                    // PM is leave -> work in AM, may cross lunch
+                    let remaining = halfWorkMin;
+                    const start = workStart!;
+                    if (start < lunchStart) {
+                      const beforeLunch = Math.min(remaining, lunchStart - start);
+                      blocks.push({ startMin: start, endMin: start + beforeLunch });
+                      remaining -= beforeLunch;
+                    }
+                    if (remaining > 0) {
+                      const after = Math.max(start, lunchEnd);
+                      blocks.push({ startMin: after, endMin: after + remaining });
+                    }
+                  }
+                  return blocks.map((b, i) => (
+                    <div
+                      key={i}
+                      className="pointer-events-none absolute inset-x-0 bg-white"
+                      style={{
+                        top: (b.startMin / 60 - DAY_START_HOUR) * hourPx,
+                        height: Math.max(0, ((b.endMin - b.startMin) / 60) * hourPx),
+                      }}
+                    />
+                  ));
+                }
                 const inEvt = kotByDay[dayIndex].find((e) => e.kind === "timecard-in");
                 const outEvt = kotByDay[dayIndex].find((e) => e.kind === "timecard-out");
                 const inMin = inEvt
@@ -792,23 +852,80 @@ export function WeekCalendar({
                 />
               )}
 
-              {/* Outlook meeting overlays — clickable to create a TimeEntry pre-filled with the subject */}
-              {outlookByDay[dayIndex]
-                .filter((e) => e.kind === "meeting")
-                .map((e) => {
-                  const startMin = minutesFromDayStart(new Date(e.start));
-                  const endMin = minutesFromDayStart(new Date(e.end));
-                  const t = new Date(e.start);
+              {/* External-event placeholders (KoT 直行直帰 + Outlook meetings).
+                  Combined into a single layer so overlapping items split into multiple lanes.
+                  Rendered before entries so entries float above. */}
+              {(() => {
+                type Placeholder = {
+                  id: string;
+                  start: string;
+                  end: string;
+                  source: "kot" | "outlook";
+                  variant: "directwork" | "meeting";
+                  label: string;
+                  breakMinutes?: number;
+                };
+                const items: Placeholder[] = [];
+                if (hasDirectWork && hasWorkSettings) {
+                  const evt = kotByDay[dayIndex].find((e) => kotMeaning(e) === "directwork");
+                  if (evt) {
+                    const dayStart = new Date(day);
+                    dayStart.setHours(0, 0, 0, 0);
+                    const startISO = new Date(dayStart.getTime() + workStart! * 60_000).toISOString();
+                    const endISO = new Date(dayStart.getTime() + workEnd! * 60_000).toISOString();
+                    const allDayOutlook = outlookByDay[dayIndex].find((e) => e.kind === "schedule-allday");
+                    items.push({
+                      id: evt.id,
+                      start: startISO,
+                      end: endISO,
+                      source: "kot",
+                      variant: "directwork",
+                      label: allDayOutlook?.label ?? "直行直帰",
+                      breakMinutes: 60,
+                    });
+                  }
+                }
+                for (const e of outlookByDay[dayIndex]) {
+                  if (e.kind !== "meeting") continue;
+                  items.push({
+                    id: e.id,
+                    start: e.start,
+                    end: e.end,
+                    source: "outlook",
+                    variant: "meeting",
+                    label: e.label,
+                  });
+                }
+                if (items.length === 0) return null;
+                return layoutBlocks(items).map(({ item, laneIndex, laneCount }) => {
+                  const startDate = new Date(item.start);
+                  const endDate = new Date(item.end);
+                  const startMin = minutesFromDayStart(startDate);
+                  const endMin = minutesFromDayStart(endDate);
+                  const width = `calc(${100 / laneCount}% - 6px)`;
+                  const left = `calc(${(laneIndex / laneCount) * 100}% + 3px)`;
+                  const isDirect = item.variant === "directwork";
                   return (
                     <div
-                      key={e.id}
-                      data-outlook-event
-                      className="absolute inset-x-1 z-0 cursor-pointer overflow-hidden rounded border border-dashed border-violet-400 bg-violet-100/70 px-1 py-0.5 text-[10px] leading-tight text-violet-900 hover:bg-violet-200/80"
+                      key={`${item.source}-${item.id}`}
+                      data-placeholder
+                      className={cn(
+                        "absolute z-0 cursor-pointer overflow-hidden rounded border border-dashed px-1 py-0.5 text-[10px] leading-tight",
+                        isDirect
+                          ? "border-kot bg-kot/15 text-kot hover:bg-kot/25"
+                          : "border-outlook bg-outlook/15 text-outlook hover:bg-outlook/25",
+                      )}
                       style={{
-                        top: minutesToY(startMin, hourPx),
-                        height: Math.max(minutesToY(endMin - startMin, hourPx), 12),
+                        top: minutesToY(startMin, hourPx) + 1,
+                        height: Math.max(minutesToY(endMin - startMin, hourPx) - 3, 12),
+                        left,
+                        width,
                       }}
-                      title={`クリックで記録を作成: ${e.label} (${format(t, "HH:mm")}–${format(new Date(e.end), "HH:mm")})`}
+                      title={
+                        isDirect
+                          ? "クリックで記録を作成（8.5h・休憩1h込み = 実労 7.5h）"
+                          : `クリックで記録を作成: ${item.label} (${format(startDate, "HH:mm")}–${format(endDate, "HH:mm")})`
+                      }
                       onPointerDown={(ev) => {
                         if (ev.button !== 0) return;
                         ev.stopPropagation();
@@ -820,19 +937,22 @@ export function WeekCalendar({
                           startMin,
                           endMin,
                           anchor: { left: rect.left, top: rect.bottom + 4 },
-                          initialTitle: e.label,
-                          externalEventId: e.id,
-                          externalEventSource: "outlook",
+                          initialTitle: item.label,
+                          externalEventId: item.id,
+                          externalEventSource: item.source,
+                          ...(item.breakMinutes ? { breakMinutes: item.breakMinutes } : {}),
                         });
                       }}
                     >
-                      <div className="truncate font-medium">{e.label}</div>
+                      <div className="truncate font-medium">{item.label}</div>
                       <div className="text-[9px] tabular-nums opacity-70">
-                        {format(t, "HH:mm")}–{format(new Date(e.end), "HH:mm")}
+                        {format(startDate, "HH:mm")}–{format(endDate, "HH:mm")}
+                        {isDirect ? "（休憩 1h 込み）" : ""}
                       </div>
                     </div>
                   );
-                })}
+                });
+              })()}
 
               {/* entries */}
               {(() => {
