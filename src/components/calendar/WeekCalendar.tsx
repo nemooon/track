@@ -218,7 +218,8 @@ export function WeekCalendar({
       projectId: string | null;
       start: string;
       end: string;
-      title?: string;
+      title?: string | null;
+      note?: string | null;
       tagIds?: string[];
       externalEventId?: string;
       externalEventSource?: "kot" | "outlook";
@@ -267,14 +268,37 @@ export function WeekCalendar({
     onMutate: async (id) => {
       await qc.cancelQueries({ queryKey: ["entries", weekKey] });
       const prev = qc.getQueryData<TimeEntry[]>(["entries", weekKey]);
+      const removed = prev?.find((e) => e.id === id) ?? null;
       qc.setQueryData<TimeEntry[]>(["entries", weekKey], (old) =>
         (old ?? []).filter((e) => e.id !== id),
       );
-      return { prev };
+      return { prev, removed };
     },
     onError: (_e, _v, ctx) => {
       if (ctx?.prev) qc.setQueryData(["entries", weekKey], ctx.prev);
       toast.error("削除に失敗しました");
+    },
+    onSuccess: (_data, _id, ctx) => {
+      const removed = ctx?.removed;
+      if (!removed) return;
+      toast.success("削除しました", {
+        action: {
+          label: "元に戻す",
+          onClick: () => {
+            createEntry.mutate({
+              projectId: removed.projectId,
+              start: removed.start,
+              end: removed.end,
+              title: removed.title,
+              note: removed.note,
+              tagIds: removed.tags.map((t) => t.tagId),
+              externalEventId: removed.externalEventId ?? undefined,
+              externalEventSource: removed.externalEventSource ?? undefined,
+              breakMinutes: removed.breakMinutes,
+            });
+          },
+        },
+      });
     },
   });
 
@@ -513,9 +537,6 @@ export function WeekCalendar({
 
       if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
-        const duration =
-          (new Date(selected.end).getTime() - new Date(selected.start).getTime()) / 60000;
-        if (duration > 120 && !confirm("この記録を削除しますか?")) return;
         deleteEntry.mutate(selected.id);
         setSelected(null);
       } else if (e.key === "Escape") {

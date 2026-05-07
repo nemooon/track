@@ -83,7 +83,6 @@ export function EntryEditDialog({ entry, projects, tags, onClose, onSave, onDele
 
   function handleDelete() {
     if (!entry) return;
-    if (!confirm("この記録を削除しますか?")) return;
     onDelete(entry.id);
     onClose();
   }
