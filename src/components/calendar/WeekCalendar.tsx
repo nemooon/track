@@ -697,8 +697,8 @@ export function WeekCalendar({
               <div title={format(d, "PPPP", { locale: ja })}>
                 <div className="flex items-center justify-center size-10 rounded-full bg-neutral-200/50 text-lg font-bold">{format(d, "d")}</div>
               </div>
-              <div className="flex min-w-0 flex-1 flex-col gap-1">
-                <div className="flex items-center gap-2 leading-none">
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <div className="flex items-center gap-2 h-5 leading-none">
                   <div className="text-neutral-500 font-semibold">{format(d, "EEEEE", { locale: ja })}</div>
                   {holidayName && (
                     <div className="rounded bg-red-400 px-1 py-0.5 text-[10px] leading-tight text-white" title={holidayName}>
@@ -1069,7 +1069,7 @@ export function WeekCalendar({
                   style={{ top: minutesToY(hoverState.minute, hourPx) }}
                 >
                   <div className="absolute inset-x-0 -top-px h-px bg-neutral-400" />
-                  <div className="absolute left-1 -translate-y-full rounded bg-neutral-700 px-1 py-0.5 text-[9px] leading-tight text-white tabular-nums">
+                  <div className="absolute right-full -translate-y-1/2 rounded-full bg-neutral-700 px-1 py-0.5 text-[9px] leading-tight text-white tabular-nums">
                     {(() => {
                       const total = hoverState.minute + DAY_START_HOUR * 60;
                       const h = Math.floor(total / 60);
@@ -1083,11 +1083,13 @@ export function WeekCalendar({
               {/* drag-create ghost */}
               {interaction.kind === "creating" && interaction.dayIndex === dayIndex && (
                 <div
-                  className="pointer-events-none absolute inset-x-1 rounded border-2 border-dashed border-neutral-500 bg-neutral-300/30"
+                  className="pointer-events-none absolute rounded border border-dashed border-neutral-500 bg-neutral-300/30"
                   style={{
-                    top: minutesToY(Math.min(interaction.anchorMin, interaction.currentMin), hourPx),
+                    left: 3,
+                    right: 3,
+                    top: minutesToY(Math.min(interaction.anchorMin, interaction.currentMin), hourPx) + 1,
                     height: Math.max(
-                      minutesToY(Math.abs(interaction.currentMin - interaction.anchorMin), hourPx),
+                      minutesToY(Math.abs(interaction.currentMin - interaction.anchorMin), hourPx) - 3,
                       2,
                     ),
                   }}
@@ -1097,10 +1099,12 @@ export function WeekCalendar({
               {/* picking placeholder */}
               {interaction.kind === "picking" && interaction.dayIndex === dayIndex && (
                 <div
-                  className="pointer-events-none absolute inset-x-1 rounded border-2 border-dashed border-neutral-400 bg-neutral-200/50"
+                  className="pointer-events-none absolute rounded border border-dashed border-neutral-400 bg-neutral-200/50"
                   style={{
-                    top: minutesToY(interaction.startMin, hourPx),
-                    height: Math.max(minutesToY(interaction.endMin - interaction.startMin, hourPx), 2),
+                    left: 3,
+                    right: 3,
+                    top: minutesToY(interaction.startMin, hourPx) + 1,
+                    height: Math.max(minutesToY(interaction.endMin - interaction.startMin, hourPx) - 3, 2),
                   }}
                 />
               )}
