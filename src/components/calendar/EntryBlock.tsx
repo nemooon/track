@@ -35,11 +35,11 @@ export function EntryBlock({
 }) {
   const start = new Date(entry.start);
   const end = new Date(entry.end);
-  const top = minutesToY(minutesFromDayStart(start), hourPx);
-  const height = Math.max(minutesToY(minutesFromDayStart(end) - minutesFromDayStart(start), hourPx), 14);
+  const top = minutesToY(minutesFromDayStart(start), hourPx) + 1;
+  const height = Math.max(minutesToY(minutesFromDayStart(end) - minutesFromDayStart(start), hourPx) - 3, 14);
 
-  const width = `calc(${100 / laneCount}% - 2px)`;
-  const left = `calc(${(laneIndex / laneCount) * 100}% + 1px)`;
+  const width = `calc(${100 / laneCount}% - 6px)`;
+  const left = `calc(${(laneIndex / laneCount) * 100}% + 3px)`;
 
   const durationMin = Math.round((end.getTime() - start.getTime()) / 60000);
   const hours = Math.floor(durationMin / 60);
