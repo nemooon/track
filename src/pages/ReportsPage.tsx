@@ -1,11 +1,18 @@
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { addDays, addMonths } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/fetcher";
-import { formatWeekLabel, formatMonthLabel, getWeekRange, getMonthRange } from "@/lib/time";
-import type { ReportResponse } from "@/types";
+import { formatWeekLabel, formatMonthLabel } from "@/lib/time";
+import { FilterMultiSelect, type FilterOption } from "@/components/reports/FilterMultiSelect";
+import {
+  ReportRow,
+  type BaseFilters,
+  type ExpansionApi,
+  type RowKind,
+} from "@/components/reports/ReportRow";
+import type { Client, Project, Tag, ReportResponse } from "@/types";
 
 const COLORS = [
   "#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6",
@@ -21,15 +28,109 @@ function formatDuration(min: number) {
 export function ReportsPage() {
   const [range, setRange] = useState<"week" | "month">("week");
   const [anchor, setAnchor] = useState(() => new Date());
-  const [groupBy, setGroupBy] = useState<"client" | "project" | "tag">("project");
+  const [groupBy, setGroupBy] = useState<RowKind>("project");
+  const [selectedClientIds, setSelectedClientIds] = useState<string[]>([]);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+
+  const { data: clients = [] } = useQuery({
+    queryKey: ["clients"],
+    queryFn: () => apiFetch<Client[]>("/api/clients"),
+  });
+  const { data: projects = [] } = useQuery({
+    queryKey: ["projects"],
+    queryFn: () => apiFetch<Project[]>("/api/projects"),
+  });
+  const { data: tagList = [] } = useQuery({
+    queryKey: ["tags"],
+    queryFn: () => apiFetch<Tag[]>("/api/tags"),
+  });
+
+  const clientOptions: FilterOption[] = useMemo(
+    () =>
+      clients
+        .filter((c) => !c.archived)
+        .map((c) => ({ id: c.id, label: c.name })),
+    [clients],
+  );
+
+  const projectOptions: FilterOption[] = useMemo(() => {
+    const visible = projects
+      .filter((p) => !p.archived)
+      .filter((p) => selectedClientIds.length === 0 || selectedClientIds.includes(p.clientId));
+    return visible.map((p) => ({
+      id: p.id,
+      label: p.name,
+      hint: p.client.name,
+      color: p.color,
+    }));
+  }, [projects, selectedClientIds]);
+
+  const tagOptions: FilterOption[] = useMemo(
+    () => tagList.map((t) => ({ id: t.id, label: t.name, color: t.color })),
+    [tagList],
+  );
+
+  const anchorIso = anchor.toISOString();
+
+  const baseFilters: BaseFilters = useMemo(
+    () => ({
+      range,
+      anchor: anchorIso,
+      clientIds: selectedClientIds,
+      projectIds: selectedProjectIds,
+      tagIds: selectedTagIds,
+    }),
+    [range, anchorIso, selectedClientIds, selectedProjectIds, selectedTagIds],
+  );
+
+  const reportsUrl = useMemo(() => {
+    const p = new URLSearchParams({ range, anchor: anchorIso, groupBy });
+    if (selectedClientIds.length) p.set("clientIds", selectedClientIds.join(","));
+    if (selectedProjectIds.length) p.set("projectIds", selectedProjectIds.join(","));
+    if (selectedTagIds.length) p.set("tagIds", selectedTagIds.join(","));
+    return `/api/reports?${p.toString()}`;
+  }, [range, anchorIso, groupBy, selectedClientIds, selectedProjectIds, selectedTagIds]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["reports", range, anchor.toISOString(), groupBy],
-    queryFn: () =>
-      apiFetch<ReportResponse>(
-        `/api/reports?range=${range}&anchor=${anchor.toISOString()}&groupBy=${groupBy}`,
-      ),
+    queryKey: ["reports", reportsUrl],
+    queryFn: () => apiFetch<ReportResponse>(reportsUrl),
   });
+
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+  const [groupSameTitles, setGroupSameTitles] = useState(false);
+
+  // groupBy が変わると行の path 体系が変わるのでリセット
+  useEffect(() => {
+    setExpandedPaths(new Set());
+  }, [groupBy]);
+
+  const togglePath = useCallback((path: string) => {
+    setExpandedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
+
+  const expansion: ExpansionApi = useMemo(
+    () => ({ expanded: expandedPaths, toggle: togglePath, groupSameTitles }),
+    [expandedPaths, togglePath, groupSameTitles],
+  );
+
+  const anyExpanded = expandedPaths.size > 0;
+  function toggleAll() {
+    if (anyExpanded) {
+      setExpandedPaths(new Set());
+    } else {
+      const initial = new Set<string>();
+      for (const r of rows) {
+        initial.add(`${groupBy}:${r.key}`);
+      }
+      setExpandedPaths(initial);
+    }
+  }
 
   function prev() {
     setAnchor((a) => (range === "week" ? addDays(a, -7) : addMonths(a, -1)));
@@ -48,7 +149,7 @@ export function ReportsPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
-      {/* Controls */}
+      {/* Range / GroupBy / Navigation */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex gap-1 rounded-md border border-neutral-200 p-0.5">
           {(["week", "month"] as const).map((r) => (
@@ -87,6 +188,55 @@ export function ReportsPage() {
         </div>
       </div>
 
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-neutral-500">絞り込み:</span>
+        <FilterMultiSelect
+          label="クライアント"
+          options={clientOptions}
+          selected={selectedClientIds}
+          onChange={(next) => {
+            setSelectedClientIds(next);
+            // Drop project selections that no longer match the client filter
+            if (next.length > 0) {
+              setSelectedProjectIds((prev) =>
+                prev.filter((pid) => {
+                  const proj = projects.find((p) => p.id === pid);
+                  return proj ? next.includes(proj.clientId) : false;
+                }),
+              );
+            }
+          }}
+        />
+        <FilterMultiSelect
+          label="プロジェクト"
+          options={projectOptions}
+          selected={selectedProjectIds}
+          onChange={setSelectedProjectIds}
+        />
+        <FilterMultiSelect
+          label="タグ"
+          options={tagOptions}
+          selected={selectedTagIds}
+          onChange={setSelectedTagIds}
+        />
+        {(selectedClientIds.length > 0 ||
+          selectedProjectIds.length > 0 ||
+          selectedTagIds.length > 0) && (
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedClientIds([]);
+              setSelectedProjectIds([]);
+              setSelectedTagIds([]);
+            }}
+            className="text-xs text-neutral-500 underline-offset-2 hover:text-neutral-900 hover:underline"
+          >
+            すべてクリア
+          </button>
+        )}
+      </div>
+
       {/* Chart */}
       {isLoading ? (
         <div className="flex h-48 items-center justify-center">
@@ -113,37 +263,74 @@ export function ReportsPage() {
 
       {/* Table */}
       {rows.length > 0 && (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-neutral-200 text-left text-neutral-500">
-              <th className="py-2 font-medium">ラベル</th>
-              <th className="py-2 text-right font-medium">時間</th>
-              <th className="py-2 text-right font-medium">割合</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, i) => (
-              <tr key={row.key} className="border-b border-neutral-100">
-                <td className="flex items-center gap-2 py-2">
-                  <span
-                    className="inline-block h-3 w-3 rounded-sm"
-                    style={{ background: row.color || COLORS[i % COLORS.length] }}
-                  />
-                  {row.label}
-                </td>
-                <td className="py-2 text-right">{formatDuration(row.totalMinutes)}</td>
-                <td className="py-2 text-right">
-                  {total > 0 ? Math.round((row.totalMinutes / total) * 100) : 0}%
-                </td>
+        <div className="space-y-2">
+          <div className="flex items-center justify-end gap-4">
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-neutral-600">
+              <span>同名エントリをまとめる</span>
+              <span
+                role="switch"
+                aria-checked={groupSameTitles}
+                tabIndex={0}
+                onClick={() => setGroupSameTitles((v) => !v)}
+                onKeyDown={(e) => {
+                  if (e.key === " " || e.key === "Enter") {
+                    e.preventDefault();
+                    setGroupSameTitles((v) => !v);
+                  }
+                }}
+                className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${
+                  groupSameTitles ? "bg-neutral-900" : "bg-neutral-300"
+                }`}
+              >
+                <span
+                  className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
+                    groupSameTitles ? "translate-x-3.5" : "translate-x-0.5"
+                  }`}
+                />
+              </span>
+            </label>
+            <button
+              type="button"
+              onClick={toggleAll}
+              className="text-xs text-neutral-500 underline-offset-2 hover:text-neutral-900 hover:underline"
+            >
+              {anyExpanded ? "すべて折りたたむ" : "すべて展開"}
+            </button>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-neutral-200 text-left text-neutral-500">
+                <th className="py-2 font-medium">ラベル</th>
+                <th className="py-2 w-18 text-right font-medium">時間</th>
+                <th className="py-2 w-18 text-right font-medium">割合</th>
               </tr>
-            ))}
-            <tr className="font-medium">
-              <td className="py-2">合計</td>
-              <td className="py-2 text-right">{formatDuration(total)}</td>
-              <td className="py-2 text-right">100%</td>
-            </tr>
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((row, i) => (
+                <ReportRow
+                  key={row.key}
+                  rowKey={row.key}
+                  parentPath=""
+                  label={row.label}
+                  color={row.color}
+                  totalMinutes={row.totalMinutes}
+                  parentTotal={total}
+                  kind={groupBy}
+                  base={baseFilters}
+                  ancestor={{}}
+                  depth={0}
+                  fallbackColorIndex={i}
+                  expansion={expansion}
+                />
+              ))}
+              <tr className="font-medium">
+                <td className="py-2 pl-2">合計</td>
+                <td className="py-2 text-right tabular-nums">{formatDuration(total)}</td>
+                <td className="py-2 text-right tabular-nums">100%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

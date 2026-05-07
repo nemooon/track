@@ -77,10 +77,26 @@ export const tagUpdateSchema = z.object({
     .optional(),
 });
 
+const csvIds = z
+  .string()
+  .optional()
+  .transform((s) => (s ? s.split(",").filter(Boolean) : undefined));
+
 export const reportsQuerySchema = z.object({
   range: z.enum(["week", "month"]),
   anchor: z.string().datetime(),
   groupBy: z.enum(["client", "project", "tag"]),
+  clientIds: csvIds,
+  projectIds: csvIds,
+  tagIds: csvIds,
+});
+
+export const reportsEntriesQuerySchema = z.object({
+  range: z.enum(["week", "month"]),
+  anchor: z.string().datetime(),
+  clientIds: csvIds,
+  projectIds: csvIds,
+  tagIds: csvIds,
 });
 
 export const settingsUpdateSchema = z.object({

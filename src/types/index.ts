@@ -54,6 +54,26 @@ export type ReportResponse = {
   range: { from: string; to: string };
 };
 
+export type ReportEntry = {
+  id: string;
+  start: string;
+  end: string;
+  minutes: number;
+  title: string | null;
+  project: {
+    id: string;
+    name: string;
+    color: string;
+    client: { id: string; name: string };
+  } | null;
+  tags: Tag[];
+};
+
+export type ReportEntriesResponse = {
+  entries: ReportEntry[];
+  totalMinutes: number;
+};
+
 export type UserSettings = {
   workStart: number;
   workEnd: number;
