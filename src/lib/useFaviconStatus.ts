@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "./fetcher";
+import { isHoliday } from "./holidays";
 import type { TimeEntry, UserSettings } from "@/types";
 
 type FaviconColor = "default" | "green" | "yellow" | "red";
@@ -73,7 +74,7 @@ function computeColor(
 
   // Check yellow: last entry ended more than 1 hour ago
   // Only during work hours on a work day
-  const isWorkDay = settings.workDays.includes(now.getDay());
+  const isWorkDay = settings.workDays.includes(now.getDay()) && !isHoliday(now);
   const inWorkHours =
     nowMinutes >= settings.workStart && nowMinutes < settings.workEnd;
 

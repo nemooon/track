@@ -7,6 +7,7 @@ import { ja } from "date-fns/locale";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/fetcher";
 import { DAY_END_HOUR, DAY_START_HOUR, SNAP_MIN, getWeekRange } from "@/lib/time";
+import { getHolidayName, isHoliday } from "@/lib/holidays";
 import type { Project, Tag, TimeEntry } from "@/types";
 import { TimeGutter } from "./TimeGutter";
 import { EntryBlock } from "./EntryBlock";
@@ -555,7 +556,9 @@ export function WeekCalendar({
             +
           </button>
         </div>
-        {days.map((d) => (
+        {days.map((d) => {
+          const holidayName = getHolidayName(d);
+          return (
           <div
             key={d.toISOString()}
             className={cn(
@@ -568,9 +571,13 @@ export function WeekCalendar({
                 <div className="flex items-center justify-center size-8 rounded-full bg-neutral-200/50 text-base font-bold">{format(d, "d")}</div>
               </div>
               <div className="text-center text-neutral-500 font-semibold">{format(d, "EEEEE", { locale: ja })}</div>
+              <div className="px-0.5 min-w-0 truncate rounded-sm bg-red-400 text-right text-xs text-white font-semibold" title={holidayName ?? undefined}>
+                {holidayName}
+              </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Grid */}
@@ -578,7 +585,7 @@ export function WeekCalendar({
         <TimeGutter hourPx={hourPx} />
         <div className="flex flex-1 items-start">
           {days.map((day, dayIndex) => {
-            const isWorkDay = !workDays || workDays.includes(day.getDay());
+            const isWorkDay = (!workDays || workDays.includes(day.getDay())) && !isHoliday(day);
             const hasWorkSettings = workStart != null && workEnd != null;
             return (
             <div key={day.toISOString()} className="relative flex-1 border-l border-neutral-200">
