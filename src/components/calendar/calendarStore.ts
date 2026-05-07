@@ -19,6 +19,10 @@ interface CalendarState {
   toggleShowKot: () => void;
   showOutlook: boolean;
   toggleShowOutlook: () => void;
+  showWorkspace: boolean;
+  toggleShowWorkspace: () => void;
+  workspaceGapMinutes: 30 | 60 | 120;
+  setWorkspaceGapMinutes: (m: 30 | 60 | 120) => void;
 }
 
 export const useCalendarStore = create<CalendarState>()(
@@ -35,19 +39,27 @@ export const useCalendarStore = create<CalendarState>()(
       toggleShowKot: () => set((s) => ({ showKot: !s.showKot })),
       showOutlook: false,
       toggleShowOutlook: () => set((s) => ({ showOutlook: !s.showOutlook })),
+      showWorkspace: false,
+      toggleShowWorkspace: () => set((s) => ({ showWorkspace: !s.showWorkspace })),
+      workspaceGapMinutes: 60,
+      setWorkspaceGapMinutes: (m) => set({ workspaceGapMinutes: m }),
     }),
     {
       name: "track:calendar",
-      version: 2,
+      version: 4,
       migrate: (persisted, _version) => ({
         ...(persisted as Record<string, unknown>),
         showKot: false,
         showOutlook: false,
+        showWorkspace: false,
+        workspaceGapMinutes: 60,
       }),
       partialize: (s) => ({
         zoomIndex: s.zoomIndex,
         showKot: s.showKot,
         showOutlook: s.showOutlook,
+        showWorkspace: s.showWorkspace,
+        workspaceGapMinutes: s.workspaceGapMinutes,
       }),
     },
   ),

@@ -24,6 +24,18 @@ import { layoutBlocks, layoutEntries } from "./layout";
 import { useCalendarStore, ZOOM_LEVELS } from "./calendarStore";
 import { EntryEditDialog } from "./EntryEditDialog";
 import { cn } from "@/lib/utils";
+import {
+  ensureWorkspacePermission,
+  getWorkspaceHandle,
+  pickWorkspaceFolder,
+  workspaceSupported,
+} from "@/lib/workspaceHandle";
+import { scanWorkspace, type WorkspaceHint } from "@/lib/workspaceScanner";
+import {
+  getRepoProjectMapping,
+  removeRepoProjectMapping,
+  setRepoProjectMapping,
+} from "@/lib/workspaceProjectMap";
 
 type Interaction =
   | { kind: "idle" }
@@ -43,6 +55,7 @@ type Interaction =
       externalEventId?: string;
       externalEventSource?: "kot" | "outlook";
       breakMinutes?: number;
+      workspaceRepo?: string;
     }
   | {
       kind: "moving";
@@ -139,6 +152,12 @@ export function WeekCalendar({
   const toggleShowKot = useCalendarStore((s) => s.toggleShowKot);
   const showOutlook = useCalendarStore((s) => s.showOutlook);
   const toggleShowOutlook = useCalendarStore((s) => s.toggleShowOutlook);
+  const showWorkspace = useCalendarStore((s) => s.showWorkspace);
+  const toggleShowWorkspace = useCalendarStore((s) => s.toggleShowWorkspace);
+  const workspaceGapMinutes = useCalendarStore((s) => s.workspaceGapMinutes);
+  const setWorkspaceGapMinutes = useCalendarStore((s) => s.setWorkspaceGapMinutes);
+  const wsSupported = React.useMemo(() => workspaceSupported(), []);
+  const [wsVersion, setWsVersion] = React.useState(0);
   const kotEventsQ = useQuery<ExternalEvent[]>({
     queryKey: ["external", "kot", weekKey, to.toISOString()],
     queryFn: () =>
@@ -155,6 +174,42 @@ export function WeekCalendar({
       ),
     enabled: showOutlook,
   });
+  const workspaceQ = useQuery<WorkspaceHint[]>({
+    queryKey: ["workspace", weekKey, wsVersion, workspaceGapMinutes],
+    queryFn: async () => {
+      const handle = await getWorkspaceHandle();
+      if (!handle) return [];
+      const perm = await ensureWorkspacePermission(handle);
+      if (perm !== "granted") return [];
+      return scanWorkspace(handle, from, to, { gapMinutes: workspaceGapMinutes });
+    },
+    enabled: wsSupported && showWorkspace,
+    staleTime: 30_000,
+  });
+
+  async function handleToggleWorkspace() {
+    if (!wsSupported) {
+      toast.error("このブラウザは対応していません（Chrome/Edge をお使いください）");
+      return;
+    }
+    if (showWorkspace) {
+      toggleShowWorkspace();
+      return;
+    }
+    let handle = await getWorkspaceHandle();
+    if (!handle) {
+      handle = await pickWorkspaceFolder();
+      if (!handle) return;
+    } else {
+      const perm = await ensureWorkspacePermission(handle);
+      if (perm !== "granted") {
+        toast.error("Workspace フォルダへのアクセスが許可されませんでした");
+        return;
+      }
+    }
+    setWsVersion((v) => v + 1);
+    toggleShowWorkspace();
+  }
   const linkedExternalIds = React.useMemo(
     () =>
       new Set(
@@ -175,6 +230,23 @@ export function WeekCalendar({
     : [];
   const outlookByDay = days.map((day) =>
     outlookEvents.filter((e) => isSameDay(new Date(e.start), day)),
+  );
+  const workspaceHints = showWorkspace ? (workspaceQ.data ?? []) : [];
+  const entryRanges = React.useMemo(
+    () =>
+      (entriesQ.data ?? []).map((e) => ({
+        start: new Date(e.start).getTime(),
+        end: new Date(e.end).getTime(),
+      })),
+    [entriesQ.data],
+  );
+  const visibleWorkspaceHints = workspaceHints.filter((h) => {
+    const s = new Date(h.start).getTime();
+    const e = new Date(h.end).getTime();
+    return !entryRanges.some((r) => s < r.end && r.start < e);
+  });
+  const workspaceByDay = days.map((day) =>
+    visibleWorkspaceHints.filter((h) => isSameDay(new Date(h.start), day)),
   );
 
   const dayColRefs = React.useRef<(HTMLDivElement | null)[]>([]);
@@ -629,6 +701,44 @@ export function WeekCalendar({
         >
           Outlook 連携（モック）
         </button>
+        {wsSupported && (
+          <>
+            <button
+              onClick={handleToggleWorkspace}
+              title="ローカル Workspace のファイル変更・git コミット時刻からヒントを表示"
+              className={cn(
+                "ml-1 rounded border px-2 py-1 text-sm",
+                showWorkspace
+                  ? "border-neutral-700 bg-neutral-100 text-neutral-700"
+                  : "border-neutral-200 text-neutral-500 hover:bg-neutral-50",
+              )}
+            >
+              Workspace ヒント
+            </button>
+            {showWorkspace && (
+              <div
+                className="ml-1 flex items-center rounded border border-neutral-200 text-xs text-neutral-500"
+                title="同じリポジトリ内でこの時間以内の隙間は結合"
+              >
+                <span className="px-1.5">結合</span>
+                {([30, 60, 120] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setWorkspaceGapMinutes(m)}
+                    className={cn(
+                      "px-1.5 py-1 tabular-nums",
+                      workspaceGapMinutes === m
+                        ? "bg-neutral-700 text-white"
+                        : "hover:bg-neutral-50",
+                    )}
+                  >
+                    {m}分
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
         <div className="ml-auto flex gap-1">
           {(
             [
@@ -873,7 +983,7 @@ export function WeekCalendar({
                 />
               )}
 
-              {/* External-event placeholders (KoT 直行直帰 + Outlook meetings).
+              {/* External + Workspace placeholders.
                   Combined into a single layer so overlapping items split into multiple lanes.
                   Rendered before entries so entries float above. */}
               {(() => {
@@ -881,10 +991,12 @@ export function WeekCalendar({
                   id: string;
                   start: string;
                   end: string;
-                  source: "kot" | "outlook";
-                  variant: "directwork" | "meeting";
+                  variant: "directwork" | "meeting" | "workspace";
                   label: string;
+                  source?: "kot" | "outlook";
                   breakMinutes?: number;
+                  repo?: string;
+                  sources?: { commits: number; mtimeFiles: number };
                 };
                 const items: Placeholder[] = [];
                 if (hasDirectWork && hasWorkSettings) {
@@ -917,6 +1029,17 @@ export function WeekCalendar({
                     label: e.label,
                   });
                 }
+                for (const h of workspaceByDay[dayIndex]) {
+                  items.push({
+                    id: h.id,
+                    start: h.start,
+                    end: h.end,
+                    variant: "workspace",
+                    label: h.repo,
+                    repo: h.repo,
+                    sources: h.sources,
+                  });
+                }
                 if (items.length === 0) return null;
                 return layoutBlocks(items).map(({ item, laneIndex, laneCount }) => {
                   const startDate = new Date(item.start);
@@ -926,15 +1049,24 @@ export function WeekCalendar({
                   const width = `calc(${100 / laneCount}% - 6px)`;
                   const left = `calc(${(laneIndex / laneCount) * 100}% + 3px)`;
                   const isDirect = item.variant === "directwork";
+                  const isWorkspace = item.variant === "workspace";
+                  const variantClass = isWorkspace
+                    ? "border-neutral-400 bg-neutral-100/60 text-neutral-600 hover:bg-neutral-200/70"
+                    : isDirect
+                    ? "border-kot bg-kot/15 text-kot hover:bg-kot/25"
+                    : "border-outlook bg-outlook/15 text-outlook hover:bg-outlook/25";
+                  const tooltip = isWorkspace
+                    ? `${item.repo}（commits ${item.sources?.commits ?? 0} / files ${item.sources?.mtimeFiles ?? 0}）— クリックで記録を作成（Shift+クリックでプロジェクトを選び直す）`
+                    : isDirect
+                    ? "クリックで記録を作成（8.5h・休憩1h込み = 実労 7.5h）"
+                    : `クリックで記録を作成: ${item.label} (${format(startDate, "HH:mm")}–${format(endDate, "HH:mm")})`;
                   return (
                     <div
-                      key={`${item.source}-${item.id}`}
+                      key={`${item.variant}-${item.id}`}
                       data-placeholder
                       className={cn(
                         "absolute z-0 cursor-pointer overflow-hidden rounded border border-dashed px-1 py-0.5 text-[10px] leading-tight",
-                        isDirect
-                          ? "border-kot bg-kot/15 text-kot hover:bg-kot/25"
-                          : "border-outlook bg-outlook/15 text-outlook hover:bg-outlook/25",
+                        variantClass,
                       )}
                       style={{
                         top: minutesToY(startMin, hourPx) + 1,
@@ -942,15 +1074,40 @@ export function WeekCalendar({
                         left,
                         width,
                       }}
-                      title={
-                        isDirect
-                          ? "クリックで記録を作成（8.5h・休憩1h込み = 実労 7.5h）"
-                          : `クリックで記録を作成: ${item.label} (${format(startDate, "HH:mm")}–${format(endDate, "HH:mm")})`
-                      }
+                      title={tooltip}
                       onPointerDown={(ev) => {
                         if (ev.button !== 0) return;
                         ev.stopPropagation();
                         ev.preventDefault();
+                        if (isWorkspace && item.repo) {
+                          const mapped = getRepoProjectMapping(item.repo);
+                          const validMapped =
+                            mapped && projects.some((p) => p.id === mapped) ? mapped : null;
+                          if (mapped && !validMapped) removeRepoProjectMapping(item.repo);
+                          if (validMapped && !ev.shiftKey) {
+                            const day = days[dayIndex];
+                            const start = makeDateAt(day, startMin);
+                            const end = makeDateAt(day, endMin);
+                            createEntry.mutate({
+                              projectId: validMapped,
+                              start: start.toISOString(),
+                              end: end.toISOString(),
+                              title: item.repo,
+                            });
+                            return;
+                          }
+                          const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+                          setInteraction({
+                            kind: "picking",
+                            dayIndex,
+                            startMin,
+                            endMin,
+                            anchor: { left: rect.left, top: rect.bottom + 4 },
+                            initialTitle: item.repo,
+                            workspaceRepo: item.repo,
+                          });
+                          return;
+                        }
                         const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
                         setInteraction({
                           kind: "picking",
@@ -960,7 +1117,7 @@ export function WeekCalendar({
                           anchor: { left: rect.left, top: rect.bottom + 4 },
                           initialTitle: item.label,
                           externalEventId: item.id,
-                          externalEventSource: item.source,
+                          ...(item.source ? { externalEventSource: item.source } : {}),
                           ...(item.breakMinutes ? { breakMinutes: item.breakMinutes } : {}),
                         });
                       }}
@@ -1145,6 +1302,9 @@ export function WeekCalendar({
             const start = makeDateAt(day, interaction.startMin);
             const end = makeDateAt(day, interaction.endMin);
             const trimmed = title.trim();
+            if (interaction.workspaceRepo && projectId) {
+              setRepoProjectMapping(interaction.workspaceRepo, projectId);
+            }
             createEntry.mutate({
               projectId,
               start: start.toISOString(),
