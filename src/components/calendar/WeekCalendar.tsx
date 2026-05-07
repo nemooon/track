@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, addDays, isSameDay } from "date-fns";
+import { ja } from "date-fns/locale";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/fetcher";
 import { DAY_END_HOUR, DAY_START_HOUR, SNAP_MIN, getWeekRange } from "@/lib/time";
@@ -128,6 +129,17 @@ export function WeekCalendar({
   const [hoverState, setHoverState] = React.useState<{ dayIndex: number; minute: number } | null>(null);
   const currentTime = useCurrentMinutes();
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const [scrollbarWidth, setScrollbarWidth] = React.useState(0);
+
+  React.useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const measure = () => setScrollbarWidth(el.offsetWidth - el.clientWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Scroll to a sensible initial position: 1 hour before the earlier of work start and current time
   React.useEffect(() => {
@@ -526,19 +538,19 @@ export function WeekCalendar({
       </div>
 
       {/* Day header */}
-      <div className="flex border-b border-neutral-200">
+      <div className="flex border-b border-neutral-200" style={{ paddingRight: scrollbarWidth }}>
         <div className="flex shrink-0 items-center justify-center gap-0.5" style={{ width: 60 }}>
           <button
             onClick={zoomOut}
             disabled={zoomIndex === 0}
-            className="rounded px-1 py-0.5 text-xs text-neutral-500 hover:bg-neutral-100 disabled:opacity-30"
+            className="rounded size-5 text-sm text-neutral-500 font-bold leading-none hover:bg-neutral-100 disabled:opacity-30"
           >
             −
           </button>
           <button
             onClick={zoomIn}
             disabled={zoomIndex === ZOOM_LEVELS.length - 1}
-            className="rounded px-1 py-0.5 text-xs text-neutral-500 hover:bg-neutral-100 disabled:opacity-30"
+            className="rounded size-5 text-sm text-neutral-500 font-bold leading-none hover:bg-neutral-100 disabled:opacity-30"
           >
             +
           </button>
@@ -547,13 +559,16 @@ export function WeekCalendar({
           <div
             key={d.toISOString()}
             className={cn(
-              "flex-1 border-l border-neutral-200 px-2 py-2 text-center text-xs",
-              (workDays != null || workStart != null) && (!workDays || !workDays.includes(d.getDay())) && "bg-neutral-200",
+              "flex-1 border-l border-neutral-200 px-2 py-2 text-xs",
               isSameDay(d, new Date()) && "bg-amber-50",
             )}
           >
-            <div className="text-neutral-500">{format(d, "EEE")}</div>
-            <div className="font-medium">{format(d, "M/d")}</div>
+            <div className="flex items-center gap-2 leading-none">
+              <div className="" title={format(d, "PPPP", { locale: ja })}>
+                <div className="flex items-center justify-center size-8 rounded-full bg-neutral-200/50 text-base font-bold">{format(d, "d")}</div>
+              </div>
+              <div className="text-center text-neutral-500 font-semibold">{format(d, "EEEEE", { locale: ja })}</div>
+            </div>
           </div>
         ))}
       </div>
