@@ -871,7 +871,7 @@ export function WeekCalendar({
             return (
             <div key={day.toISOString()} className="relative flex-1 border-l border-neutral-200">
               {/* top buffer — before 0:00 */}
-              <div style={{ height: BUFFER_PX, backgroundImage: "repeating-linear-gradient(45deg, #99a1af50 0, #99a1af50 4px, #f5f5f5 4px, #f5f5f5 10px)" }} />
+              <div style={{ height: BUFFER_PX, backgroundImage: "repeating-linear-gradient(45deg, oklch(92.2% 0 0) 0, oklch(92.2% 0 0) 4px, #f5f5f5 4px, #f5f5f5 10px)" }} />
             <div
               ref={(el) => {
                 dayColRefs.current[dayIndex] = el;
@@ -879,7 +879,7 @@ export function WeekCalendar({
               className="relative cursor-crosshair select-none"
               style={{
                 height: (DAY_END_HOUR - DAY_START_HOUR) * hourPx + 1,
-                backgroundColor: (workDays != null || hasWorkSettings) ? "rgba(163,163,163,0.2)" : undefined,
+                backgroundColor: (workDays != null || hasWorkSettings) ? "oklch(92.2% 0 0 / 0.2)" : undefined,
                 touchAction: "none",
               }}
               onPointerDown={(e) => {
@@ -955,33 +955,24 @@ export function WeekCalendar({
                   />
                 );
               })()}
-              {/* 30-min ticks */}
+              {/* 30-min ticks (dashed) */}
               <div
                 className="pointer-events-none absolute inset-0"
                 style={{
-                  backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${hourPx / 2 - 1}px, #99a1af18 ${hourPx / 2 - 1}px, #99a1af18 ${hourPx / 2}px)`,
+                  backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${hourPx / 2 - 1}px, oklch(92.2% 0 0) ${hourPx / 2 - 1}px, oklch(92.2% 0 0) ${hourPx / 2}px)`,
                   backgroundSize: `100% ${hourPx}px`,
                   backgroundPosition: `0 ${hourPx / 2}px`,
+                  maskImage: `repeating-linear-gradient(to right, black 0, black 4px, transparent 2px, transparent 7px)`,
+                  WebkitMaskImage: `repeating-linear-gradient(to right, black 0, black 4px, transparent 2px, transparent 7px)`,
                 }}
               />
               {/* hour grid lines (darker, drawn after 30-min so they're on top) */}
               <div
                 className="pointer-events-none absolute inset-0"
                 style={{
-                  backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${hourPx - 1}px, #99a1af50 ${hourPx - 1}px, #99a1af50 ${hourPx}px)`,
+                  backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${hourPx - 1}px, oklch(92.2% 0 0) ${hourPx - 1}px, oklch(92.2% 0 0) ${hourPx}px)`,
                 }}
               />
-              {/* quarter-hour ticks (visible at 15min zoom) */}
-              {hourPx >= 192 && (
-                <div
-                  className="pointer-events-none absolute inset-0"
-                  style={{
-                    backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${hourPx / 4 - 1}px, #99a1af18 ${hourPx / 4 - 1}px, #99a1af18 ${hourPx / 4}px)`,
-                    backgroundPosition: `0 ${hourPx / 4}px`,
-                    backgroundSize: `100% ${hourPx / 2}px`,
-                  }}
-                />
-              )}
 
               {/* External + Workspace placeholders.
                   Combined into a single layer so overlapping items split into multiple lanes.
@@ -1267,7 +1258,7 @@ export function WeekCalendar({
               )}
             </div>
               {/* bottom buffer — after 24:00 */}
-              <div style={{ height: BUFFER_PX, backgroundImage: "repeating-linear-gradient(45deg, #99a1af50 0, #99a1af50 4px, #f5f5f5 4px, #f5f5f5 10px)" }} />
+              <div style={{ height: BUFFER_PX, backgroundImage: "repeating-linear-gradient(45deg, oklch(92.2% 0 0) 0, oklch(92.2% 0 0) 4px, #f5f5f5 4px, #f5f5f5 10px)" }} />
             </div>
           );
           })}
