@@ -22,6 +22,19 @@ model User {
   credentials  Credential[]
   invitations  Invitation[]
   tags         Tag[]
+  patTokens    PersonalAccessToken[]
+}
+
+model PersonalAccessToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  tokenHash  String    @unique
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  @@index([userId])
 }
 
 model Credential {

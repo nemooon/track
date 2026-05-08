@@ -9,12 +9,17 @@ import { tags } from "./routes/tags";
 import { account } from "./routes/account";
 import { invitations } from "./routes/invitations";
 import { external } from "./routes/external";
+import { mcp } from "./mcp";
 import type { Env, AuthVars } from "./types";
 
 const app = new Hono<{ Bindings: Env; Variables: AuthVars }>();
 
 // Public auth routes
 app.route("/api/auth", authRoutes);
+
+// MCP endpoint — Bearer auth (or Cookie for browser-based clients)
+app.use("/mcp", requireAuth);
+app.route("/mcp", mcp);
 
 // Protected routes — require JWT
 app.use("/api/*", requireAuth);

@@ -2,6 +2,8 @@ import { Hono, type Context, type Next } from "hono";
 import { verify } from "hono/jwt";
 import { setCookie, getCookie } from "hono/cookie";
 import { passkeySignup, passkeyLogin } from "./passkey";
+import { getPrisma } from "./db";
+import { hashToken } from "./lib/pat";
 import type { Env, AuthVars } from "./types";
 
 const TOKEN_COOKIE = "session";
@@ -31,18 +33,41 @@ authRoutes.get("/me", async (c) => {
   }
 });
 
-// Middleware: extract userId from JWT cookie, 401 if missing
+// Middleware: extract userId from JWT cookie, with PAT Bearer fallback
+// for MCP / CLI clients. 401 if neither valid auth is present.
 export async function requireAuth(
   c: Context<{ Bindings: Env; Variables: AuthVars }>,
   next: Next,
 ) {
   const token = getCookie(c, TOKEN_COOKIE);
-  if (!token) return c.json({ error: "unauthorized" }, 401);
-  try {
-    const payload = await verify(token, c.env.JWT_SECRET, "HS256");
-    c.set("userId", payload.uid as string);
-    await next();
-  } catch {
-    return c.json({ error: "unauthorized" }, 401);
+  if (token) {
+    try {
+      const payload = await verify(token, c.env.JWT_SECRET, "HS256");
+      c.set("userId", payload.uid as string);
+      await next();
+      return;
+    } catch {
+      return c.json({ error: "unauthorized" }, 401);
+    }
   }
+
+  const authHeader = c.req.header("authorization");
+  if (authHeader) {
+    const m = authHeader.match(/^Bearer\s+(.+)$/i);
+    if (m) {
+      const tokenHash = await hashToken(m[1]);
+      const prisma = getPrisma(c.env.DB);
+      const pat = await prisma.personalAccessToken.findUnique({
+        where: { tokenHash },
+        select: { userId: true },
+      });
+      if (pat) {
+        c.set("userId", pat.userId);
+        await next();
+        return;
+      }
+    }
+  }
+
+  return c.json({ error: "unauthorized" }, 401);
 }

@@ -32,6 +32,13 @@ function timeToMinutes(value: string): number {
 
 type PasskeyInfo = { id: string; createdAt: string };
 type InvitationInfo = { id: string; email: string; createdAt: string };
+type TokenInfo = {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+};
+type IssuedToken = { id: string; name: string; createdAt: string; token: string };
 
 export function AccountPage() {
   const qc = useQueryClient();
@@ -49,6 +56,14 @@ export function AccountPage() {
     queryKey: ["invitations"],
     queryFn: () => apiFetch<InvitationInfo[]>("/api/invitations"),
   });
+
+  const { data: tokens = [] } = useQuery({
+    queryKey: ["tokens"],
+    queryFn: () => apiFetch<TokenInfo[]>("/api/account/tokens"),
+  });
+
+  const [tokenName, setTokenName] = useState("");
+  const [issuedToken, setIssuedToken] = useState<IssuedToken | null>(null);
 
   const [inviteEmail, setInviteEmail] = useState("");
 
@@ -141,6 +156,30 @@ export function AccountPage() {
         toast.error("削除に失敗しました");
       }
     },
+  });
+
+  const createToken = useMutation({
+    mutationFn: (name: string) =>
+      apiFetch<IssuedToken>("/api/account/tokens", {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["tokens"] });
+      setTokenName("");
+      setIssuedToken(data);
+    },
+    onError: () => toast.error("トークンの発行に失敗しました"),
+  });
+
+  const deleteToken = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch(`/api/account/tokens/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tokens"] });
+      toast.success("トークンを削除しました");
+    },
+    onError: () => toast.error("削除に失敗しました"),
   });
 
   const sendInvite = useMutation({
@@ -363,6 +402,95 @@ export function AccountPage() {
             パスキーを追加
           </Button>
         </div>
+      </section>
+
+      {/* API tokens (PAT for MCP / external CLIs) */}
+      <section>
+        <h2 className="mb-2 text-lg font-semibold">API トークン</h2>
+        <p className="mb-3 text-sm text-neutral-500">
+          Claude Code / Claude Desktop などから Track データを操作するためのトークン。MCP エンドポイント
+          <code className="mx-1 rounded bg-neutral-100 px-1 py-0.5 text-xs">/mcp</code>
+          に Bearer ヘッダで渡します。発行直後の 1 回だけ平文が表示されます。
+        </p>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (tokenName.trim()) createToken.mutate(tokenName.trim());
+          }}
+          className="mb-3 flex gap-2"
+        >
+          <Input
+            placeholder="例: My MacBook Claude Code"
+            value={tokenName}
+            onChange={(e) => setTokenName(e.target.value)}
+            required
+            className="flex-1"
+          />
+          <Button type="submit" size="sm" disabled={createToken.isPending}>
+            発行
+          </Button>
+        </form>
+
+        {issuedToken && (
+          <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 p-3">
+            <div className="mb-2 text-sm font-medium text-amber-900">
+              「{issuedToken.name}」を発行しました。今だけ表示されるのでコピーしてください。
+            </div>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 overflow-x-auto rounded border border-amber-200 bg-white px-2 py-1 text-xs">
+                {issuedToken.token}
+              </code>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  navigator.clipboard.writeText(issuedToken.token);
+                  toast.success("コピーしました");
+                }}
+              >
+                コピー
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setIssuedToken(null)}
+              >
+                閉じる
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {tokens.length > 0 ? (
+          <div className="space-y-2">
+            {tokens.map((tk) => (
+              <div
+                key={tk.id}
+                className="flex items-center justify-between rounded-md border border-neutral-200 px-3 py-2"
+              >
+                <div className="text-sm">
+                  <div className="font-medium text-neutral-700">{tk.name}</div>
+                  <div className="text-xs text-neutral-500">
+                    発行: {new Date(tk.createdAt).toLocaleDateString("ja-JP")}
+                    {tk.lastUsedAt &&
+                      ` · 最終使用: ${new Date(tk.lastUsedAt).toLocaleDateString("ja-JP")}`}
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-red-600 hover:text-red-700"
+                  onClick={() => deleteToken.mutate(tk.id)}
+                >
+                  削除
+                </Button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-neutral-500">トークンがまだありません</p>
+        )}
       </section>
 
       {/* Invitations */}
