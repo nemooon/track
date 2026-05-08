@@ -99,11 +99,25 @@ export function ReportsPage() {
 
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const [groupSameTitles, setGroupSameTitles] = useState(false);
+  const [expandAllMode, setExpandAllMode] = useState(false);
 
   // groupBy が変わると行の path 体系が変わるのでリセット
   useEffect(() => {
     setExpandedPaths(new Set());
+    setExpandAllMode(false);
   }, [groupBy]);
+
+  // すべて展開モード中は、データ更新時に最上位の行をすべて展開する
+  useEffect(() => {
+    if (!expandAllMode || !data) return;
+    setExpandedPaths((prev) => {
+      const next = new Set(prev);
+      for (const r of data.rows) {
+        next.add(`${groupBy}:${r.key}`);
+      }
+      return next;
+    });
+  }, [data, expandAllMode, groupBy]);
 
   const togglePath = useCallback((path: string) => {
     setExpandedPaths((prev) => {
@@ -123,12 +137,14 @@ export function ReportsPage() {
   function toggleAll() {
     if (anyExpanded) {
       setExpandedPaths(new Set());
+      setExpandAllMode(false);
     } else {
       const initial = new Set<string>();
       for (const r of rows) {
         initial.add(`${groupBy}:${r.key}`);
       }
       setExpandedPaths(initial);
+      setExpandAllMode(true);
     }
   }
 
