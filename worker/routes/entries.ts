@@ -25,6 +25,34 @@ entries.get("/", async (c) => {
   return c.json(list);
 });
 
+entries.get("/titles", async (c) => {
+  const userId = c.get("userId");
+  const projectId = c.req.query("projectId");
+  const prisma = getPrisma(c.env.DB);
+  const projectFilter =
+    projectId === "none"
+      ? { projectId: null }
+      : projectId
+        ? { projectId }
+        : {};
+  const list = await prisma.timeEntry.findMany({
+    where: { userId, title: { not: null }, ...projectFilter },
+    select: { title: true },
+    orderBy: { start: "desc" },
+    take: 500,
+  });
+  const seen = new Set<string>();
+  const titles: string[] = [];
+  for (const e of list) {
+    const t = e.title?.trim();
+    if (!t || seen.has(t)) continue;
+    seen.add(t);
+    titles.push(t);
+    if (titles.length >= 100) break;
+  }
+  return c.json(titles);
+});
+
 entries.post("/", async (c) => {
   const userId = c.get("userId");
   const body = await c.req.json().catch(() => null);

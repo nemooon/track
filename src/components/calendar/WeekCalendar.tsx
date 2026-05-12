@@ -497,10 +497,15 @@ export function WeekCalendar({
         const day = days[interaction.dayIndex];
         const start = makeDateAt(day, interaction.startMin);
         const end = makeDateAt(day, interaction.endMin);
-        updateEntry.mutate({
-          id: interaction.entryId,
-          body: { start: start.toISOString(), end: end.toISOString() },
-        });
+        if (
+          start.getTime() !== interaction.originalStart.getTime() ||
+          end.getTime() !== interaction.originalEnd.getTime()
+        ) {
+          updateEntry.mutate({
+            id: interaction.entryId,
+            body: { start: start.toISOString(), end: end.toISOString() },
+          });
+        }
       }
       setInteraction({ kind: "idle" });
     };
@@ -1288,11 +1293,12 @@ export function WeekCalendar({
           tags={tags}
           initialTitle={interaction.initialTitle}
           onCancel={() => setInteraction({ kind: "idle" })}
-          onPick={(projectId, title, tagIds) => {
+          onPick={(projectId, title, tagIds, note) => {
             const day = days[interaction.dayIndex];
             const start = makeDateAt(day, interaction.startMin);
             const end = makeDateAt(day, interaction.endMin);
             const trimmed = title.trim();
+            const trimmedNote = note.trim();
             if (interaction.workspaceRepo && projectId) {
               setRepoProjectMapping(interaction.workspaceRepo, projectId);
             }
@@ -1301,6 +1307,7 @@ export function WeekCalendar({
               start: start.toISOString(),
               end: end.toISOString(),
               ...(trimmed ? { title: trimmed } : {}),
+              ...(trimmedNote ? { note: trimmedNote } : {}),
               ...(tagIds.length > 0 ? { tagIds } : {}),
               ...(interaction.externalEventId
                 ? { externalEventId: interaction.externalEventId }
