@@ -4,6 +4,7 @@ import * as React from "react";
 import { format } from "date-fns";
 import { Dialog, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { Project, Tag, TimeEntry } from "@/types";
+import { ProjectSelectPopover } from "./ProjectSelectPopover";
 
 interface Props {
   entry: TimeEntry | null;
@@ -43,6 +44,8 @@ export function EntryEditDialog({ entry, projects, tags, onClose, onSave, onDele
   const [tagIds, setTagIds] = React.useState<string[]>([]);
   const [note, setNote] = React.useState("");
   const [breakMinutes, setBreakMinutes] = React.useState(0);
+  const [pickerAnchor, setPickerAnchor] = React.useState<{ left: number; top: number } | null>(null);
+  const projectButtonRef = React.useRef<HTMLButtonElement>(null);
 
   React.useEffect(() => {
     if (!entry) return;
@@ -167,20 +170,48 @@ export function EntryEditDialog({ entry, projects, tags, onClose, onSave, onDele
         {/* Project */}
         <div className="flex flex-col gap-1">
           <label className="text-sm font-medium text-neutral-700">プロジェクト</label>
-          <select
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-            className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-neutral-500 focus:outline-none"
+          <button
+            ref={projectButtonRef}
+            type="button"
+            onClick={() => {
+              const rect = projectButtonRef.current?.getBoundingClientRect();
+              if (!rect) return;
+              setPickerAnchor({ left: rect.left, top: rect.bottom + 4 });
+            }}
+            className="flex items-center gap-2 rounded-md border border-neutral-300 px-3 py-2 text-left text-sm hover:bg-neutral-50 focus:border-neutral-500 focus:outline-none"
           >
-            <option value="">なし</option>
-            {projects
-              .filter((p) => !p.archived)
-              .map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.client?.name ? `${p.client.name} / ${p.name}` : p.name}
-                </option>
-              ))}
-          </select>
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-full"
+              style={{ backgroundColor: selectedProject?.color ?? "#a3a3a3" }}
+            />
+            <span className={selectedProject ? "text-neutral-900" : "text-neutral-500"}>
+              {selectedProject
+                ? selectedProject.client?.name
+                  ? `${selectedProject.client.name} / ${selectedProject.name}`
+                  : selectedProject.name
+                : "プロジェクトなし"}
+            </span>
+            <svg
+              viewBox="0 0 16 16"
+              className="ml-auto h-3.5 w-3.5 text-neutral-400"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M4 6 L8 10 L12 6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          {pickerAnchor && (
+            <ProjectSelectPopover
+              anchor={pickerAnchor}
+              projects={projects}
+              onPick={(id) => {
+                setProjectId(id ?? "");
+                setPickerAnchor(null);
+              }}
+              onCancel={() => setPickerAnchor(null)}
+            />
+          )}
         </div>
 
         {/* Tags */}
