@@ -400,7 +400,7 @@ export function WeekCalendar({
       kind: "creating",
       dayIndex,
       anchorMin: minute,
-      currentMin: Math.min(minute + SNAP_MIN, (DAY_END_HOUR - DAY_START_HOUR) * 60),
+      currentMin: minute,
     });
   }
 
