@@ -52,6 +52,7 @@ export function EntryBlock({
     : "";
 
   const projectName = entry.project?.name ?? "プロジェクトなし";
+  const baseColor = entry.project?.color ?? "#9ca3af";
 
   return (
     <div
@@ -59,18 +60,21 @@ export function EntryBlock({
       onClick={onSelect}
       onDoubleClick={onDoubleClick}
       className={cn(
-        "absolute rounded-md border-l-4 px-1.5 py-0.5 text-xs text-white shadow-sm transition-shadow",
-        !ghost && "cursor-grab hover:shadow",
+        "absolute rounded-md px-1.5 py-0.5 text-xs transition-shadow",
+        !ghost && "cursor-grab hover:shadow-sm",
         ghost && "cursor-grabbing opacity-60",
-        selected && "ring-2 ring-neutral-900 ring-offset-1",
+        selected && "ring-2 ring-offset-1",
       )}
       style={{
         top,
         height,
         left,
         width,
-        backgroundColor: entry.project?.color ?? "#9ca3af",
-        borderLeftColor: `color-mix(in srgb, ${entry.project?.color ?? "#9ca3af"} 70%, black)`,
+        backgroundColor: `color-mix(in srgb, ${baseColor} 18%, white)`,
+        color: `color-mix(in srgb, ${baseColor} 55%, black)`,
+        ...(selected
+          ? { ["--tw-ring-color" as never]: `color-mix(in srgb, ${baseColor} 60%, black)` }
+          : {}),
         touchAction: "none",
         ...style,
       }}
@@ -85,10 +89,10 @@ export function EntryBlock({
         />
       )}
       <div className="overflow-hidden">
-        <div className="truncate font-medium leading-tight">
+        <div className="truncate font-semibold leading-tight">
           {entry.title ? entry.title : projectName}
         </div>
-        <div className="truncate opacity-80 leading-tight">
+        <div className="truncate opacity-70 leading-tight">
           {entry.title ? `${projectName} · ` : ""}
           {format(start, "HH:mm")}–{format(end, "HH:mm")} · {durLabel}{breakLabel}
         </div>
@@ -97,7 +101,8 @@ export function EntryBlock({
             {entry.tags.map((te) => (
               <span
                 key={te.tagId}
-                className="inline-block rounded-sm bg-white/25 px-1 text-[10px] leading-tight"
+                className="inline-block rounded-sm px-1 text-[10px] leading-tight"
+                style={{ backgroundColor: `color-mix(in srgb, ${baseColor} 25%, white)` }}
               >
                 {te.tag.name}
               </span>
