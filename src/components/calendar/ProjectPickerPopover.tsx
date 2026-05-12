@@ -114,10 +114,10 @@ export function ProjectPickerPopover({
 
   function submit() {
     if (!picked) return;
-    const userPicked = selectedTagIds.filter(
-      (id) => !picked.lockedTagIds.includes(id),
+    const merged = Array.from(
+      new Set([...picked.lockedTagIds, ...selectedTagIds]),
     );
-    onPick(picked.id, title, userPicked, note);
+    onPick(picked.id, title, merged, note);
   }
 
   function onTitleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
