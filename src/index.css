@@ -4,3 +4,19 @@
   --color-kot: #1d9e48;
   --color-outlook: #0072c6;
 }
+
+@property --entry-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@property --entry-fill {
+  syntax: "<color>";
+  initial-value: white;
+  inherits: false;
+}
+
+@keyframes entry-selected-rotate {
+  to { --entry-angle: 360deg; }
+}

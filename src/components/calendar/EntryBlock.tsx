@@ -35,11 +35,12 @@ export function EntryBlock({
 }) {
   const start = new Date(entry.start);
   const end = new Date(entry.end);
-  const top = minutesToY(minutesFromDayStart(start), hourPx) + 1;
-  const height = Math.max(minutesToY(minutesFromDayStart(end) - minutesFromDayStart(start), hourPx) - 3, 14);
+  const top = minutesToY(minutesFromDayStart(start), hourPx) + 2;
+  const height = Math.max(minutesToY(minutesFromDayStart(end) - minutesFromDayStart(start), hourPx) - 5, 14);
 
-  const width = `calc(${100 / laneCount}% - 6px)`;
-  const left = `calc(${(laneIndex / laneCount) * 100}% + 3px)`;
+  const rightGutter = 12;
+  const width = `calc((100% - ${rightGutter}px) / ${laneCount} - 6px)`;
+  const left = `calc(${laneIndex} * (100% - ${rightGutter}px) / ${laneCount} + 2px)`;
 
   const breakMin = entry.breakMinutes ?? 0;
   const grossMin = Math.round((end.getTime() - start.getTime()) / 60000);
@@ -53,6 +54,9 @@ export function EntryBlock({
 
   const projectName = entry.project?.name ?? "プロジェクトなし";
   const baseColor = entry.project?.color ?? "#9ca3af";
+  const fillColor = `color-mix(in srgb, ${baseColor} 18%, white)`;
+  const fillColorSelected = `color-mix(in srgb, ${baseColor} 28%, white)`;
+  const endStop = entry.tags?.[0]?.tag.color ?? `color-mix(in srgb, ${baseColor} 65%, white)`;
 
   return (
     <div
@@ -60,21 +64,26 @@ export function EntryBlock({
       onClick={onSelect}
       onDoubleClick={onDoubleClick}
       className={cn(
-        "absolute rounded-md px-1.5 py-0.5 text-xs transition-shadow",
+        "absolute rounded-sm border border-transparent px-1.5 py-0.5 text-xs",
         !ghost && "cursor-grab hover:shadow-sm",
         ghost && "cursor-grabbing opacity-60",
-        selected && "ring-2 ring-offset-1",
       )}
       style={{
         top,
         height,
         left,
         width,
-        backgroundColor: `color-mix(in srgb, ${baseColor} 18%, white)`,
-        color: `color-mix(in srgb, ${baseColor} 55%, black)`,
+        ["--entry-fill" as never]: selected ? fillColorSelected : fillColor,
+        background: selected
+          ? `linear-gradient(color-mix(in srgb, var(--entry-fill) 80%, white), var(--entry-fill)) padding-box, conic-gradient(from var(--entry-angle), color-mix(in srgb, ${baseColor} 80%, black) 0deg, ${baseColor} 40deg, color-mix(in srgb, ${baseColor} 55%, white) 90deg, color-mix(in srgb, ${endStop} 55%, white) 130deg, ${endStop} 140deg, color-mix(in srgb, ${endStop} 80%, black) 180deg, ${endStop} 220deg, color-mix(in srgb, ${endStop} 55%, white) 230deg, color-mix(in srgb, ${baseColor} 55%, white) 270deg, ${baseColor} 320deg, color-mix(in srgb, ${baseColor} 80%, black) 360deg) border-box`
+          : `linear-gradient(color-mix(in srgb, var(--entry-fill) 80%, white), var(--entry-fill)) padding-box, linear-gradient(to bottom right, ${baseColor} 0%, var(--entry-fill) 50%, ${endStop} 100%) border-box`,
+        transition: "--entry-fill 220ms ease, box-shadow 150ms ease",
         ...(selected
-          ? { ["--tw-ring-color" as never]: `color-mix(in srgb, ${baseColor} 60%, black)` }
+          ? {
+              animation: "entry-selected-rotate 8s linear infinite",
+            }
           : {}),
+        color: `color-mix(in srgb, ${baseColor} 60%, black)`,
         touchAction: "none",
         ...style,
       }}
@@ -88,25 +97,35 @@ export function EntryBlock({
           className="absolute inset-x-0 top-0 h-1.5 cursor-ns-resize"
         />
       )}
-      <div className="overflow-hidden">
-        <div className="truncate font-semibold leading-tight">
-          {entry.title ? entry.title : projectName}
+      <div className="flex h-full flex-col gap-0.5 overflow-hidden">
+        <div className="flex items-baseline gap-2">
+          <div className="min-w-0 flex-1 truncate font-semibold leading-tight">
+            {entry.title ? entry.title : projectName}
+          </div>
+          <div className="shrink-0 text-[10px] leading-tight tabular-nums opacity-60">
+            {format(start, "HH:mm")}–{format(end, "HH:mm")}
+          </div>
         </div>
-        <div className="truncate opacity-70 leading-tight">
-          {entry.title ? `${projectName} · ` : ""}
-          {format(start, "HH:mm")}–{format(end, "HH:mm")} · {durLabel}{breakLabel}
-        </div>
-        {entry.tags && entry.tags.length > 0 && (
-          <div className="mt-0.5 flex flex-wrap gap-0.5">
-            {entry.tags.map((te) => (
-              <span
-                key={te.tagId}
-                className="inline-block rounded-sm px-1 text-[10px] leading-tight"
-                style={{ backgroundColor: `color-mix(in srgb, ${baseColor} 25%, white)` }}
-              >
-                {te.tag.name}
-              </span>
+        {entry.title && (
+          <div className="flex items-baseline gap-2 leading-tight">
+            <div className="min-w-0 flex-1 text-[12px] truncate opacity-75">{projectName}</div>
+            <div className="ml-auto shrink-0 text-[10px] tabular-nums opacity-60">
+              {durLabel}
+              {breakLabel}
+            </div>
+          </div>
+        )}
+        {(!entry.title || (entry.tags && entry.tags.length > 0)) && (
+          <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[10px] leading-tight opacity-70">
+            {entry.tags?.map((te) => (
+              <span key={te.tagId}>{te.tag.name}</span>
             ))}
+            {!entry.title && (
+              <span className="ml-auto tabular-nums opacity-85">
+                {durLabel}
+                {breakLabel}
+              </span>
+            )}
           </div>
         )}
       </div>
