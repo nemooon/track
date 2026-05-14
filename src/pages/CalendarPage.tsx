@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { WeekCalendar } from "@/components/calendar/WeekCalendar";
+import { AICheer } from "@/components/calendar/AICheer";
 import { apiFetch } from "@/lib/fetcher";
 import type { Project, Tag, UserSettings } from "@/types";
 
@@ -32,16 +33,21 @@ export function CalendarPage() {
   }
 
   return (
-    <WeekCalendar
-      anchor={anchor}
-      onNavigate={setAnchor}
-      dayCount={dayCount}
-      onDayCountChange={setDayCount}
-      projects={projects}
-      tags={tags}
-      workStart={settings?.workStart}
-      workEnd={settings?.workEnd}
-      workDays={settings?.workDays}
-    />
+    <div className="flex h-full flex-col">
+      <AICheer />
+      <div className="min-h-0 flex-1">
+        <WeekCalendar
+          anchor={anchor}
+          onNavigate={setAnchor}
+          dayCount={dayCount}
+          onDayCountChange={setDayCount}
+          projects={projects}
+          tags={tags}
+          workStart={settings?.workStart}
+          workEnd={settings?.workEnd}
+          workDays={settings?.workDays}
+        />
+      </div>
+    </div>
   );
 }

@@ -9,6 +9,7 @@ import { tags } from "./routes/tags";
 import { account } from "./routes/account";
 import { invitations } from "./routes/invitations";
 import { external } from "./routes/external";
+import { ai } from "./routes/ai";
 import { mcp } from "./mcp";
 import type { Env, AuthVars } from "./types";
 
@@ -32,5 +33,6 @@ app.route("/api/account", account);
 app.route("/api/passkeys", passkeyManage);
 app.route("/api/invitations", invitations);
 app.route("/api/external", external);
+app.route("/api/ai", ai);
 
 export default app;
