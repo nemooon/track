@@ -10,6 +10,7 @@ const FREE_LIMITS = {
   workersRequests: 100_000,
   d1ReadQueries: 5_000_000,
   d1WriteQueries: 100_000,
+  d1StorageBytes: 5 * 1024 * 1024 * 1024,
 } as const;
 
 type GraphQLResponse<T> = {
@@ -19,6 +20,7 @@ type GraphQLResponse<T> = {
 
 async function gql<T>(
   env: Env,
+  label: string,
   query: string,
   variables: Record<string, unknown>,
 ): Promise<T | null> {
@@ -30,10 +32,13 @@ async function gql<T>(
     },
     body: JSON.stringify({ query, variables }),
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    console.error(`[gql ${label}] http`, res.status, await res.text());
+    return null;
+  }
   const body = (await res.json()) as GraphQLResponse<T>;
   if (body.errors && body.errors.length > 0) {
-    console.error("graphql errors", body.errors);
+    console.error(`[gql ${label}] errors`, JSON.stringify(body.errors));
     return null;
   }
   return body.data ?? null;
@@ -80,6 +85,9 @@ cloudflare.get("/usage", async (c) => {
   const dateEnd = dateStart;
 
   const accountTag = env.CF_ACCOUNT_ID;
+  const storageRangeStart = new Date(startOfDay.getTime() - 2 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
 
   const aiQuery = `
     query($accountTag: string!, $start: Time!, $end: Time!) {
@@ -124,32 +132,75 @@ cloudflare.get("/usage", async (c) => {
       }
     }
   `;
+  const d1StorageQuery = `
+    query($accountTag: string!, $start: Date!, $end: Date!) {
+      viewer {
+        accounts(filter: { accountTag: $accountTag }) {
+          d1StorageAdaptiveGroups(
+            limit: 1000
+            filter: { date_geq: $start, date_leq: $end }
+            orderBy: [date_DESC]
+          ) {
+            max { databaseSizeBytes }
+            dimensions { databaseId date }
+          }
+        }
+      }
+    }
+  `;
 
   type AccountWrap<K extends string, V> = {
     viewer: { accounts: Array<Record<K, V[]>> };
   };
 
-  const [aiData, workersData, d1Data] = await Promise.all([
+  const [aiData, workersData, d1Data, d1StorageData] = await Promise.all([
     gql<AccountWrap<"aiInferenceAdaptiveGroups", { count?: number; sum?: { totalNeurons?: number } }>>(
       env,
+      "ai",
       aiQuery,
       { accountTag, start: datetimeStart, end: datetimeEnd },
     ),
     gql<AccountWrap<"workersInvocationsAdaptive", { sum?: { requests?: number; errors?: number } }>>(
       env,
+      "workers",
       workersQuery,
       { accountTag, start: datetimeStart, end: datetimeEnd },
     ),
     gql<AccountWrap<"d1AnalyticsAdaptiveGroups", { sum?: { readQueries?: number; writeQueries?: number } }>>(
       env,
+      "d1",
       d1Query,
       { accountTag, start: dateStart, end: dateEnd },
+    ),
+    gql<AccountWrap<"d1StorageAdaptiveGroups", { max?: { databaseSizeBytes?: number }; dimensions?: { databaseId: string; date: string } }>>(
+      env,
+      "d1-storage",
+      d1StorageQuery,
+      { accountTag, start: storageRangeStart, end: dateEnd },
     ),
   ]);
 
   const aiGroups = aiData?.viewer.accounts[0]?.aiInferenceAdaptiveGroups;
   const workersGroups = workersData?.viewer.accounts[0]?.workersInvocationsAdaptive;
   const d1Groups = d1Data?.viewer.accounts[0]?.d1AnalyticsAdaptiveGroups;
+  const d1StorageGroups = d1StorageData?.viewer.accounts[0]?.d1StorageAdaptiveGroups;
+
+  const latestSizeByDb = new Map<string, { date: string; size: number }>();
+  for (const g of d1StorageGroups ?? []) {
+    const dims = (g as { dimensions?: { databaseId: string; date: string } })
+      .dimensions;
+    const size = (g as { max?: { databaseSizeBytes?: number } }).max
+      ?.databaseSizeBytes;
+    if (!dims || size == null) continue;
+    const prev = latestSizeByDb.get(dims.databaseId);
+    if (!prev || dims.date > prev.date) {
+      latestSizeByDb.set(dims.databaseId, { date: dims.date, size });
+    }
+  }
+  const totalStorageBytes = [...latestSizeByDb.values()].reduce(
+    (acc, v) => acc + v.size,
+    0,
+  );
 
   const tomorrowUtc = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
 
@@ -176,8 +227,11 @@ cloudflare.get("/usage", async (c) => {
       ok: d1Data !== null,
       reads: sumField(d1Groups, "readQueries"),
       writes: sumField(d1Groups, "writeQueries"),
+      storageBytes: totalStorageBytes,
+      storageOk: d1StorageData !== null,
       readsLimit: FREE_LIMITS.d1ReadQueries,
       writesLimit: FREE_LIMITS.d1WriteQueries,
+      storageLimit: FREE_LIMITS.d1StorageBytes,
     },
   };
 

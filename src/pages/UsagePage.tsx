@@ -11,15 +11,25 @@ type Usage = {
   workers?: { ok: boolean; requests: number; errors: number; limit: number };
   d1?: {
     ok: boolean;
+    storageOk: boolean;
     reads: number;
     writes: number;
+    storageBytes: number;
     readsLimit: number;
     writesLimit: number;
+    storageLimit: number;
   };
 };
 
 function formatNumber(n: number): string {
   return n.toLocaleString("ja-JP");
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 function formatDateTime(iso?: string): string {
@@ -39,12 +49,14 @@ function Meter({
   limit,
   unit,
   ok,
+  format = formatNumber,
 }: {
   label: string;
   used: number;
   limit: number;
-  unit: string;
+  unit?: string;
   ok: boolean;
+  format?: (n: number) => string;
 }) {
   const pct = Math.min(100, (used / limit) * 100);
   const remaining = Math.max(0, limit - used);
@@ -71,10 +83,11 @@ function Meter({
       </div>
       <div className="mt-1 flex items-baseline gap-2">
         <span className="text-xl font-semibold tabular-nums">
-          {formatNumber(used)}
+          {format(used)}
         </span>
         <span className="text-sm text-neutral-500">
-          / {formatNumber(limit)} {unit}
+          / {format(limit)}
+          {unit ? ` ${unit}` : ""}
         </span>
         <span className="ml-auto text-xs text-neutral-500 tabular-nums">
           {pct.toFixed(1)}%
@@ -87,7 +100,8 @@ function Meter({
         />
       </div>
       <div className="mt-1 text-xs text-neutral-500 tabular-nums">
-        残 {formatNumber(remaining)} {unit}
+        残 {format(remaining)}
+        {unit ? ` ${unit}` : ""}
       </div>
     </div>
   );
@@ -188,6 +202,13 @@ export function UsagePage() {
                   limit={data.d1.writesLimit}
                   unit="queries"
                   ok={data.d1.ok}
+                />
+                <Meter
+                  label="D1 ストレージ"
+                  used={data.d1.storageBytes}
+                  limit={data.d1.storageLimit}
+                  ok={data.d1.storageOk}
+                  format={formatBytes}
                 />
               </>
             )}
