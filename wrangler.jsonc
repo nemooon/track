@@ -19,5 +19,8 @@
 	],
 	"ai": {
 		"binding": "AI"
+	},
+	"vars": {
+		"CF_ACCOUNT_ID": "a6cf16ec3dbaef654c2f44c559844a01"
 	}
 }

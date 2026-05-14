@@ -3,6 +3,8 @@ export type Env = {
   JWT_SECRET: string;
   ASSETS: Fetcher;
   AI: Ai;
+  CF_ACCOUNT_ID?: string;
+  CF_API_TOKEN?: string;
 };
 
 export type AuthVars = {
