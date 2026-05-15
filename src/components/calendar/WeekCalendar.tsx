@@ -24,6 +24,7 @@ import { layoutBlocks, layoutEntries } from "./layout";
 import { useCalendarStore, ZOOM_LEVELS } from "./calendarStore";
 import { EntryEditDialog } from "./EntryEditDialog";
 import { cn } from "@/lib/utils";
+import { useMediaQuery } from "@/lib/useMediaQuery";
 import {
   ensureWorkspacePermission,
   getWorkspaceHandle,
@@ -124,18 +125,25 @@ export function WeekCalendar({
   workDays?: number[];
 }) {
   const qc = useQueryClient();
+  const isMobile = useMediaQuery("(max-width: 639px)");
+  const isTablet = useMediaQuery("(min-width: 640px) and (max-width: 767px)");
+  const effectiveDayCount: 1 | 3 | "week" | 7 = isMobile
+    ? 1
+    : isTablet && (dayCount === "week" || dayCount === 7)
+      ? 3
+      : dayCount;
   const { from, to } = React.useMemo(() => {
-    if (dayCount === "week" || dayCount === 7) return getWeekRange(anchor);
+    if (effectiveDayCount === "week" || effectiveDayCount === 7) return getWeekRange(anchor);
     const start = new Date(anchor);
     start.setHours(0, 0, 0, 0);
-    return { from: start, to: addDays(start, dayCount) };
-  }, [anchor, dayCount]);
+    return { from: start, to: addDays(start, effectiveDayCount) };
+  }, [anchor, effectiveDayCount]);
   const days = React.useMemo(() => {
     const all = Array.from({ length: 7 }, (_, i) => addDays(from, i));
-    if (dayCount === "week") return workDays ? all.filter((d) => workDays.includes(d.getDay())) : all;
-    if (dayCount === 7) return all;
-    return Array.from({ length: dayCount }, (_, i) => addDays(from, i));
-  }, [from, dayCount, workDays]);
+    if (effectiveDayCount === "week") return workDays ? all.filter((d) => workDays.includes(d.getDay())) : all;
+    if (effectiveDayCount === 7) return all;
+    return Array.from({ length: effectiveDayCount }, (_, i) => addDays(from, i));
+  }, [from, effectiveDayCount, workDays]);
   const weekKey = from.toISOString();
 
   const entriesQ = useQuery<TimeEntry[]>({
@@ -374,6 +382,78 @@ export function WeekCalendar({
     },
   });
 
+  // -- long-press for touch --
+  const LONG_PRESS_MS = 400;
+  const LONG_PRESS_MOVE_PX = 10;
+  const longPressRef = React.useRef<{
+    timer: ReturnType<typeof setTimeout>;
+    cleanup: () => void;
+  } | null>(null);
+
+  function cancelLongPress() {
+    if (longPressRef.current) {
+      clearTimeout(longPressRef.current.timer);
+      longPressRef.current.cleanup();
+      longPressRef.current = null;
+    }
+  }
+
+  function startLongPress(e: React.PointerEvent, onFire: () => void) {
+    cancelLongPress();
+    const { pointerId } = e;
+    const startX = e.clientX;
+    const startY = e.clientY;
+
+    const handleMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (Math.hypot(dx, dy) > LONG_PRESS_MOVE_PX) cancelLongPress();
+    };
+    const handleEnd = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      cancelLongPress();
+    };
+
+    window.addEventListener("pointermove", handleMove, { passive: true });
+    window.addEventListener("pointerup", handleEnd);
+    window.addEventListener("pointercancel", handleEnd);
+
+    const cleanup = () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleEnd);
+      window.removeEventListener("pointercancel", handleEnd);
+    };
+
+    longPressRef.current = {
+      cleanup,
+      timer: setTimeout(() => {
+        const ref = longPressRef.current;
+        if (!ref) return;
+        longPressRef.current = null;
+        ref.cleanup();
+        try {
+          navigator.vibrate?.(20);
+        } catch {
+          // ignore
+        }
+        onFire();
+      }, LONG_PRESS_MS),
+    };
+  }
+
+  React.useEffect(() => () => cancelLongPress(), []);
+
+  // While dragging on touch, block the browser from taking over the gesture as a scroll.
+  // Changing `touch-action` mid-gesture is unreliable (especially on iOS Safari), so we
+  // attach a non-passive touchmove listener and preventDefault directly.
+  React.useEffect(() => {
+    if (interaction.kind === "idle") return;
+    const handler = (e: TouchEvent) => e.preventDefault();
+    document.addEventListener("touchmove", handler, { passive: false });
+    return () => document.removeEventListener("touchmove", handler);
+  }, [interaction.kind]);
+
   // -- drag handlers --
   function dayColumnYFromClient(el: HTMLElement, clientY: number): number {
     const rect = el.getBoundingClientRect();
@@ -393,15 +473,27 @@ export function WeekCalendar({
   function onDayPointerDown(e: React.PointerEvent<HTMLDivElement>, dayIndex: number) {
     if (e.button !== 0) return;
     const target = e.currentTarget;
-    target.setPointerCapture(e.pointerId);
+    const pointerId = e.pointerId;
     const y = dayColumnYFromClient(target, e.clientY);
     const minute = yToMinutes(y, hourPx);
-    setInteraction({
-      kind: "creating",
-      dayIndex,
-      anchorMin: minute,
-      currentMin: minute,
-    });
+    const begin = () => {
+      try {
+        target.setPointerCapture(pointerId);
+      } catch {
+        // ignore
+      }
+      setInteraction({
+        kind: "creating",
+        dayIndex,
+        anchorMin: minute,
+        currentMin: minute,
+      });
+    };
+    if (e.pointerType === "touch") {
+      startLongPress(e, begin);
+      return;
+    }
+    begin();
   }
 
   function onDayPointerMove(e: React.PointerEvent<HTMLDivElement>) {
@@ -521,7 +613,6 @@ export function WeekCalendar({
   function onEntryPointerDown(e: React.PointerEvent, entry: TimeEntry) {
     if (e.button !== 0) return;
     e.stopPropagation();
-    setSelected(entry.id);
     const start = new Date(entry.start);
     const end = new Date(entry.end);
     const dayIndex = days.findIndex((d) => isSameDay(d, start));
@@ -531,35 +622,50 @@ export function WeekCalendar({
     const y = dayColumnYFromClient(col, e.clientY);
     const pointerMin = yToMinutes(y, hourPx);
     const pointerOffsetMin = pointerMin - minutesFromDayStart(start);
-    setInteraction({
-      kind: "moving",
-      entryId: entry.id,
-      originalStart: start,
-      originalEnd: end,
-      dayIndex,
-      startMin: minutesFromDayStart(start),
-      pointerOffsetMin,
-    });
+    const begin = () => {
+      setSelected(entry.id);
+      setInteraction({
+        kind: "moving",
+        entryId: entry.id,
+        originalStart: start,
+        originalEnd: end,
+        dayIndex,
+        startMin: minutesFromDayStart(start),
+        pointerOffsetMin,
+      });
+    };
+    if (e.pointerType === "touch") {
+      startLongPress(e, begin);
+      return;
+    }
+    begin();
   }
 
   function onResizeDown(e: React.PointerEvent, entry: TimeEntry, edge: "top" | "bottom") {
     if (e.button !== 0) return;
     e.stopPropagation();
-    setSelected(entry.id);
     const start = new Date(entry.start);
     const end = new Date(entry.end);
     const dayIndex = days.findIndex((d) => isSameDay(d, start));
     if (dayIndex < 0) return;
-    setInteraction({
-      kind: "resizing",
-      entryId: entry.id,
-      edge,
-      originalStart: start,
-      originalEnd: end,
-      startMin: minutesFromDayStart(start),
-      endMin: minutesFromDayStart(end),
-      dayIndex,
-    });
+    const begin = () => {
+      setSelected(entry.id);
+      setInteraction({
+        kind: "resizing",
+        entryId: entry.id,
+        edge,
+        originalStart: start,
+        originalEnd: end,
+        startMin: minutesFromDayStart(start),
+        endMin: minutesFromDayStart(end),
+        dayIndex,
+      });
+    };
+    if (e.pointerType === "touch") {
+      startLongPress(e, begin);
+      return;
+    }
+    begin();
   }
 
   // Compose entries to render — applying in-progress transforms
@@ -596,6 +702,27 @@ export function WeekCalendar({
       return sum + Math.max(0, ms / 60000 - (e.breakMinutes ?? 0));
     }, 0),
   );
+
+  // Hover indicator — follows the cursor when idle, or the active drag edge
+  // during creating/moving/resizing (so long-press users get the same time feedback).
+  const displayHover: { dayIndex: number; minute: number } | null = (() => {
+    if (interaction.kind === "creating") {
+      return { dayIndex: interaction.dayIndex, minute: interaction.currentMin };
+    }
+    if (interaction.kind === "moving") {
+      const duration =
+        minutesFromDayStart(interaction.originalEnd) -
+        minutesFromDayStart(interaction.originalStart);
+      return { dayIndex: interaction.dayIndex, minute: interaction.startMin + duration };
+    }
+    if (interaction.kind === "resizing") {
+      return {
+        dayIndex: interaction.dayIndex,
+        minute: interaction.edge === "top" ? interaction.startMin : interaction.endMin,
+      };
+    }
+    return interaction.kind === "idle" ? hoverState : null;
+  })();
 
   // Keyboard shortcuts
   React.useEffect(() => {
@@ -658,9 +785,9 @@ export function WeekCalendar({
       }}
     >
       {/* Week navigation */}
-      <div className="flex items-center gap-2 border-b border-neutral-200 px-6 py-3">
+      <div className="flex flex-wrap items-center gap-2 border-b border-neutral-200 px-3 py-3 sm:px-6">
         <button
-          onClick={() => onNavigate(addDays(anchor, dayCount === 1 || dayCount === 3 ? -dayCount : -7))}
+          onClick={() => onNavigate(addDays(anchor, effectiveDayCount === 1 || effectiveDayCount === 3 ? -effectiveDayCount : -7))}
           className="rounded border border-neutral-200 px-2 py-1 text-sm hover:bg-neutral-50"
         >
           ‹
@@ -669,103 +796,113 @@ export function WeekCalendar({
           onClick={() => onNavigate(new Date())}
           className="rounded border border-neutral-200 px-3 py-1 text-sm hover:bg-neutral-50"
         >
-          {dayCount === 1 || dayCount === 3 ? "今日" : "今週"}
+          {effectiveDayCount === 1 || effectiveDayCount === 3 ? "今日" : "今週"}
         </button>
         <button
-          onClick={() => onNavigate(addDays(anchor, dayCount === 1 || dayCount === 3 ? dayCount : 7))}
+          onClick={() => onNavigate(addDays(anchor, effectiveDayCount === 1 || effectiveDayCount === 3 ? effectiveDayCount : 7))}
           className="rounded border border-neutral-200 px-2 py-1 text-sm hover:bg-neutral-50"
         >
           ›
         </button>
-        <div className="ml-3 text-sm font-medium">
-          {dayCount === 1
+        <div className="ml-1 text-sm font-medium sm:ml-3">
+          {effectiveDayCount === 1
             ? format(from, "yyyy/MM/dd")
             : `${format(from, "yyyy/MM/dd")} – ${format(addDays(from, 6), "MM/dd")}`}
         </div>
-        <button
-          onClick={toggleShowKot}
-          title="KING OF TIME の打刻・スケジュール（モックデータ）を表示"
-          className={cn(
-            "ml-3 rounded border px-2 py-1 text-sm",
-            showKot
-              ? "border-kot bg-kot/10 text-kot"
-              : "border-neutral-200 text-neutral-500 hover:bg-neutral-50",
-          )}
-        >
-          KING OF TIME 連携（モック）
-        </button>
-        <button
-          onClick={toggleShowOutlook}
-          title="Outlook の予定（モックデータ）を表示"
-          className={cn(
-            "ml-1 rounded border px-2 py-1 text-sm",
-            showOutlook
-              ? "border-outlook bg-outlook/10 text-outlook"
-              : "border-neutral-200 text-neutral-500 hover:bg-neutral-50",
-          )}
-        >
-          Outlook 連携（モック）
-        </button>
-        {wsSupported && (
+        {!isMobile && (
           <>
             <button
-              onClick={handleToggleWorkspace}
-              title="ローカル Workspace のファイル変更・git コミット時刻からヒントを表示"
+              onClick={toggleShowKot}
+              title="KING OF TIME の打刻・スケジュール（モックデータ）を表示"
               className={cn(
-                "ml-1 rounded border px-2 py-1 text-sm",
-                showWorkspace
-                  ? "border-neutral-700 bg-neutral-100 text-neutral-700"
+                "ml-3 rounded border px-2 py-1 text-sm",
+                showKot
+                  ? "border-kot bg-kot/10 text-kot"
                   : "border-neutral-200 text-neutral-500 hover:bg-neutral-50",
               )}
             >
-              Workspace ヒント
+              KING OF TIME 連携（モック）
             </button>
-            {showWorkspace && (
-              <div
-                className="ml-1 flex items-center rounded border border-neutral-200 text-xs text-neutral-500"
-                title="同じリポジトリ内でこの時間以内の隙間は結合"
-              >
-                <span className="px-1.5">結合</span>
-                {([30, 60, 120] as const).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setWorkspaceGapMinutes(m)}
-                    className={cn(
-                      "px-1.5 py-1 tabular-nums",
-                      workspaceGapMinutes === m
-                        ? "bg-neutral-700 text-white"
-                        : "hover:bg-neutral-50",
-                    )}
+            <button
+              onClick={toggleShowOutlook}
+              title="Outlook の予定（モックデータ）を表示"
+              className={cn(
+                "ml-1 rounded border px-2 py-1 text-sm",
+                showOutlook
+                  ? "border-outlook bg-outlook/10 text-outlook"
+                  : "border-neutral-200 text-neutral-500 hover:bg-neutral-50",
+              )}
+            >
+              Outlook 連携（モック）
+            </button>
+            {wsSupported && (
+              <>
+                <button
+                  onClick={handleToggleWorkspace}
+                  title="ローカル Workspace のファイル変更・git コミット時刻からヒントを表示"
+                  className={cn(
+                    "ml-1 rounded border px-2 py-1 text-sm",
+                    showWorkspace
+                      ? "border-neutral-700 bg-neutral-100 text-neutral-700"
+                      : "border-neutral-200 text-neutral-500 hover:bg-neutral-50",
+                  )}
+                >
+                  Workspace ヒント
+                </button>
+                {showWorkspace && (
+                  <div
+                    className="ml-1 flex items-center rounded border border-neutral-200 text-xs text-neutral-500"
+                    title="同じリポジトリ内でこの時間以内の隙間は結合"
                   >
-                    {m}分
-                  </button>
-                ))}
-              </div>
+                    <span className="px-1.5">結合</span>
+                    {([30, 60, 120] as const).map((m) => (
+                      <button
+                        key={m}
+                        onClick={() => setWorkspaceGapMinutes(m)}
+                        className={cn(
+                          "px-1.5 py-1 tabular-nums",
+                          workspaceGapMinutes === m
+                            ? "bg-neutral-700 text-white"
+                            : "hover:bg-neutral-50",
+                        )}
+                      >
+                        {m}分
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </>
         )}
         <div className="ml-auto flex gap-1">
           {(
             [
-              { key: 1, label: "1日" },
-              { key: 3, label: "3日" },
-              { key: "week", label: "稼働日" },
-              { key: 7, label: "1週間" },
+              { key: 1, label: "1日", minWidth: 0 },
+              { key: 3, label: "3日", minWidth: 640 },
+              { key: "week", label: "稼働日", minWidth: 768 },
+              { key: 7, label: "1週間", minWidth: 768 },
             ] as const
-          ).map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => onDayCountChange(key)}
-              className={cn(
-                "rounded border px-2 py-1 text-sm",
-                dayCount === key
-                  ? "border-neutral-700 bg-neutral-700 text-white"
-                  : "border-neutral-200 hover:bg-neutral-50",
-              )}
-            >
-              {label}
-            </button>
-          ))}
+          )
+            .filter(({ minWidth }) => {
+              if (minWidth === 0) return true;
+              if (minWidth === 640) return !isMobile;
+              return !isMobile && !isTablet;
+            })
+            .map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => onDayCountChange(key)}
+                className={cn(
+                  "rounded border px-2 py-1 text-sm",
+                  effectiveDayCount === key
+                    ? "border-neutral-700 bg-neutral-700 text-white"
+                    : "border-neutral-200 hover:bg-neutral-50",
+                )}
+              >
+                {label}
+              </button>
+            ))}
         </div>
       </div>
 
@@ -885,7 +1022,7 @@ export function WeekCalendar({
               style={{
                 height: (DAY_END_HOUR - DAY_START_HOUR) * hourPx + 1,
                 backgroundColor: (workDays != null || hasWorkSettings) ? "oklch(92.2% 0 0 / 0.2)" : undefined,
-                touchAction: "none",
+                touchAction: interaction.kind === "idle" ? "pan-y" : "none",
               }}
               onPointerDown={(e) => {
                 if ((e.target as HTMLElement).closest("[data-entry]")) return;
@@ -893,13 +1030,13 @@ export function WeekCalendar({
               }}
               onPointerMove={(e) => {
                 onDayPointerMove(e);
-                if (interaction.kind === "idle") {
+                if (interaction.kind === "idle" && e.pointerType !== "touch") {
                   const y = dayColumnYFromClient(e.currentTarget, e.clientY);
                   setHoverState({ dayIndex, minute: yToMinutes(y, hourPx) });
                 }
               }}
-              onPointerLeave={() => {
-                if (interaction.kind === "idle") setHoverState(null);
+              onPointerLeave={(e) => {
+                if (interaction.kind === "idle" && e.pointerType !== "touch") setHoverState(null);
               }}
               onPointerUp={onDayPointerUp}
             >
@@ -1071,10 +1208,9 @@ export function WeekCalendar({
                         width,
                       }}
                       title={tooltip}
-                      onPointerDown={(ev) => {
-                        if (ev.button !== 0) return;
+                      onPointerDown={(ev) => ev.stopPropagation()}
+                      onClick={(ev) => {
                         ev.stopPropagation();
-                        ev.preventDefault();
                         if (isWorkspace && item.repo) {
                           const mapped = getRepoProjectMapping(item.repo);
                           const validMapped =
@@ -1142,6 +1278,7 @@ export function WeekCalendar({
                         selected={selectedEntryId === entry.id && !isGhost}
                         ghost={!!isGhost}
                         hourPx={hourPx}
+                        touchAction={interaction.kind === "idle" ? "pan-y" : "none"}
                         onSelect={() => setSelected(entry.id)}
                         onDoubleClick={() => {
                           setSelected(entry.id);
@@ -1216,15 +1353,15 @@ export function WeekCalendar({
               )}
 
               {/* hover time line */}
-              {interaction.kind === "idle" && hoverState?.dayIndex === dayIndex && (
+              {displayHover?.dayIndex === dayIndex && (
                 <div
                   className="pointer-events-none absolute inset-x-0 z-10"
-                  style={{ top: minutesToY(hoverState.minute, hourPx) }}
+                  style={{ top: minutesToY(displayHover.minute, hourPx) }}
                 >
                   <div className="absolute inset-x-0 -top-px h-px bg-neutral-400" />
                   <div className="absolute right-full -translate-y-1/2 rounded-full bg-neutral-700 px-1 py-0.5 text-[9px] leading-tight text-white tabular-nums">
                     {(() => {
-                      const total = hoverState.minute + DAY_START_HOUR * 60;
+                      const total = displayHover.minute + DAY_START_HOUR * 60;
                       const h = Math.floor(total / 60);
                       const m = total % 60;
                       return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;

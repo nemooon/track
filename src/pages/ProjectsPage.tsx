@@ -247,7 +247,7 @@ export function ProjectsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 p-6">
+    <div className="mx-auto max-w-3xl space-y-8 p-4 sm:p-6">
       {/* Clients */}
       <section>
         <div className="mb-3 flex items-center justify-between">

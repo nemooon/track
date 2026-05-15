@@ -164,7 +164,7 @@ export function ReportsPage() {
   const total = data?.totalMinutes ?? 0;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
+    <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
       {/* Range / GroupBy / Navigation */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex gap-1 rounded-md border border-neutral-200 p-0.5">

@@ -19,6 +19,7 @@ export function EntryBlock({
   onSelect,
   onDoubleClick,
   style,
+  touchAction = "none",
 }: {
   entry: TimeEntry;
   laneIndex: number;
@@ -32,6 +33,7 @@ export function EntryBlock({
   onSelect?: () => void;
   onDoubleClick?: () => void;
   style?: React.CSSProperties;
+  touchAction?: React.CSSProperties["touchAction"];
 }) {
   const start = new Date(entry.start);
   const end = new Date(entry.end);
@@ -84,7 +86,7 @@ export function EntryBlock({
             }
           : {}),
         color: `color-mix(in srgb, ${baseColor} 60%, black)`,
-        touchAction: "none",
+        touchAction,
         ...style,
       }}
     >

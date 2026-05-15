@@ -13,6 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { useFaviconStatus } from "@/lib/useFaviconStatus";
+import { useMediaQuery } from "@/lib/useMediaQuery";
 
 const links = [
   { href: "/calendar", label: "カレンダー", icon: CalendarDays },
@@ -37,15 +38,18 @@ export function AppLayout() {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
   useFaviconStatus();
-  const [collapsed, setCollapsed] = useState<boolean>(() => readCollapsed());
+  const isMobile = useMediaQuery("(max-width: 639px)");
+  const [storedCollapsed, setStoredCollapsed] = useState<boolean>(() => readCollapsed());
+  const collapsed = isMobile ? true : storedCollapsed;
 
   useEffect(() => {
+    if (isMobile) return;
     try {
-      localStorage.setItem(SIDEBAR_STORAGE_KEY, collapsed ? "1" : "0");
+      localStorage.setItem(SIDEBAR_STORAGE_KEY, storedCollapsed ? "1" : "0");
     } catch {
       // ignore
     }
-  }, [collapsed]);
+  }, [storedCollapsed, isMobile]);
 
   return (
     <div className="flex h-svh">
@@ -68,10 +72,11 @@ export function AppLayout() {
           )}
           <button
             type="button"
-            onClick={() => setCollapsed((v) => !v)}
+            onClick={() => setStoredCollapsed((v) => !v)}
             aria-label={collapsed ? "サイドバーを開く" : "サイドバーを折り畳む"}
             title={collapsed ? "サイドバーを開く" : "サイドバーを折り畳む"}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-neutral-600 hover:bg-neutral-200"
+            disabled={isMobile}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-neutral-600 hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
           >
             {collapsed ? (
               <PanelLeftOpen className="h-4 w-4" />

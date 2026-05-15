@@ -250,7 +250,7 @@ export function AccountPage() {
   }
 
   return (
-    <div className="mx-auto max-w-xl space-y-8 p-6">
+    <div className="mx-auto max-w-xl space-y-8 p-4 sm:p-6">
       {/* Profile */}
       <section>
         <h2 className="mb-4 text-lg font-semibold">プロフィール</h2>

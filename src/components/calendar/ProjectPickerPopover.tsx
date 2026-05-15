@@ -178,16 +178,20 @@ export function ProjectPickerPopover({
     grouped.set(p.client.name, list);
   }
 
-  if (!mounted) return null;
+  // Lock position on mount. Re-clamping on every render makes the popover jump
+  // when the soft keyboard opens/closes (changing window.innerHeight).
+  const [position] = React.useState(() => ({
+    left: Math.min(anchor.left, window.innerWidth - WIDTH),
+    top: Math.min(anchor.top, window.innerHeight - 320),
+  }));
 
-  const left = Math.min(anchor.left, window.innerWidth - WIDTH);
-  const top = Math.min(anchor.top, window.innerHeight - 320);
+  if (!mounted) return null;
 
   return createPortal(
     <div
       ref={ref}
       className="fixed z-50 overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg"
-      style={{ left, top, width: WIDTH }}
+      style={{ left: position.left, top: position.top, width: WIDTH }}
     >
       {step === "project" ? (
         <>
