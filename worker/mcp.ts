@@ -5,7 +5,7 @@ import { toReqRes, toFetchResponse } from "fetch-to-node";
 import { z } from "zod";
 import { getPrisma } from "./db";
 import { reportsQuerySchema } from "@/lib/validators";
-import { getWeekRange, getMonthRange } from "@/lib/time";
+import { getWeekRange, getMonthRange, snapToQuarter, sameDay } from "@/lib/time";
 import type { Env, AuthVars } from "./types";
 
 type Prisma = ReturnType<typeof getPrisma>;
@@ -23,6 +23,74 @@ function asText(data: unknown) {
 
 function buildServer(userId: string, prisma: Prisma) {
   const server = new McpServer({ name: "track-mcp", version: "0.2.0" });
+
+  const colorHex = z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, "color must be a 6-digit hex like #ff0000");
+
+  server.tool(
+    "list_clients",
+    "List clients belonging to the authenticated user.",
+    {},
+    async () => {
+      const list = await prisma.client.findMany({
+        where: { userId },
+        orderBy: { createdAt: "asc" },
+      });
+      return asText(list);
+    },
+  );
+
+  server.tool(
+    "create_client",
+    "Create a new client for the authenticated user.",
+    {
+      name: z.string().min(1).max(100),
+    },
+    async ({ name }) => {
+      const created = await prisma.client.create({
+        data: { userId, name },
+      });
+      return asText(created);
+    },
+  );
+
+  server.tool(
+    "update_client",
+    "Update fields of an existing client. Only provided fields change.",
+    {
+      id: z.string().min(1),
+      name: z.string().min(1).max(100).optional(),
+      archived: z.boolean().optional(),
+    },
+    async ({ id, name, archived }) => {
+      const existing = await prisma.client.findFirst({ where: { id, userId } });
+      if (!existing) return asText({ error: "not_found" });
+      const data: Record<string, unknown> = {};
+      if (name !== undefined) data.name = name;
+      if (archived !== undefined) data.archived = archived;
+      const updated = await prisma.client.update({ where: { id }, data });
+      return asText(updated);
+    },
+  );
+
+  server.tool(
+    "delete_client",
+    "Delete a client. Fails if the client still has projects.",
+    {
+      id: z.string().min(1),
+    },
+    async ({ id }) => {
+      const existing = await prisma.client.findFirst({ where: { id, userId } });
+      if (!existing) return asText({ error: "not_found" });
+      const projectCount = await prisma.project.count({ where: { clientId: id } });
+      if (projectCount > 0) {
+        return asText({ error: "client_has_projects", projectCount });
+      }
+      await prisma.client.delete({ where: { id } });
+      return asText({ ok: true, id });
+    },
+  );
 
   server.tool(
     "list_projects",
@@ -44,6 +112,91 @@ function buildServer(userId: string, prisma: Prisma) {
   );
 
   server.tool(
+    "create_project",
+    "Create a new project under a client.",
+    {
+      clientId: z.string().min(1),
+      name: z.string().min(1).max(100),
+      color: colorHex,
+      tagIds: z
+        .array(z.string().min(1))
+        .optional()
+        .describe("Tags to attach as project defaults."),
+    },
+    async ({ clientId, name, color, tagIds }) => {
+      const client = await prisma.client.findFirst({
+        where: { id: clientId, userId },
+      });
+      if (!client) return asText({ error: "client_not_found" });
+      const created = await prisma.project.create({
+        data: {
+          userId,
+          clientId,
+          name,
+          color,
+          tags: tagIds?.length
+            ? { create: tagIds.map((tagId) => ({ tagId })) }
+            : undefined,
+        },
+        include: { client: true, tags: { include: { tag: true } } },
+      });
+      return asText(created);
+    },
+  );
+
+  server.tool(
+    "update_project",
+    "Update fields of an existing project. Only provided fields change. Pass tagIds to fully replace the project's default tag set.",
+    {
+      id: z.string().min(1),
+      clientId: z.string().min(1).optional(),
+      name: z.string().min(1).max(100).optional(),
+      color: colorHex.optional(),
+      archived: z.boolean().optional(),
+      tagIds: z.array(z.string().min(1)).optional(),
+    },
+    async ({ id, clientId, name, color, archived, tagIds }) => {
+      const existing = await prisma.project.findFirst({ where: { id, userId } });
+      if (!existing) return asText({ error: "not_found" });
+      const data: Record<string, unknown> = {};
+      if (clientId !== undefined) data.clientId = clientId;
+      if (name !== undefined) data.name = name;
+      if (color !== undefined) data.color = color;
+      if (archived !== undefined) data.archived = archived;
+      if (tagIds !== undefined) {
+        data.tags = {
+          deleteMany: {},
+          create: tagIds.map((tagId) => ({ tagId })),
+        };
+      }
+      const updated = await prisma.project.update({
+        where: { id },
+        data,
+        include: { client: true, tags: { include: { tag: true } } },
+      });
+      return asText(updated);
+    },
+  );
+
+  server.tool(
+    "delete_project",
+    "Delete a project. Fails if it still has time entries.",
+    {
+      id: z.string().min(1),
+    },
+    async ({ id }) => {
+      const existing = await prisma.project.findFirst({ where: { id, userId } });
+      if (!existing) return asText({ error: "not_found" });
+      const entryCount = await prisma.timeEntry.count({ where: { projectId: id } });
+      if (entryCount > 0) {
+        return asText({ error: "project_has_entries", entryCount });
+      }
+      await prisma.project.delete({ where: { id } });
+      return asText({ ok: true, id });
+    },
+  );
+
+  server.tool(
     "list_tags",
     "List all tags belonging to the authenticated user.",
     {},
@@ -53,6 +206,58 @@ function buildServer(userId: string, prisma: Prisma) {
         orderBy: { name: "asc" },
       });
       return asText(list);
+    },
+  );
+
+  server.tool(
+    "create_tag",
+    "Create a new tag. Fails if a tag with the same name already exists.",
+    {
+      name: z.string().min(1).max(50),
+      color: colorHex,
+    },
+    async ({ name, color }) => {
+      const existing = await prisma.tag.findUnique({
+        where: { userId_name: { userId, name } },
+      });
+      if (existing) return asText({ error: "tag_already_exists" });
+      const created = await prisma.tag.create({
+        data: { userId, name, color },
+      });
+      return asText(created);
+    },
+  );
+
+  server.tool(
+    "update_tag",
+    "Update a tag's name or color. Only provided fields change.",
+    {
+      id: z.string().min(1),
+      name: z.string().min(1).max(50).optional(),
+      color: colorHex.optional(),
+    },
+    async ({ id, name, color }) => {
+      const existing = await prisma.tag.findFirst({ where: { id, userId } });
+      if (!existing) return asText({ error: "not_found" });
+      const data: Record<string, unknown> = {};
+      if (name !== undefined) data.name = name;
+      if (color !== undefined) data.color = color;
+      const updated = await prisma.tag.update({ where: { id }, data });
+      return asText(updated);
+    },
+  );
+
+  server.tool(
+    "delete_tag",
+    "Delete a tag. Removes it from any projects or entries it was attached to.",
+    {
+      id: z.string().min(1),
+    },
+    async ({ id }) => {
+      const existing = await prisma.tag.findFirst({ where: { id, userId } });
+      if (!existing) return asText({ error: "not_found" });
+      await prisma.tag.delete({ where: { id } });
+      return asText({ ok: true, id });
     },
   );
 
@@ -81,6 +286,142 @@ function buildServer(userId: string, prisma: Prisma) {
         orderBy: { start: "asc" },
       });
       return asText(list);
+    },
+  );
+
+  server.tool(
+    "create_entry",
+    "Create a time entry for the authenticated user. Times are snapped to 15-minute boundaries. Start and end must fall on the same day (end may be 00:00 of the next day).",
+    {
+      start: z
+        .string()
+        .describe("Start time, ISO 8601 datetime."),
+      end: z
+        .string()
+        .describe("End time, ISO 8601 datetime. Must be after start."),
+      projectId: z
+        .string()
+        .min(1)
+        .nullable()
+        .optional()
+        .describe("Project ID to associate. Omit or null for no project."),
+      title: z.string().max(100).nullable().optional(),
+      note: z.string().max(500).nullable().optional(),
+      tagIds: z.array(z.string().min(1)).optional(),
+      breakMinutes: z.number().int().min(0).max(600).optional(),
+    },
+    async ({ start, end, projectId, title, note, tagIds, breakMinutes }) => {
+      const startDate = snapToQuarter(new Date(start));
+      const endDate = snapToQuarter(new Date(end));
+      if (endDate <= startDate) {
+        return asText({ error: "end_must_be_after_start" });
+      }
+      if (
+        !sameDay(startDate, endDate) &&
+        !(endDate.getHours() === 0 && endDate.getMinutes() === 0)
+      ) {
+        return asText({ error: "entry_must_be_same_day" });
+      }
+      const ids = tagIds ?? [];
+      const created = await prisma.timeEntry.create({
+        data: {
+          userId,
+          projectId: projectId ?? null,
+          start: startDate,
+          end: endDate,
+          title: title ?? null,
+          note: note ?? null,
+          breakMinutes: breakMinutes ?? 0,
+          tags: ids.length > 0 ? { create: ids.map((tagId) => ({ tagId })) } : undefined,
+        },
+        include: {
+          project: { include: { client: true } },
+          tags: { include: { tag: true } },
+        },
+      });
+      return asText(created);
+    },
+  );
+
+  server.tool(
+    "update_entry",
+    "Update fields of an existing time entry owned by the authenticated user. Only provided fields are changed; omit a field to leave it as-is. Pass null to clear projectId/title/note. Times are snapped to 15-minute boundaries and the resulting range must stay within one day (end may be 00:00 of the next day).",
+    {
+      id: z.string().min(1).describe("Time entry ID to update."),
+      start: z.string().optional().describe("New start, ISO 8601 datetime."),
+      end: z.string().optional().describe("New end, ISO 8601 datetime."),
+      projectId: z
+        .string()
+        .min(1)
+        .nullable()
+        .optional()
+        .describe("Project ID, or null to detach from project."),
+      title: z.string().max(100).nullable().optional(),
+      note: z.string().max(500).nullable().optional(),
+      tagIds: z
+        .array(z.string().min(1))
+        .optional()
+        .describe("Full replacement of tag set. Omit to leave tags unchanged."),
+      breakMinutes: z.number().int().min(0).max(600).optional(),
+    },
+    async ({ id, start, end, projectId, title, note, tagIds, breakMinutes }) => {
+      const existing = await prisma.timeEntry.findFirst({
+        where: { id, userId },
+      });
+      if (!existing) return asText({ error: "not_found" });
+
+      const data: Record<string, unknown> = {};
+      if (projectId !== undefined) data.projectId = projectId;
+      if (title !== undefined) data.title = title;
+      if (note !== undefined) data.note = note;
+      if (start !== undefined) data.start = snapToQuarter(new Date(start));
+      if (end !== undefined) data.end = snapToQuarter(new Date(end));
+      if (breakMinutes !== undefined) data.breakMinutes = breakMinutes;
+
+      const newStart = (data.start as Date) ?? existing.start;
+      const newEnd = (data.end as Date) ?? existing.end;
+      if (newEnd <= newStart) {
+        return asText({ error: "end_must_be_after_start" });
+      }
+      if (
+        !sameDay(newStart, newEnd) &&
+        !(newEnd.getHours() === 0 && newEnd.getMinutes() === 0)
+      ) {
+        return asText({ error: "entry_must_be_same_day" });
+      }
+
+      if (tagIds !== undefined) {
+        data.tags = {
+          deleteMany: {},
+          create: tagIds.map((tagId) => ({ tagId })),
+        };
+      }
+
+      const updated = await prisma.timeEntry.update({
+        where: { id },
+        data,
+        include: {
+          project: { include: { client: true } },
+          tags: { include: { tag: true } },
+        },
+      });
+      return asText(updated);
+    },
+  );
+
+  server.tool(
+    "delete_entry",
+    "Delete a time entry owned by the authenticated user.",
+    {
+      id: z.string().min(1).describe("Time entry ID to delete."),
+    },
+    async ({ id }) => {
+      const existing = await prisma.timeEntry.findFirst({
+        where: { id, userId },
+      });
+      if (!existing) return asText({ error: "not_found" });
+      await prisma.timeEntry.delete({ where: { id } });
+      return asText({ ok: true, id });
     },
   );
 
