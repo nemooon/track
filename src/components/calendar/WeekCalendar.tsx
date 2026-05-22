@@ -25,6 +25,7 @@ import { useCalendarStore, ZOOM_LEVELS } from "./calendarStore";
 import { EntryEditDialog } from "./EntryEditDialog";
 import { cn } from "@/lib/utils";
 import { useMediaQuery } from "@/lib/useMediaQuery";
+import { DateRangeNavigator, type DateRange } from "@/components/ui/DateRangeNavigator";
 import {
   ensureWorkspacePermission,
   getWorkspaceHandle,
@@ -786,29 +787,34 @@ export function WeekCalendar({
     >
       {/* Week navigation */}
       <div className="flex flex-wrap items-center gap-2 border-b border-neutral-200 px-3 py-3 sm:px-6">
-        <button
-          onClick={() => onNavigate(addDays(anchor, effectiveDayCount === 1 || effectiveDayCount === 3 ? -effectiveDayCount : -7))}
-          className="rounded border border-neutral-200 px-2 py-1 text-sm hover:bg-neutral-50"
-        >
-          ‹
-        </button>
-        <button
-          onClick={() => onNavigate(new Date())}
-          className="rounded border border-neutral-200 px-3 py-1 text-sm hover:bg-neutral-50"
-        >
-          {effectiveDayCount === 1 || effectiveDayCount === 3 ? "今日" : "今週"}
-        </button>
-        <button
-          onClick={() => onNavigate(addDays(anchor, effectiveDayCount === 1 || effectiveDayCount === 3 ? effectiveDayCount : 7))}
-          className="rounded border border-neutral-200 px-2 py-1 text-sm hover:bg-neutral-50"
-        >
-          ›
-        </button>
-        <div className="ml-1 text-sm font-medium sm:ml-3">
-          {effectiveDayCount === 1
-            ? format(from, "yyyy/MM/dd")
-            : `${format(from, "yyyy/MM/dd")} – ${format(addDays(from, 6), "MM/dd")}`}
-        </div>
+        {(() => {
+          const isMulti = effectiveDayCount !== 1 && effectiveDayCount !== 3;
+          const step = isMulti ? 7 : (effectiveDayCount as number);
+          const navRange: DateRange =
+            effectiveDayCount === 1
+              ? { kind: "day" }
+              : effectiveDayCount === 3
+                ? { kind: "days", count: 3 }
+                : { kind: "week" };
+          return (
+            <>
+              <DateRangeNavigator
+                anchor={anchor}
+                range={navRange}
+                onPrev={() => onNavigate(addDays(anchor, -step))}
+                onNext={() => onNavigate(addDays(anchor, step))}
+                onAnchorChange={onNavigate}
+              />
+              <button
+                type="button"
+                onClick={() => onNavigate(new Date())}
+                className="inline-flex items-center justify-center rounded-md border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50"
+              >
+                今日
+              </button>
+            </>
+          );
+        })()}
         {!isMobile && (
           <>
             <button

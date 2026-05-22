@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import {
+  PieChart,
+  Pie,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+} from "recharts";
 import { addDays, addMonths } from "date-fns";
-import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/fetcher";
-import { formatWeekLabel, formatMonthLabel } from "@/lib/time";
+import { DateRangeNavigator } from "@/components/ui/DateRangeNavigator";
 import { FilterMultiSelect, type FilterOption } from "@/components/reports/FilterMultiSelect";
 import {
   ReportRow,
@@ -23,6 +28,44 @@ function formatDuration(min: number) {
   const h = Math.floor(min / 60);
   const m = min % 60;
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+type TooltipPayload = {
+  value: number;
+  payload: { label: string; color?: string };
+};
+
+function ChartTooltip({
+  active,
+  payload,
+  stripClient,
+}: {
+  active?: boolean;
+  payload?: TooltipPayload[];
+  stripClient?: boolean;
+}) {
+  if (!active || !payload || !payload.length) return null;
+  const item = payload[0];
+  const color = item.payload.color;
+  const label = stripClient
+    ? item.payload.label.split(" · ").slice(-1)[0]
+    : item.payload.label;
+  return (
+    <div className="rounded-lg border border-neutral-200 bg-white/90 px-3 py-2 text-xs shadow-lg backdrop-blur">
+      <div className="flex items-center gap-1.5 font-medium text-neutral-900">
+        {color && (
+          <span
+            className="inline-block h-2 w-2 rounded-full"
+            style={{ background: color }}
+          />
+        )}
+        {label}
+      </div>
+      <div className="mt-0.5 tabular-nums text-neutral-600">
+        {formatDuration(item.value)}
+      </div>
+    </div>
+  );
 }
 
 export function ReportsPage() {
@@ -154,19 +197,28 @@ export function ReportsPage() {
   function next() {
     setAnchor((a) => (range === "week" ? addDays(a, 7) : addMonths(a, 1)));
   }
-  function today() {
-    setAnchor(new Date());
-  }
-
-  const label = range === "week" ? formatWeekLabel(anchor) : formatMonthLabel(anchor);
 
   const rows = data?.rows ?? [];
   const total = data?.totalMinutes ?? 0;
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
-      {/* Range / GroupBy / Navigation */}
+      {/* Navigation / Range / GroupBy */}
       <div className="flex flex-wrap items-center gap-3">
+        <DateRangeNavigator
+          anchor={anchor}
+          range={range === "week" ? { kind: "week" } : { kind: "month" }}
+          onPrev={prev}
+          onNext={next}
+          onAnchorChange={setAnchor}
+        />
+        <button
+          type="button"
+          onClick={() => setAnchor(new Date())}
+          className="inline-flex items-center justify-center rounded-md border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50"
+        >
+          今日
+        </button>
         <div className="flex gap-1 rounded-md border border-neutral-200 p-0.5">
           {(["week", "month"] as const).map((r) => (
             <button
@@ -188,19 +240,6 @@ export function ReportsPage() {
               {g === "client" ? "クライアント" : g === "project" ? "プロジェクト" : "タグ"}
             </button>
           ))}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={prev}>
-            ←
-          </Button>
-          <Button variant="outline" size="sm" onClick={today}>
-            今日
-          </Button>
-          <Button variant="outline" size="sm" onClick={next}>
-            →
-          </Button>
-          <span className="text-sm font-medium">{label}</span>
         </div>
       </div>
 
@@ -263,18 +302,93 @@ export function ReportsPage() {
           この期間にデータがありません
         </div>
       ) : (
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={rows} layout="vertical" margin={{ left: 120 }}>
-            <XAxis type="number" tickFormatter={(v) => formatDuration(v)} />
-            <YAxis type="category" dataKey="label" width={120} tick={{ fontSize: 12 }} />
-            <Tooltip formatter={(value) => formatDuration(value as number)} />
-            <Bar dataKey="totalMinutes" radius={[0, 4, 4, 0]}>
-              {rows.map((row, i) => (
-                <Cell key={row.key} fill={row.color || COLORS[i % COLORS.length]} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        <div className="rounded-xl border border-neutral-100 p-4 sm:p-6">
+          <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-stretch">
+            <div className="relative h-72 w-72 shrink-0 sm:h-80 sm:w-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <defs>
+                    {rows.map((row, i) => {
+                      const color = row.color || COLORS[i % COLORS.length];
+                      return (
+                        <linearGradient
+                          key={i}
+                          id={`donut-grad-${i}`}
+                          x1="0"
+                          y1="0"
+                          x2="1"
+                          y2="1"
+                        >
+                          <stop offset="0%" stopColor={color} stopOpacity={0.85} />
+                          <stop offset="100%" stopColor={color} stopOpacity={1} />
+                        </linearGradient>
+                      );
+                    })}
+                  </defs>
+                  <Pie
+                    data={rows}
+                    dataKey="totalMinutes"
+                    nameKey="label"
+                    innerRadius="62%"
+                    outerRadius="95%"
+                    paddingAngle={rows.length > 1 ? 2 : 0}
+                    cornerRadius={4}
+                    stroke="#ffffff"
+                    strokeWidth={2}
+                    isAnimationActive={false}
+                  >
+                    {rows.map((row, i) => (
+                      <Cell key={row.key} fill={`url(#donut-grad-${i})`} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    content={<ChartTooltip stripClient={groupBy === "project"} />}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                <div className="text-[10px] uppercase tracking-wider text-neutral-400">
+                  Total
+                </div>
+                <div className="mt-0.5 text-2xl font-semibold tabular-nums text-neutral-900">
+                  {formatDuration(total)}
+                </div>
+              </div>
+            </div>
+            <ul className="flex-1 self-center space-y-2.5 text-sm">
+              {rows.map((row, i) => {
+                const color = row.color || COLORS[i % COLORS.length];
+                const displayLabel =
+                  groupBy === "project"
+                    ? row.label.split(" · ").slice(-1)[0]
+                    : row.label;
+                const pct = total > 0 ? (row.totalMinutes / total) * 100 : 0;
+                return (
+                  <li key={row.key} className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{ background: color }}
+                      />
+                      <span className="truncate text-neutral-700">
+                        {displayLabel}
+                      </span>
+                    </div>
+                    <div className="ml-[18px] h-1.5 overflow-hidden rounded-full bg-neutral-100">
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${pct}%`,
+                          background: `linear-gradient(90deg, ${color}b3, ${color})`,
+                        }}
+                      />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
       )}
 
       {/* Table */}

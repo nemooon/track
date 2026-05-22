@@ -4,7 +4,6 @@ import {
   differenceInMinutes,
   endOfMonth,
   endOfWeek,
-  format,
   startOfMonth,
   startOfWeek,
 } from "date-fns";
@@ -52,19 +51,6 @@ export function sameDay(a: Date, b: Date): boolean {
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate()
   );
-}
-
-export function formatWeekLabel(anchor: Date): string {
-  const { from, to } = getWeekRange(anchor);
-  const lastDay = addDays(from, 6);
-  if (from.getMonth() === lastDay.getMonth()) {
-    return `${format(from, "MMM d")} – ${format(lastDay, "d, yyyy")}`;
-  }
-  return `${format(from, "MMM d")} – ${format(lastDay, "MMM d, yyyy")}`;
-}
-
-export function formatMonthLabel(anchor: Date): string {
-  return format(anchor, "MMMM yyyy");
 }
 
 export { addDays, endOfWeek };
