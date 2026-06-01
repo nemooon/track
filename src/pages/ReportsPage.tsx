@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router";
 import {
   PieChart,
   Pie,
@@ -7,17 +8,33 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
-import { addDays, addMonths } from "date-fns";
+import {
+  addDays,
+  addMonths,
+  endOfMonth,
+  format,
+  startOfMonth,
+  startOfWeek,
+} from "date-fns";
+import { Check, Copy } from "lucide-react";
 import { apiFetch } from "@/lib/fetcher";
 import { DateRangeNavigator } from "@/components/ui/DateRangeNavigator";
 import { FilterMultiSelect, type FilterOption } from "@/components/reports/FilterMultiSelect";
 import {
   ReportRow,
+  buildEntriesUrl,
+  groupEntriesByTitle,
   type BaseFilters,
   type ExpansionApi,
   type RowKind,
 } from "@/components/reports/ReportRow";
-import type { Client, Project, Tag, ReportResponse } from "@/types";
+import type {
+  Client,
+  Project,
+  Tag,
+  ReportResponse,
+  ReportEntriesResponse,
+} from "@/types";
 
 const COLORS = [
   "#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6",
@@ -28,6 +45,53 @@ function formatDuration(min: number) {
   const h = Math.floor(min / 60);
   const m = min % 60;
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+// --- Slack 貼り付け用テキスト表の生成 -----------------------------------------
+// Slack はタブ区切り（TSV）テキストを貼り付けると表として認識・添付できる。
+
+function periodLabel(anchor: Date, range: "week" | "month"): string {
+  if (range === "month") return format(anchor, "yyyy年M月");
+  const start = startOfWeek(anchor, { weekStartsOn: 0 });
+  const end = addDays(start, 6);
+  const sameMonth =
+    start.getFullYear() === end.getFullYear() &&
+    start.getMonth() === end.getMonth();
+  return sameMonth
+    ? `${format(start, "yyyy/M/d")} – ${format(end, "d")}`
+    : `${format(start, "yyyy/M/d")} – ${format(end, "M/d")}`;
+}
+
+type SlackGroup = {
+  label: string;
+  totalMinutes: number;
+  entries: { title: string; minutes: number }[];
+};
+
+function buildSlackTable(opts: {
+  groups: SlackGroup[];
+  total: number;
+  groupBy: RowKind;
+  periodText: string;
+}): string {
+  const { groups, total, groupBy, periodText } = opts;
+  const groupLabel =
+    groupBy === "client" ? "クライアント" : groupBy === "project" ? "プロジェクト" : "タグ";
+
+  const pct = (min: number) =>
+    total > 0 ? `${Math.round((min / total) * 100)}%` : "0%";
+
+  // 1 行目（ヘッダー）に期間を含め、貼り付けた表だけで文脈が分かるようにする
+  const lines: string[][] = [[`${groupLabel}（${periodText}）`, "時間", "割合"]];
+  for (const g of groups) {
+    lines.push([g.label, formatDuration(g.totalMinutes), pct(g.totalMinutes)]);
+    for (const e of g.entries) {
+      lines.push([`└ ${e.title || "（タイトルなし）"}`, formatDuration(e.minutes), ""]);
+    }
+  }
+  lines.push(["合計", formatDuration(total), "100%"]);
+
+  return lines.map((cells) => cells.join("\t")).join("\n");
 }
 
 type TooltipPayload = {
@@ -68,13 +132,75 @@ function ChartTooltip({
   );
 }
 
+// "yyyy-MM-dd"（ローカル＝JST の暦日）をローカル 0:00 の Date に戻す
+function parseLocalDate(s: string | null): Date | null {
+  if (!s) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function parseIdList(s: string | null): string[] {
+  return s ? s.split(",").filter(Boolean) : [];
+}
+
+// 折りたたみ状態・同名まとめは localStorage で永続化する
+const EXPANDED_KEY = "reports.expandedPaths";
+const SAME_TITLES_KEY = "reports.groupSameTitles";
+
+// 折りたたみは groupBy ごとに path 体系が異なるため、グループ単位で保存する
+function readExpandedStore(): Record<string, string[]> {
+  try {
+    const raw = localStorage.getItem(EXPANDED_KEY);
+    const v = raw ? JSON.parse(raw) : null;
+    return v && typeof v === "object" ? (v as Record<string, string[]>) : {};
+  } catch {
+    return {};
+  }
+}
+
 export function ReportsPage() {
-  const [range, setRange] = useState<"week" | "month">("week");
-  const [anchor, setAnchor] = useState(() => new Date());
-  const [groupBy, setGroupBy] = useState<RowKind>("project");
-  const [selectedClientIds, setSelectedClientIds] = useState<string[]>([]);
-  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
-  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [range, setRange] = useState<"week" | "month">(() =>
+    searchParams.get("range") === "month" ? "month" : "week",
+  );
+  const [anchor, setAnchor] = useState(
+    () => parseLocalDate(searchParams.get("anchor")) ?? new Date(),
+  );
+  const [groupBy, setGroupBy] = useState<RowKind>(() => {
+    const g = searchParams.get("groupBy");
+    return g === "client" || g === "tag" ? g : "project";
+  });
+  const [selectedClientIds, setSelectedClientIds] = useState<string[]>(() =>
+    parseIdList(searchParams.get("clientIds")),
+  );
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>(() =>
+    parseIdList(searchParams.get("projectIds")),
+  );
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>(() =>
+    parseIdList(searchParams.get("tagIds")),
+  );
+
+  // 表示状態を URL クエリに同期（リロード・共有で同じビューを復元）
+  useEffect(() => {
+    const p = new URLSearchParams();
+    if (range !== "week") p.set("range", range);
+    p.set("anchor", format(anchor, "yyyy-MM-dd"));
+    if (groupBy !== "project") p.set("groupBy", groupBy);
+    if (selectedClientIds.length) p.set("clientIds", selectedClientIds.join(","));
+    if (selectedProjectIds.length) p.set("projectIds", selectedProjectIds.join(","));
+    if (selectedTagIds.length) p.set("tagIds", selectedTagIds.join(","));
+    setSearchParams(p, { replace: true });
+  }, [
+    range,
+    anchor,
+    groupBy,
+    selectedClientIds,
+    selectedProjectIds,
+    selectedTagIds,
+    setSearchParams,
+  ]);
 
   const { data: clients = [] } = useQuery({
     queryKey: ["clients"],
@@ -140,15 +266,38 @@ export function ReportsPage() {
     queryFn: () => apiFetch<ReportResponse>(reportsUrl),
   });
 
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
-  const [groupSameTitles, setGroupSameTitles] = useState(false);
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(
+    () => new Set(readExpandedStore()[groupBy] ?? []),
+  );
+  const [groupSameTitles, setGroupSameTitles] = useState(
+    () => localStorage.getItem(SAME_TITLES_KEY) === "1",
+  );
   const [expandAllMode, setExpandAllMode] = useState(false);
 
-  // groupBy が変わると行の path 体系が変わるのでリセット
+  // groupBy が変わったら、その groupBy 用に保存済みの折りたたみ状態を読み込む
   useEffect(() => {
-    setExpandedPaths(new Set());
+    setExpandedPaths(new Set(readExpandedStore()[groupBy] ?? []));
     setExpandAllMode(false);
   }, [groupBy]);
+
+  // 折りたたみ状態を groupBy ごとに保存
+  useEffect(() => {
+    const prefix = `${groupBy}:`;
+    // groupBy 切替直後は expandedPaths がまだ旧 groupBy のものなので保存しない
+    if (![...expandedPaths].every((p) => p.startsWith(prefix))) return;
+    const store = readExpandedStore();
+    store[groupBy] = [...expandedPaths];
+    try {
+      localStorage.setItem(EXPANDED_KEY, JSON.stringify(store));
+    } catch {
+      // 保存失敗は無視（プライベートモード等）
+    }
+  }, [expandedPaths, groupBy]);
+
+  // 同名まとめトグルを保存
+  useEffect(() => {
+    localStorage.setItem(SAME_TITLES_KEY, groupSameTitles ? "1" : "0");
+  }, [groupSameTitles]);
 
   // すべて展開モード中は、データ更新時に最上位の行をすべて展開する
   useEffect(() => {
@@ -200,6 +349,69 @@ export function ReportsPage() {
 
   const rows = data?.rows ?? [];
   const total = data?.totalMinutes ?? 0;
+
+  const queryClient = useQueryClient();
+  const [copied, setCopied] = useState(false);
+  const [copying, setCopying] = useState(false);
+  async function copyTable() {
+    setCopying(true);
+    let text: string;
+    try {
+      const groups = await Promise.all(
+        rows.map(async (r) => {
+          const label =
+            groupBy === "project" ? r.label.split(" · ").slice(-1)[0] : r.label;
+          // 画面どおり：展開中の行だけ中身を含め、折りたたみ中は集計行のみ
+          const isExpanded = expandedPaths.has(`${groupBy}:${r.key}`);
+          if (!isExpanded) {
+            return { label, totalMinutes: r.totalMinutes, entries: [] };
+          }
+          const extra =
+            groupBy === "client"
+              ? { clientId: r.key }
+              : groupBy === "project"
+                ? { projectId: r.key }
+                : { tagId: r.key };
+          const url = buildEntriesUrl(baseFilters, extra);
+          const res = await queryClient.fetchQuery({
+            queryKey: ["reports-entries", url],
+            queryFn: () => apiFetch<ReportEntriesResponse>(url),
+          });
+          const raw = res?.entries ?? [];
+          const entries = groupSameTitles
+            ? groupEntriesByTitle(raw).map((g) => ({
+                title: g.title ?? "",
+                minutes: g.minutes,
+              }))
+            : raw.map((e) => ({ title: e.title ?? "", minutes: e.minutes }));
+          return { label, totalMinutes: r.totalMinutes, entries };
+        }),
+      );
+      text = buildSlackTable({
+        groups,
+        total,
+        groupBy,
+        periodText: periodLabel(anchor, range),
+      });
+    } finally {
+      setCopying(false);
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // クリップボード API 非対応時のフォールバック
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
@@ -395,6 +607,24 @@ export function ReportsPage() {
       {rows.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center justify-end gap-4">
+            <button
+              type="button"
+              onClick={copyTable}
+              disabled={copying}
+              className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 px-2.5 py-1 text-xs text-neutral-600 hover:bg-neutral-50 disabled:opacity-60"
+            >
+              {copied ? (
+                <>
+                  <Check className="size-3.5 text-emerald-600" />
+                  コピーしました
+                </>
+              ) : (
+                <>
+                  <Copy className="size-3.5" />
+                  {copying ? "取得中…" : "Slack用にコピー"}
+                </>
+              )}
+            </button>
             <label className="flex cursor-pointer items-center gap-2 text-xs text-neutral-600">
               <span>同名エントリをまとめる</span>
               <span

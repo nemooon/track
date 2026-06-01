@@ -48,7 +48,7 @@ function appendFilters(
   if (tagIds.length) params.set("tagIds", tagIds.join(","));
 }
 
-function buildEntriesUrl(
+export function buildEntriesUrl(
   base: BaseFilters,
   extra: { clientId?: string; projectId?: string; tagId?: string },
 ): string {
@@ -156,7 +156,7 @@ type GroupedEntry = {
   tags: Tag[];
 };
 
-function groupEntriesByTitle(entries: ReportEntry[]): GroupedEntry[] {
+export function groupEntriesByTitle(entries: ReportEntry[]): GroupedEntry[] {
   const map = new Map<string, GroupedEntry>();
   for (const e of entries) {
     const key = (e.title ?? "").trim() || "__untitled__";
