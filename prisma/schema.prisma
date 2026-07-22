@@ -1,4 +1,4 @@
-// Toggl-like time tracker schema (Cloudflare D1)
+// Toggl-like time tracker schema (ローカル SQLite)
 generator client {
   provider = "prisma-client-js"
   output   = "../node_modules/.prisma/client"
@@ -8,10 +8,9 @@ datasource db {
   provider = "sqlite"
 }
 
+// 単一ユーザー。実質は勤務設定の置き場。
 model User {
   id           String       @id @default(cuid())
-  email        String       @unique
-  name         String?
   workStart    Int          @default(600)  // 定時開始 (分, 0-1440) 10:00
   workEnd      Int          @default(1110) // 定時終了 (分, 0-1440) 18:30
   workDays     String       @default("1,2,3,4,5") // 使う曜日 (0=Sun..6=Sat) CSV
@@ -19,45 +18,7 @@ model User {
   clients      Client[]
   projects     Project[]
   entries      TimeEntry[]
-  credentials  Credential[]
-  invitations  Invitation[]
   tags         Tag[]
-  patTokens    PersonalAccessToken[]
-}
-
-model PersonalAccessToken {
-  id         String    @id @default(cuid())
-  userId     String
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name       String
-  tokenHash  String    @unique
-  createdAt  DateTime  @default(now())
-  lastUsedAt DateTime?
-
-  @@index([userId])
-}
-
-model Credential {
-  id              String   @id @default(cuid())
-  userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  credentialId    String   @unique // base64url-encoded
-  publicKey       String   // base64url-encoded
-  counter         Int      @default(0)
-  transports      String?  // JSON array e.g. ["internal","hybrid"]
-  createdAt       DateTime @default(now())
-
-  @@index([userId])
-}
-
-model Invitation {
-  id          String   @id @default(cuid())
-  email       String   @unique
-  invitedById String
-  invitedBy   User     @relation(fields: [invitedById], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
-
-  @@index([email])
 }
 
 model Client {

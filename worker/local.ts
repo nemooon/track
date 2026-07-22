@@ -33,7 +33,6 @@ const PORT = Number(process.env.TRACK_PORT ?? 8787);
 const DATA_DIR = process.env.TRACK_DATA_DIR ?? path.join(homedir(), ".track");
 const DB_PATH = path.join(DATA_DIR, "track.db");
 const EXPORT_DIR = path.join(DATA_DIR, "exports");
-const OWNER_EMAIL = process.env.TRACK_OWNER_EMAIL ?? "local@track";
 
 // --- DB 準備 -------------------------------------------------------------
 
@@ -88,8 +87,8 @@ const prisma = new PrismaClient({ adapter: new PrismaBetterSqlite3({ url: `file:
 async function resolveOwnerId(): Promise<string> {
   const existing = await prisma.user.findFirst({ orderBy: { createdAt: "asc" } });
   if (existing) return existing.id;
-  const created = await prisma.user.create({ data: { email: OWNER_EMAIL } });
-  console.log(`==> ユーザーを新規作成: ${created.email}`);
+  const created = await prisma.user.create({ data: {} });
+  console.log(`==> 設定レコードを新規作成`);
   return created.id;
 }
 const OWNER_ID = await resolveOwnerId();
