@@ -1,9 +1,7 @@
-import { PrismaClient } from "@prisma/client";
-import { PrismaD1 } from "@prisma/adapter-d1";
+import type { PrismaClient } from "@prisma/client";
 
-// ローカル実行時は local.ts が生成済みの PrismaClient を env.DB に直接入れる。
-// ルート側は getPrisma(c.env.DB) のままでよい。
-export function getPrisma(db: D1Database | PrismaClient): PrismaClient {
-  if ("$transaction" in db) return db as PrismaClient;
-  return new PrismaClient({ adapter: new PrismaD1(db as D1Database) });
+// ローカル版では local.ts が生成した PrismaClient をそのまま env.DB に入れる。
+// ルート側の getPrisma(c.env.DB) という書き方を変えずに済ませるためのシム。
+export function getPrisma(db: PrismaClient): PrismaClient {
+  return db;
 }

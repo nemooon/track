@@ -2,7 +2,7 @@
 //
 // Web 版との違いは3点だけ:
 //   1. D1 の代わりにローカルの SQLite ファイル (~/.track/track.db)
-//   2. 認証なし — 単一ユーザー固定。passkey / invitations / PAT / MCP は載せない
+//   2. 認証なし — 単一ユーザー固定
 //   3. AI 機能なし
 //
 // 127.0.0.1 のみで待ち受け、Origin/Host を検証して他サイトからの
@@ -128,15 +128,6 @@ app.use("*", async (c, next) => {
   c.env = { ...c.env, DB: prisma } as Env;
   c.set("userId", OWNER_ID);
   await next();
-});
-
-// SPA は /api/auth/me だけ見てログイン状態を判定するので、固定ユーザーを返す。
-app.get("/api/auth/me", async (c) => {
-  const user = await prisma.user.findUnique({
-    where: { id: OWNER_ID },
-    select: { id: true, email: true },
-  });
-  return c.json({ user });
 });
 
 app.route("/api/clients", clients);

@@ -1,16 +1,14 @@
 import { useEffect, useState } from "react";
-import { Link, Outlet, useLocation, useNavigate } from "react-router";
+import { Link, Outlet, useLocation } from "react-router";
 import {
   CalendarDays,
   BarChart3,
   FolderKanban,
-  LogOut,
   UserCog,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useAuth } from "@/lib/auth";
 import { useFaviconStatus } from "@/lib/useFaviconStatus";
 import { useMediaQuery } from "@/lib/useMediaQuery";
 
@@ -33,8 +31,6 @@ function readCollapsed(): boolean {
 
 export function AppLayout() {
   const { pathname } = useLocation();
-  const navigate = useNavigate();
-  const { user, signOut } = useAuth();
   useFaviconStatus();
   const isMobile = useMediaQuery("(max-width: 639px)");
   const [storedCollapsed, setStoredCollapsed] = useState<boolean>(() => readCollapsed());
@@ -105,32 +101,6 @@ export function AppLayout() {
             );
           })}
         </nav>
-        <div
-          className={cn(
-            "mt-auto border-t border-neutral-200 pt-3",
-            collapsed ? "space-y-1" : "space-y-2",
-          )}
-        >
-          {!collapsed && (
-            <div className="truncate px-2 text-xs text-neutral-500">
-              {user?.email ?? ""}
-            </div>
-          )}
-          <button
-            onClick={async () => {
-              await signOut();
-              navigate("/login");
-            }}
-            title={collapsed ? "ログアウト" : undefined}
-            className={cn(
-              "flex w-full items-center rounded-md py-2 text-sm text-neutral-700 hover:bg-neutral-100",
-              collapsed ? "justify-center px-0" : "gap-2 px-3",
-            )}
-          >
-            <LogOut className="h-4 w-4 shrink-0" />
-            {!collapsed && "ログアウト"}
-          </button>
-        </div>
       </aside>
       <main className="flex-1 overflow-auto">
         <Outlet />
