@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "local": "tsx worker/local.ts",
-    "build": "vite build"
+    "build": "vite build",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
     "@holiday-jp/holiday_jp": "^2.5.1",
@@ -33,6 +36,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@tailwindcss/vite": "^4.2.2",
+    "@tauri-apps/cli": "^2.11.4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",
     "@types/react": "^19",
