@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiFetch } from "@/lib/fetcher";
-import type { UserSettings } from "@/types";
+import type { UserSettings, AppConfig } from "@/types";
 import {
   clearWorkspaceHandle,
   getWorkspaceHandle,
@@ -77,6 +77,46 @@ export function SettingsPage() {
     qc.invalidateQueries({ queryKey: ["workspace"] });
     toast.success("Workspace の設定を解除しました");
   }
+
+  // バックアップ設定
+  const { data: config } = useQuery({
+    queryKey: ["config"],
+    queryFn: () => apiFetch<AppConfig>("/api/config"),
+  });
+  const { data: suggestions = [] } = useQuery({
+    queryKey: ["config", "suggestions"],
+    queryFn: () => apiFetch<{ label: string; path: string }[]>("/api/config/suggestions"),
+  });
+
+  const [exportDir, setExportDir] = useState("");
+  const [backupIntervalHours, setBackupIntervalHours] = useState(24);
+  const [backupKeep, setBackupKeep] = useState(30);
+  useEffect(() => {
+    if (config) {
+      setExportDir(config.exportDir);
+      setBackupIntervalHours(config.backupIntervalHours);
+      setBackupKeep(config.backupKeep);
+    }
+  }, [config]);
+
+  const updateConfig = useMutation({
+    mutationFn: (patch: Partial<AppConfig>) =>
+      apiFetch<AppConfig>("/api/config", { method: "PATCH", body: JSON.stringify(patch) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["config"] });
+      toast.success("バックアップ設定を保存しました");
+    },
+    onError: (err) => {
+      const msg = (err as Error).message;
+      if (msg.includes("not_writable")) {
+        toast.error("そのフォルダには書き込めません");
+      } else if (msg.includes("not_absolute")) {
+        toast.error("絶対パスを指定してください");
+      } else {
+        toast.error("保存に失敗しました");
+      }
+    },
+  });
 
   // データのエクスポート / インポート
   const fileRef = useRef<HTMLInputElement>(null);
@@ -259,11 +299,96 @@ export function SettingsPage() {
         </p>
 
         <div className="space-y-3">
+          <div className="rounded-md border border-neutral-200 px-3 py-3">
+            <div className="mb-1 text-sm font-medium text-neutral-700">保存先</div>
+            <p className="mb-2 text-xs text-neutral-500">
+              iCloud Drive のフォルダを指定すると、そのままバックアップになります。
+              DB 本体（track.db）は同期フォルダに置かないでください — WAL と合わせて
+              3ファイルあり、別々に同期されると壊れます。
+            </p>
+            <div className="flex gap-2">
+              <Input
+                value={exportDir}
+                onChange={(e) => setExportDir(e.target.value)}
+                spellCheck={false}
+                className="flex-1 font-mono text-xs"
+              />
+              <Button
+                size="sm"
+                onClick={() => updateConfig.mutate({ exportDir })}
+                disabled={updateConfig.isPending || !exportDir.trim()}
+              >
+                保存
+              </Button>
+            </div>
+            {suggestions.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {suggestions.map((s) => (
+                  <Button
+                    key={s.path}
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setExportDir(s.path)}
+                  >
+                    {s.label} を使う
+                  </Button>
+                ))}
+                {config && exportDir !== config.defaults.exportDir && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setExportDir(config.defaults.exportDir)}
+                  >
+                    既定に戻す
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-md border border-neutral-200 px-3 py-3">
+            <div className="mb-2 text-sm font-medium text-neutral-700">自動バックアップ</div>
+            <div className="flex items-end gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">間隔（時間・0で無効）</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={720}
+                  value={backupIntervalHours}
+                  onChange={(e) => setBackupIntervalHours(Number(e.target.value))}
+                  className="w-28"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">残す本数</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={backupKeep}
+                  onChange={(e) => setBackupKeep(Number(e.target.value))}
+                  className="w-28"
+                />
+              </div>
+              <Button
+                size="sm"
+                onClick={() => updateConfig.mutate({ backupIntervalHours, backupKeep })}
+                disabled={updateConfig.isPending}
+              >
+                保存
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-neutral-500">
+              手動で書き出したファイルは本数制限の対象外です。
+            </p>
+          </div>
+
           <div className="flex items-center justify-between rounded-md border border-neutral-200 px-3 py-2">
             <div className="text-sm">
               <div className="font-medium text-neutral-700">エクスポート</div>
               <div className="text-xs text-neutral-500">
-                ~/.track/exports/ に JSON を書き出します
+                いますぐ保存先に JSON を書き出します
               </div>
             </div>
             <Button

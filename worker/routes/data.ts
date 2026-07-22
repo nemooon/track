@@ -1,9 +1,8 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { mkdirSync, writeFileSync } from "node:fs";
-import path from "node:path";
 import type { PrismaClient } from "@prisma/client";
 import { getPrisma } from "../db";
+import { writeExport } from "../backup";
 import type { Env, AuthVars } from "../types";
 
 const data = new Hono<{ Bindings: Env; Variables: AuthVars }>();
@@ -11,7 +10,7 @@ const data = new Hono<{ Bindings: Env; Variables: AuthVars }>();
 export const EXPORT_VERSION = 1;
 
 // userId は単一ユーザーの内部 ID でしかないので出力には含めない。
-async function buildExport(prisma: PrismaClient, userId: string) {
+export async function buildExport(prisma: PrismaClient, userId: string) {
   const [user, clients, tags, projects, entries] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
@@ -77,12 +76,6 @@ async function buildExport(prisma: PrismaClient, userId: string) {
   };
 }
 
-function exportFilename() {
-  const now = new Date();
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `track-export-${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}-${p(now.getHours())}${p(now.getMinutes())}.json`;
-}
-
 // GET /api/data/export — 全データを JSON で返す (curl / エージェント向け)
 data.get("/export", async (c) => {
   const dump = await buildExport(getPrisma(c.env.DB), c.get("userId"));
@@ -97,10 +90,7 @@ data.post("/export/file", async (c) => {
   const dump = await buildExport(getPrisma(c.env.DB), c.get("userId"));
   if (!dump) return c.json({ error: "not_found" }, 404);
 
-  const dir = c.env.EXPORT_DIR;
-  const file = path.join(dir, exportFilename());
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(file, JSON.stringify(dump, null, 2), "utf8");
+  const file = writeExport(c.env.EXPORT_DIR, dump);
 
   return c.json({
     ok: true,

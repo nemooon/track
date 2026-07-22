@@ -83,6 +83,13 @@ export type UserSettings = {
   workDays: number[];
 };
 
+export type AppConfig = {
+  exportDir: string;
+  backupIntervalHours: number;
+  backupKeep: number;
+  defaults: { exportDir: string; backupIntervalHours: number; backupKeep: number };
+};
+
 export type ExternalEventSource = "kot" | "outlook";
 
 export type ExternalEventKind =

@@ -24,7 +24,10 @@ import { entries } from "./routes/entries";
 import { reports } from "./routes/reports";
 import { tags } from "./routes/tags";
 import { settings } from "./routes/settings";
+import { config as configRoute } from "./routes/config";
 import { data } from "./routes/data";
+import { loadConfig } from "./config";
+import { maybeAutoBackup } from "./backup";
 import { external } from "./routes/external";
 import type { Env, AuthVars } from "./types";
 
@@ -32,7 +35,6 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = Number(process.env.TRACK_PORT ?? 8787);
 const DATA_DIR = process.env.TRACK_DATA_DIR ?? path.join(homedir(), ".track");
 const DB_PATH = path.join(DATA_DIR, "track.db");
-const EXPORT_DIR = path.join(DATA_DIR, "exports");
 
 // --- DB 準備 -------------------------------------------------------------
 
@@ -126,7 +128,13 @@ app.use("*", async (c, next) => {
 
 // env / userId を注入。全ルートは c.env.DB と c.get("userId") しか見ていない。
 app.use("*", async (c, next) => {
-  c.env = { ...c.env, DB: prisma, EXPORT_DIR } as Env;
+  c.env = {
+    ...c.env,
+    DB: prisma,
+    EXPORT_DIR: loadConfig(DATA_DIR).exportDir,
+    DATA_DIR,
+    HOME_DIR: homedir(),
+  } as Env;
   c.set("userId", OWNER_ID);
   await next();
 });
@@ -138,6 +146,7 @@ app.route("/api/reports", reports);
 app.route("/api/tags", tags);
 app.route("/api/settings", settings);
 app.route("/api/data", data);
+app.route("/api/config", configRoute);
 app.route("/api/external", external);
 
 app.get("/health", (c) => c.json({ ok: true, db: DB_PATH, userId: OWNER_ID }));
@@ -153,9 +162,27 @@ if (existsSync(DIST)) {
   app.get("*", serveStatic({ path: path.relative(process.cwd(), path.join(DIST, "index.html")) }));
 }
 
+// 自動バックアップ。起動時に一度、以降は1時間ごとに「前回から
+// backupIntervalHours 経ったか」を見て必要なら書き出す。
+async function runAutoBackup() {
+  const cfg = loadConfig(DATA_DIR);
+  try {
+    const file = await maybeAutoBackup(prisma, OWNER_ID, {
+      dir: cfg.exportDir,
+      intervalHours: cfg.backupIntervalHours,
+      keep: cfg.backupKeep,
+    });
+    if (file) console.log(`==> 自動バックアップ: ${file}`);
+  } catch (e) {
+    console.warn(`自動バックアップに失敗: ${(e as Error).message}`);
+  }
+}
+void runAutoBackup();
+setInterval(() => void runAutoBackup(), 60 * 60 * 1000);
+
 serve({ fetch: app.fetch, port: PORT, hostname: "127.0.0.1" }, (info) => {
   console.log(`==> Track (local)  http://127.0.0.1:${info.port}`);
   console.log(`    db: ${DB_PATH}`);
-  console.log(`    exports: ${EXPORT_DIR}`);
+  console.log(`    exports: ${loadConfig(DATA_DIR).exportDir}`);
   if (!existsSync(DIST)) console.log(`    SPA: 未ビルド — npm run build するか vite dev を使ってください`);
 });
