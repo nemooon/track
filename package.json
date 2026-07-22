@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "dev:worker": "wrangler dev",
+    "local": "tsx worker/local.ts",
     "build": "vite build",
     "deploy": "vite build && wrangler deploy",
     "db:migrate:local": "wrangler d1 migrations apply track --local",
@@ -15,12 +16,15 @@
   },
   "dependencies": {
     "@holiday-jp/holiday_jp": "^2.5.1",
+    "@hono/node-server": "^2.0.9",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@prisma/adapter-better-sqlite3": "^7.8.0",
     "@prisma/adapter-d1": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@simplewebauthn/browser": "^13.3.0",
     "@simplewebauthn/server": "^13.3.0",
     "@tanstack/react-query": "^5.97.0",
+    "better-sqlite3": "^12.11.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
@@ -40,6 +44,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@tailwindcss/vite": "^4.2.2",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
@@ -47,6 +52,7 @@
     "dotenv": "^17.4.1",
     "eslint": "^9",
     "tailwindcss": "^4",
+    "tsx": "^4.23.1",
     "typescript": "^5",
     "vite": "^8.0.8",
     "wrangler": "^4.81.0"
