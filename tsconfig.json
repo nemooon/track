@@ -15,8 +15,8 @@
     "paths": {
       "@/*": ["./src/*"]
     },
-    "types": ["vite/client"]
+    "types": ["vite/client", "bun"]
   },
-  "include": ["src", "worker", "*.ts"],
+  "include": ["src", "worker", "scripts", "*.ts"],
   "exclude": ["node_modules", "dist"]
 }

@@ -3,7 +3,7 @@
 // 起動時だけでなく、リストア直後にも呼ぶ。古いスナップショットに戻したとき、
 // そのファイルに入っている _local_migrations を見て足りない分だけ流すので、
 // いつ取ったバックアップでも現在のスキーマに揃う。
-import Database from "better-sqlite3";
+import { Database } from "bun:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
@@ -11,11 +11,11 @@ export const MIGRATIONS_DIR_NAME = "migrations";
 
 export function runMigrations(dbPath: string, migrationsDir: string): string[] {
   const sqlite = new Database(dbPath);
-  sqlite.pragma("journal_mode = WAL");
+  sqlite.exec("PRAGMA journal_mode = WAL");
   // 0008 のようにテーブルを作り直すマイグレーションがあるため、この接続では
   // FK 制約と ALTER TABLE の参照追従を切る。適用後に整合性を確認する。
-  sqlite.pragma("foreign_keys = OFF");
-  sqlite.pragma("legacy_alter_table = ON");
+  sqlite.exec("PRAGMA foreign_keys = OFF");
+  sqlite.exec("PRAGMA legacy_alter_table = ON");
 
   try {
     sqlite.exec(
@@ -49,7 +49,7 @@ export function runMigrations(dbPath: string, migrationsDir: string): string[] {
     }
 
     if (pending.length > 0) {
-      const violations = sqlite.pragma("foreign_key_check") as unknown[];
+      const violations = sqlite.query("PRAGMA foreign_key_check").all();
       if (violations.length > 0) {
         throw new Error(
           `マイグレーション後に外部キー違反が ${violations.length} 件: ${JSON.stringify(violations.slice(0, 5))}`,

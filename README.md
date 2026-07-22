@@ -56,11 +56,20 @@ npm run dev:worker
 | コマンド | 内容 |
 |---|---|
 | `npm run dev` | Vite devサーバー起動 |
+| `npm run local` | Bunローカルサーバー起動 |
+| `npm run tauri:dev` | Tauriデスクトップ版を開発起動 |
+| `npm run tauri:build` | Bun sidecar同梱のmacOS `.app` をビルド |
+| `npm run tauri:dmg` | 配布用DMGをビルド |
 | `npm run dev:worker` | Wrangler devサーバー起動 |
 | `npm run db:migrate:local` | ローカルD1にマイグレーション適用 |
 | `npm run db:migrate:remote` | 本番D1にマイグレーション適用 |
 | `npx prisma generate` | Prismaクライアント再生成 |
 | `npm run deploy` | ビルド＆Cloudflareへデプロイ |
+
+デスクトップ版のビルドには、BunとRustが必要です。生成された`.app`は
+`src-tauri/target/release/bundle/macos/Track.app`に出力されます。Bun sidecar、
+フロントエンド、SQLiteマイグレーションを同梱するため、利用端末へのNode/Bunの
+インストールは不要です。
 
 ## デプロイ
 

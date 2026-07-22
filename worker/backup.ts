@@ -8,9 +8,17 @@
 // 逆に、動作中の track.db / -wal / -shm を同期フォルダに置くのは破損経路。
 // 3ファイルが独立に同期される、実体が退避されてプレースホルダになる、
 // POSIX ロックが効かない、のいずれもが原因になる。
-import { mkdirSync, readdirSync, statSync, unlinkSync, copyFileSync, existsSync } from "node:fs";
+import {
+  mkdirSync,
+  readdirSync,
+  statSync,
+  unlinkSync,
+  copyFileSync,
+  renameSync,
+  existsSync,
+} from "node:fs";
 import path from "node:path";
-import Database from "better-sqlite3";
+import { Database } from "bun:sqlite";
 import type { PrismaClient } from "@prisma/client";
 import { db, closeDb, reopenDb, getDbPath } from "./dbHandle";
 import { runMigrations } from "./migrate";
@@ -127,15 +135,17 @@ export type ValidationResult =
 export function validateSnapshot(file: string): ValidationResult {
   if (!existsSync(file)) return { ok: false, reason: "ファイルが見つかりません" };
 
-  let sdb: Database.Database;
+  let sdb: Database;
   try {
-    sdb = new Database(file, { readonly: true, fileMustExist: true });
+    sdb = new Database(file, { readonly: true, create: false });
   } catch (e) {
     return { ok: false, reason: `SQLite として開けません: ${(e as Error).message}` };
   }
 
   try {
-    const integrity = sdb.pragma("integrity_check", { simple: true });
+    const integrity = (sdb.query("PRAGMA integrity_check").get() as {
+      integrity_check: string;
+    } | null)?.integrity_check;
     if (integrity !== "ok") return { ok: false, reason: `整合性チェックに失敗: ${integrity}` };
 
     const tables = new Set(
@@ -174,22 +184,28 @@ export async function restore(
   migrationsDir: string,
 ): Promise<{ safety: SnapshotInfo | null; migrated: string[] }> {
   const target = getDbPath();
+  const staged = `${target}.restore-tmp`;
 
   // 差し替え前の退避。ここで失敗したらリストア自体を中止する。
   const safety = await snapshot(db(), safetyDir, false);
+  if (existsSync(staged)) unlinkSync(staged);
+  copyFileSync(file, staged);
 
   await closeDb();
   let migrated: string[] = [];
   try {
-    copyFileSync(file, target);
-    // 旧 DB の WAL が残っていると、差し替えた本体と食い違って壊れる
+    // libSQLが開いていたinodeを直接truncateすると、接続を作り直した後も
+    // SQLITE_IOERRになることがある。一時コピーをatomic renameして差し替える。
+    // 旧DBのWALが残っていると新しい本体と食い違うので先に除く。
     for (const ext of ["-wal", "-shm"]) {
       const side = `${target}${ext}`;
       if (existsSync(side)) unlinkSync(side);
     }
+    renameSync(staged, target);
     // 古いスナップショットに戻した場合は、ここで現行スキーマへ追いつかせる
     migrated = runMigrations(target, migrationsDir);
   } finally {
+    if (existsSync(staged)) unlinkSync(staged);
     reopenDb();
   }
 

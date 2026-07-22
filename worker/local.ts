@@ -7,9 +7,8 @@
 //
 // 127.0.0.1 のみで待ち受け、Origin/Host を検証して他サイトからの
 // クロスオリジン書き込み (CSRF / DNS rebinding) を弾く。
-import { serve } from "@hono/node-server";
-import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
+import { serveStatic } from "hono/bun";
 import { mkdirSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -30,7 +29,11 @@ import { runMigrations, MIGRATIONS_DIR_NAME } from "./migrate";
 import { external } from "./routes/external";
 import type { Env } from "./types";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+// 本番ではTauriが同梱resourceの場所を渡す。開発時は従来どおり
+// worker/local.tsからリポジトリルートを求める。
+const ROOT = process.env.TRACK_RESOURCE_DIR
+  ? path.resolve(process.env.TRACK_RESOURCE_DIR)
+  : path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = Number(process.env.TRACK_PORT ?? 8787);
 const DATA_DIR = process.env.TRACK_DATA_DIR ?? path.join(homedir(), ".track");
 const DB_PATH = path.join(DATA_DIR, "track.db");
@@ -113,8 +116,9 @@ app.all("/api/*", (c) => c.json({ error: "not_found", path: c.req.path }, 404));
 // ビルド済み SPA を配信 (dist/client)。無ければ Vite devサーバを使う前提でスキップ。
 const DIST = path.join(ROOT, "dist/client");
 if (existsSync(DIST)) {
-  app.use("/assets/*", serveStatic({ root: path.relative(process.cwd(), DIST) }));
-  app.get("*", serveStatic({ path: path.relative(process.cwd(), path.join(DIST, "index.html")) }));
+  app.use("/assets/*", serveStatic({ root: DIST }));
+  const indexFile = path.join(DIST, "index.html");
+  app.get("*", () => new Response(Bun.file(indexFile)));
 }
 
 // 自動バックアップ。起動時に一度、以降は1時間ごとに「前回から
@@ -135,9 +139,8 @@ async function runAutoBackup() {
 void runAutoBackup();
 setInterval(() => void runAutoBackup(), 60 * 60 * 1000);
 
-serve({ fetch: app.fetch, port: PORT, hostname: "127.0.0.1" }, (info) => {
-  console.log(`==> Track (local)  http://127.0.0.1:${info.port}`);
-  console.log(`    db: ${DB_PATH}`);
-  console.log(`    exports: ${loadConfig(DATA_DIR).exportDir}`);
-  if (!existsSync(DIST)) console.log(`    SPA: 未ビルド — npm run build するか vite dev を使ってください`);
-});
+const server = Bun.serve({ fetch: app.fetch, port: PORT, hostname: "127.0.0.1" });
+console.log(`==> Track (local)  http://127.0.0.1:${server.port}`);
+console.log(`    db: ${DB_PATH}`);
+console.log(`    exports: ${loadConfig(DATA_DIR).exportDir}`);
+if (!existsSync(DIST)) console.log(`    SPA: 未ビルド — npm run build するか vite dev を使ってください`);

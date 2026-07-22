@@ -2,13 +2,13 @@
 // リストアは track.db をファイルごと置き換えるため、接続を閉じてから開き直す
 // 必要がある。ルート側は db() 越しに常に「いまの」クライアントを見る。
 import { PrismaClient } from "@prisma/client";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaLibSql } from "@prisma/adapter-libsql";
 
 let client: PrismaClient | null = null;
 let dbPath = "";
 
 function build(): PrismaClient {
-  return new PrismaClient({ adapter: new PrismaBetterSqlite3({ url: `file:${dbPath}` }) });
+  return new PrismaClient({ adapter: new PrismaLibSql({ url: `file:${dbPath}` }) });
 }
 
 export function initDb(path: string): PrismaClient {
