@@ -1,20 +1,30 @@
-# Track — 工数管理アプリ
+# Track — 開発ガイド
 
 ## 技術スタック
-- **フロントエンド**: Vite + React 19 + TailwindCSS v4 + Zustand + TanStack Query
-- **バックエンド**: Cloudflare Workers + Hono
-- **DB**: Cloudflare D1 (SQLite) — マイグレーションは `migrations/` に手書きSQL
-- **認証**: パスキー (WebAuthn via @simplewebauthn)
-- **デプロイ**: `npm run deploy` (vite build → wrangler deploy)
 
-## 構成
-- `src/` — React SPA (pages: Calendar, Projects, Reports, Account, Login, Signup)
-- `worker/` — Hono APIサーバー (routes: entries, projects, tags, reports, account, invitations)
-- `migrations/` — D1マイグレーション (手書きSQL, `npm run db:migrate:local` で適用)
-- `wrangler.jsonc` — Cloudflare設定
+- フロントエンド: Vite + React 19 + Tailwind CSS v4 + Zustand + TanStack Query
+- ローカル API: Bun + Hono
+- DB: SQLite + Prisma + libSQL アダプタ
+- デスクトップ: Tauri 2（Bun コンパイル済み sidecar を同梱）
+
+## コード配置
+
+- `src/client/` — React SPA。ブラウザ固有のコードはここに置く
+- `src/server/` — Bun API。`routes/`、`db/`、`fixtures/` に分ける
+- `src/shared/` — client/server の両方から使う型、日付処理、Zod スキーマ
+- `database/migrations/` — 起動時とリストア後に適用する手書き SQL
+- `database/schema.prisma` — Prisma スキーマ
+- `src-tauri/` — Tauri のRustコード、バンドル設定、`scripts/`内のsidecarビルド処理
+
+import alias は `@client/*`、`@server/*`、`@shared/*` を使う。
 
 ## 開発コマンド
-- `npm run dev` — Vite devサーバー
-- `npm run dev:worker` — Wrangler devサーバー
-- `npm run db:migrate:local` — ローカルDBマイグレーション
-- `npm run deploy` — ビルド＆デプロイ
+
+- `npm run local` — Bun API を起動
+- `npm run dev` — Vite 開発サーバーを起動
+- `npm run tauri:dev` — Tauri アプリを開発起動
+- `npm run build:desktop` — SPA と Bun sidecar をビルド
+- `npm run tauri:build` — macOS `.app` を生成
+- `npm run tauri:dmg` — DMG を生成
+
+実行時 DB は既定で `~/.track/track.db`。Tauri は resource ディレクトリとデータディレクトリを環境変数で sidecar に渡す。利用端末に Node.js や Bun は不要。

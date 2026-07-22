@@ -6,7 +6,10 @@ import path from "node:path";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
-    alias: { "@": path.resolve(__dirname, "src") },
+    alias: {
+      "@client": path.resolve(__dirname, "src/client"),
+      "@shared": path.resolve(__dirname, "src/shared"),
+    },
   },
   build: {
     outDir: "dist/client",

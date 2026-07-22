@@ -1,0 +1,48 @@
+import { Hono } from "hono";
+import { getPrisma } from "../db/prisma";
+import { settingsUpdateSchema } from "@shared/validators";
+import type { Env } from "../types";
+
+const settings = new Hono<{ Bindings: Env }>();
+
+function toSettings(u: { workStart: number; workEnd: number; workDays: string }) {
+  return {
+    workStart: u.workStart,
+    workEnd: u.workEnd,
+    workDays: u.workDays.split(",").map(Number).filter((n) => !isNaN(n)),
+  };
+}
+
+// GET /api/settings — 勤務設定 (Settings は常に1行)
+settings.get("/", async (c) => {
+  const prisma = getPrisma(c.env.DB);
+  const row = await prisma.settings.findFirst({
+    select: { workStart: true, workEnd: true, workDays: true },
+  });
+  if (!row) return c.json({ error: "not_found" }, 404);
+  return c.json(toSettings(row));
+});
+
+// PATCH /api/settings — 勤務設定の更新
+settings.patch("/", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = settingsUpdateSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid_input", issues: parsed.error.flatten() }, 400);
+
+  const data: Record<string, unknown> = {};
+  if (parsed.data.workStart !== undefined) data.workStart = parsed.data.workStart;
+  if (parsed.data.workEnd !== undefined) data.workEnd = parsed.data.workEnd;
+  if (parsed.data.workDays !== undefined) data.workDays = parsed.data.workDays.join(",");
+
+  const prisma = getPrisma(c.env.DB);
+  // 1行しかないので id を知らずに更新できる
+  await prisma.settings.updateMany({ data });
+
+  const row = await prisma.settings.findFirst({
+    select: { workStart: true, workEnd: true, workDays: true },
+  });
+  if (!row) return c.json({ error: "not_found" }, 404);
+  return c.json(toSettings(row));
+});
+
+export { settings };

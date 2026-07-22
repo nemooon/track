@@ -1,85 +1,82 @@
 # Track — 工数管理アプリ
 
-Vite + React / Cloudflare Workers + D1 構成の工数管理アプリ。
+React の画面と Bun のローカル API を Tauri にまとめた、macOS 向けの工数管理アプリです。SQLite データベースは利用者のホームディレクトリに保存します。
+
+## ディレクトリ構成
+
+```text
+track/
+├── src/
+│   ├── client/       # React SPA（画面・コンポーネント・ブラウザ側処理）
+│   ├── server/       # Bun + Hono API（ルート・DB・外部予定表）
+│   └── shared/       # client/server 共通の型・日付処理・入力検証
+├── database/
+│   ├── migrations/   # 起動時に順番に適用する手書き SQL
+│   └── schema.prisma # Prisma スキーマ
+└── src-tauri/        # Tauri の Rustコード・設定・sidecarビルド処理
+```
 
 ## セットアップ
 
-### 1. 依存パッケージのインストール
+必要なものは Node.js、Bun、Rust です。
 
 ```bash
 npm install
 ```
 
-### 2. Prismaクライアントの生成
+Prisma CLI を使う場合は、プロジェクトルートに `.env` を作成します。
+
+```env
+DATABASE_URL=file:./database/dev.db
+```
+
+その後、クライアントを生成します。
 
 ```bash
 npx prisma generate
 ```
 
-> `DATABASE_URL` が必要なため `.env` ファイルを先に作成すること（下記参照）。
+## 開発
 
-### 3. 環境変数の設定
-
-`.env` ファイルをプロジェクトルートに作成：
-
-```env
-DATABASE_URL=file:./prisma/dev.db
-```
-
-> `DATABASE_URL` はPrisma CLIがローカルで使用するもの。アプリ実行時はCloudflare D1を使うため不要。
-
-### 4. ローカルDBにマイグレーションを適用
+ブラウザで開発するときは、ターミナルを2つ使います。
 
 ```bash
-npm run db:migrate:local
-```
+# Bun API（http://127.0.0.1:8787）
+npm run local
 
-### 5. 開発サーバーの起動
-
-ターミナルを2つ使って同時に起動：
-
-```bash
-# フロントエンド (Vite)
+# Vite（http://localhost:5173）
 npm run dev
-
-# バックエンド (Cloudflare Workers)
-npm run dev:worker
 ```
 
-フロントエンド: http://localhost:5173  
-バックエンド: http://localhost:8787
+Vite は `/api` を Bun API にプロキシします。ローカル実行時のデータは既定で `~/.track/track.db` に保存されます。
 
----
+デスクトップアプリとして開発する場合は次を使います。
 
-## コマンド一覧
+```bash
+npm run tauri:dev
+```
+
+## ビルド
+
+```bash
+# Bun sidecar を同梱した macOS .app
+npm run tauri:build
+
+# 配布用 DMG
+npm run tauri:dmg
+```
+
+`.app` は `src-tauri/target/release/bundle/macos/Track.app` に生成されます。Bun の実行環境、React のビルド成果物、SQLite マイグレーションを同梱するため、利用端末への Node.js や Bun のインストールは不要です。
+
+## コマンド
 
 | コマンド | 内容 |
 |---|---|
-| `npm run dev` | Vite devサーバー起動 |
-| `npm run local` | Bunローカルサーバー起動 |
-| `npm run tauri:dev` | Tauriデスクトップ版を開発起動 |
-| `npm run tauri:build` | Bun sidecar同梱のmacOS `.app` をビルド |
-| `npm run tauri:dmg` | 配布用DMGをビルド |
-| `npm run dev:worker` | Wrangler devサーバー起動 |
-| `npm run db:migrate:local` | ローカルD1にマイグレーション適用 |
-| `npm run db:migrate:remote` | 本番D1にマイグレーション適用 |
-| `npx prisma generate` | Prismaクライアント再生成 |
-| `npm run deploy` | ビルド＆Cloudflareへデプロイ |
-
-デスクトップ版のビルドには、BunとRustが必要です。生成された`.app`は
-`src-tauri/target/release/bundle/macos/Track.app`に出力されます。Bun sidecar、
-フロントエンド、SQLiteマイグレーションを同梱するため、利用端末へのNode/Bunの
-インストールは不要です。
-
-## デプロイ
-
-```bash
-npx wrangler login   # 初回のみ
-npm run deploy
-```
-
-本番DBへのマイグレーション適用：
-
-```bash
-npm run db:migrate:remote
-```
+| `npm run dev` | Vite 開発サーバーを起動 |
+| `npm run local` | Bun API を起動 |
+| `npm run build` | React SPA をビルド |
+| `npm run build:sidecar` | Bun API をTauri用の単一実行ファイルへコンパイル |
+| `npm run build:desktop` | SPA と sidecar をビルド |
+| `npm run tauri:dev` | Tauri アプリを開発起動 |
+| `npm run tauri:build` | macOS `.app` をビルド |
+| `npm run tauri:dmg` | DMG をビルド |

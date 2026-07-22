@@ -13,10 +13,12 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "paths": {
-      "@/*": ["./src/*"]
+      "@client/*": ["./src/client/*"],
+      "@server/*": ["./src/server/*"],
+      "@shared/*": ["./src/shared/*"]
     },
     "types": ["vite/client", "bun"]
   },
-  "include": ["src", "worker", "scripts", "*.ts"],
+  "include": ["src", "scripts", "*.ts"],
   "exclude": ["node_modules", "dist"]
 }
