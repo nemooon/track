@@ -7,7 +7,11 @@
 	"assets": {
 		"directory": "dist/client",
 		"binding": "ASSETS",
-		"not_found_handling": "single-page-application"
+		"not_found_handling": "single-page-application",
+		// SPA フォールバックはナビゲーション要求 (Sec-Fetch-Mode: navigate) を
+		// Worker より先に横取りする。API をアドレスバーから開くと index.html が
+		// 返るため、API パスは常に Worker を先に通す。
+		"run_worker_first": ["/api/*", "/mcp"]
 	},
 	"d1_databases": [
 		{
