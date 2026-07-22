@@ -8,7 +8,6 @@ import {
   UserCog,
   PanelLeftClose,
   PanelLeftOpen,
-  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -19,7 +18,6 @@ const links = [
   { href: "/calendar", label: "カレンダー", icon: CalendarDays },
   { href: "/reports", label: "レポート", icon: BarChart3 },
   { href: "/settings/projects", label: "プロジェクト", icon: FolderKanban },
-  { href: "/usage", label: "使用量", icon: Activity },
   { href: "/settings/account", label: "アカウント", icon: UserCog },
 ];
 
