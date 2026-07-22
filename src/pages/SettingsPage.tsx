@@ -6,12 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiFetch } from "@/lib/fetcher";
 import type { UserSettings, AppConfig, Snapshot } from "@/types";
-import {
-  clearWorkspaceHandle,
-  getWorkspaceHandle,
-  pickWorkspaceFolder,
-  workspaceSupported,
-} from "@/lib/workspaceHandle";
 
 const DAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -54,29 +48,6 @@ export function SettingsPage() {
     },
     onError: () => toast.error("更新に失敗しました"),
   });
-
-  // Workspace folder
-  const wsSupported = workspaceSupported();
-  const [wsHandle, setWsHandle] = useState<FileSystemDirectoryHandle | null>(null);
-  useEffect(() => {
-    if (!wsSupported) return;
-    getWorkspaceHandle().then(setWsHandle);
-  }, [wsSupported]);
-
-  async function pickWorkspace() {
-    const handle = await pickWorkspaceFolder();
-    if (!handle) return;
-    setWsHandle(handle);
-    qc.invalidateQueries({ queryKey: ["workspace"] });
-    toast.success(`Workspace を「${handle.name}」に設定しました`);
-  }
-
-  async function clearWorkspace() {
-    await clearWorkspaceHandle();
-    setWsHandle(null);
-    qc.invalidateQueries({ queryKey: ["workspace"] });
-    toast.success("Workspace の設定を解除しました");
-  }
 
   // バックアップ設定
   const { data: config } = useQuery({
@@ -290,43 +261,6 @@ export function SettingsPage() {
           </div>
           <Button type="submit" size="sm">保存</Button>
         </form>
-      </section>
-
-      {/* Workspace */}
-      <section>
-        <h2 className="mb-2 text-lg font-semibold">Workspace ヒント</h2>
-        <p className="mb-3 text-sm text-neutral-500">
-          ローカルの Workspace フォルダを指定すると、ファイル変更・git コミットの時刻からカレンダーに作業ヒントが表示されます。
-        </p>
-        {!wsSupported ? (
-          <div className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-500">
-            このブラウザは未対応です（Chrome / Edge をお使いください）
-          </div>
-        ) : (
-          <div className="flex items-center justify-between rounded-md border border-neutral-200 px-3 py-2">
-            <div className="text-sm">
-              <span className="text-neutral-500">フォルダ: </span>
-              <span className="font-medium text-neutral-700">
-                {wsHandle ? wsHandle.name : "未設定"}
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={pickWorkspace}>
-                {wsHandle ? "変更" : "選択"}
-              </Button>
-              {wsHandle && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-red-600 hover:text-red-700"
-                  onClick={clearWorkspace}
-                >
-                  解除
-                </Button>
-              )}
-            </div>
-          </div>
-        )}
       </section>
 
       {/* データ */}
