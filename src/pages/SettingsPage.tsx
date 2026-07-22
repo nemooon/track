@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiFetch } from "@/lib/fetcher";
-import type { UserProfile } from "@/types";
+import type { UserSettings } from "@/types";
 import {
   clearWorkspaceHandle,
   getWorkspaceHandle,
@@ -26,56 +26,30 @@ function timeToMinutes(value: string): number {
   return h * 60 + m;
 }
 
-export function AccountPage() {
+export function SettingsPage() {
   const qc = useQueryClient();
-  const { data: user, isLoading } = useQuery({
-    queryKey: ["account"],
-    queryFn: () => apiFetch<UserProfile>("/api/account"),
+  const { data: current, isLoading } = useQuery({
+    queryKey: ["settings"],
+    queryFn: () => apiFetch<UserSettings>("/api/settings"),
   });
-
-  // Profile form
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  useEffect(() => {
-    if (user) {
-      setName(user.name ?? "");
-      setEmail(user.email);
-    }
-  }, [user]);
 
   // Work schedule form (minutes since midnight)
   const [workStart, setWorkStart] = useState(600);
   const [workEnd, setWorkEnd] = useState(1110);
   const [workDays, setWorkDays] = useState<number[]>([1, 2, 3, 4, 5]);
   useEffect(() => {
-    if (user) {
-      setWorkStart(user.workStart);
-      setWorkEnd(user.workEnd);
-      setWorkDays(user.workDays);
+    if (current) {
+      setWorkStart(current.workStart);
+      setWorkEnd(current.workEnd);
+      setWorkDays(current.workDays);
     }
-  }, [user]);
-
-  const updateProfile = useMutation({
-    mutationFn: (data: { name?: string; email?: string }) =>
-      apiFetch("/api/account", { method: "PATCH", body: JSON.stringify(data) }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["account"] });
-      toast.success("プロフィールを更新しました");
-    },
-    onError: (err) => {
-      if ((err as Error).message.includes("email_taken")) {
-        toast.error("このメールアドレスは既に使われています");
-      } else {
-        toast.error("更新に失敗しました");
-      }
-    },
-  });
+  }, [current]);
 
   const updateSettings = useMutation({
     mutationFn: (data: { workStart?: number; workEnd?: number; workDays?: number[] }) =>
-      apiFetch("/api/account/settings", { method: "PATCH", body: JSON.stringify(data) }),
+      apiFetch("/api/settings", { method: "PATCH", body: JSON.stringify(data) }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["account"] });
+      qc.invalidateQueries({ queryKey: ["settings"] });
       toast.success("勤務設定を更新しました");
     },
     onError: () => toast.error("更新に失敗しました"),
@@ -120,28 +94,6 @@ export function AccountPage() {
 
   return (
     <div className="mx-auto max-w-xl space-y-8 p-4 sm:p-6">
-      {/* Profile */}
-      <section>
-        <h2 className="mb-4 text-lg font-semibold">プロフィール</h2>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            updateProfile.mutate({ name: name || undefined, email });
-          }}
-          className="space-y-3"
-        >
-          <div className="space-y-1">
-            <Label>名前</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-          <div className="space-y-1">
-            <Label>メールアドレス</Label>
-            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          </div>
-          <Button type="submit" size="sm">保存</Button>
-        </form>
-      </section>
-
       {/* Work schedule */}
       <section>
         <h2 className="mb-4 text-lg font-semibold">勤務設定</h2>

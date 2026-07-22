@@ -115,8 +115,8 @@ export function useFaviconStatus() {
   });
 
   const { data: settings } = useQuery<UserSettings>({
-    queryKey: ["account"],
-    queryFn: () => apiFetch<UserSettings>("/api/account"),
+    queryKey: ["settings"],
+    queryFn: () => apiFetch<UserSettings>("/api/settings"),
   });
 
   useEffect(() => {

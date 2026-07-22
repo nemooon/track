@@ -15,8 +15,8 @@ const ReportsPage = lazy(() =>
 const ProjectsPage = lazy(() =>
   import("@/pages/ProjectsPage").then((m) => ({ default: m.ProjectsPage })),
 );
-const AccountPage = lazy(() =>
-  import("@/pages/AccountPage").then((m) => ({ default: m.AccountPage })),
+const SettingsPage = lazy(() =>
+  import("@/pages/SettingsPage").then((m) => ({ default: m.SettingsPage })),
 );
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000 } },
@@ -32,7 +32,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/calendar" element={<CalendarPage />} />
               <Route path="/reports" element={<ReportsPage />} />
               <Route path="/settings/projects" element={<ProjectsPage />} />
-              <Route path="/settings/account" element={<AccountPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/calendar" replace />} />
           </Routes>

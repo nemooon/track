@@ -23,7 +23,7 @@ import { projects } from "./routes/projects";
 import { entries } from "./routes/entries";
 import { reports } from "./routes/reports";
 import { tags } from "./routes/tags";
-import { account } from "./routes/account";
+import { settings } from "./routes/settings";
 import { external } from "./routes/external";
 import type { Env, AuthVars } from "./types";
 
@@ -135,7 +135,7 @@ app.route("/api/projects", projects);
 app.route("/api/entries", entries);
 app.route("/api/reports", reports);
 app.route("/api/tags", tags);
-app.route("/api/account", account);
+app.route("/api/settings", settings);
 app.route("/api/external", external);
 
 app.get("/health", (c) => c.json({ ok: true, db: DB_PATH, userId: OWNER_ID }));

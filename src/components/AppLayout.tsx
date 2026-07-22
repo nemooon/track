@@ -4,7 +4,7 @@ import {
   CalendarDays,
   BarChart3,
   FolderKanban,
-  UserCog,
+  Settings,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -16,7 +16,7 @@ const links = [
   { href: "/calendar", label: "カレンダー", icon: CalendarDays },
   { href: "/reports", label: "レポート", icon: BarChart3 },
   { href: "/settings/projects", label: "プロジェクト", icon: FolderKanban },
-  { href: "/settings/account", label: "アカウント", icon: UserCog },
+  { href: "/settings", label: "設定", icon: Settings },
 ];
 
 const SIDEBAR_STORAGE_KEY = "track:sidebar-collapsed";

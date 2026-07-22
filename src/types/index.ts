@@ -83,15 +83,6 @@ export type UserSettings = {
   workDays: number[];
 };
 
-export type UserProfile = {
-  id: string;
-  email: string;
-  name: string | null;
-  workStart: number;
-  workEnd: number;
-  workDays: number[];
-};
-
 export type ExternalEventSource = "kot" | "outlook";
 
 export type ExternalEventKind =

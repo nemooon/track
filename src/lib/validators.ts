@@ -109,8 +109,3 @@ export const settingsUpdateSchema = z.object({
   workDays: z.array(z.number().int().min(0).max(6)).optional(),
 });
 
-export const profileUpdateSchema = z.object({
-  name: z.string().max(100).optional(),
-  email: z.string().email().max(200).optional(),
-});
-

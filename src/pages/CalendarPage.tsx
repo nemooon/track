@@ -19,8 +19,8 @@ export function CalendarPage() {
   });
 
   const { data: settings, isLoading: settingsLoading } = useQuery({
-    queryKey: ["account"],
-    queryFn: () => apiFetch<UserSettings>("/api/account"),
+    queryKey: ["settings"],
+    queryFn: () => apiFetch<UserSettings>("/api/settings"),
   });
 
   if (projectsLoading || tagsLoading || settingsLoading) {
