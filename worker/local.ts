@@ -24,6 +24,7 @@ import { entries } from "./routes/entries";
 import { reports } from "./routes/reports";
 import { tags } from "./routes/tags";
 import { settings } from "./routes/settings";
+import { data } from "./routes/data";
 import { external } from "./routes/external";
 import type { Env, AuthVars } from "./types";
 
@@ -31,6 +32,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = Number(process.env.TRACK_PORT ?? 8787);
 const DATA_DIR = process.env.TRACK_DATA_DIR ?? path.join(homedir(), ".track");
 const DB_PATH = path.join(DATA_DIR, "track.db");
+const EXPORT_DIR = path.join(DATA_DIR, "exports");
 const OWNER_EMAIL = process.env.TRACK_OWNER_EMAIL ?? "local@track";
 
 // --- DB 準備 -------------------------------------------------------------
@@ -125,7 +127,7 @@ app.use("*", async (c, next) => {
 
 // env / userId を注入。全ルートは c.env.DB と c.get("userId") しか見ていない。
 app.use("*", async (c, next) => {
-  c.env = { ...c.env, DB: prisma } as Env;
+  c.env = { ...c.env, DB: prisma, EXPORT_DIR } as Env;
   c.set("userId", OWNER_ID);
   await next();
 });
@@ -136,6 +138,7 @@ app.route("/api/entries", entries);
 app.route("/api/reports", reports);
 app.route("/api/tags", tags);
 app.route("/api/settings", settings);
+app.route("/api/data", data);
 app.route("/api/external", external);
 
 app.get("/health", (c) => c.json({ ok: true, db: DB_PATH, userId: OWNER_ID }));
@@ -154,5 +157,6 @@ if (existsSync(DIST)) {
 serve({ fetch: app.fetch, port: PORT, hostname: "127.0.0.1" }, (info) => {
   console.log(`==> Track (local)  http://127.0.0.1:${info.port}`);
   console.log(`    db: ${DB_PATH}`);
+  console.log(`    exports: ${EXPORT_DIR}`);
   if (!existsSync(DIST)) console.log(`    SPA: 未ビルド — npm run build するか vite dev を使ってください`);
 });

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -77,6 +77,69 @@ export function SettingsPage() {
     qc.invalidateQueries({ queryKey: ["workspace"] });
     toast.success("Workspace の設定を解除しました");
   }
+
+  // データのエクスポート / インポート
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [lastExport, setLastExport] = useState<string | null>(null);
+  const [pending, setPending] = useState<{
+    name: string;
+    json: unknown;
+    counts: { clients: number; tags: number; projects: number; entries: number };
+  } | null>(null);
+
+  const runExport = useMutation({
+    mutationFn: () =>
+      apiFetch<{ path: string }>("/api/data/export/file", { method: "POST", body: "{}" }),
+    onSuccess: (res) => {
+      setLastExport(res.path);
+      toast.success("エクスポートしました");
+    },
+    onError: () => toast.error("エクスポートに失敗しました"),
+  });
+
+  async function onPickImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // 同じファイルを続けて選べるようにする
+    if (!file) return;
+    try {
+      const json = JSON.parse(await file.text());
+      const counts = {
+        clients: Array.isArray(json.clients) ? json.clients.length : 0,
+        tags: Array.isArray(json.tags) ? json.tags.length : 0,
+        projects: Array.isArray(json.projects) ? json.projects.length : 0,
+        entries: Array.isArray(json.entries) ? json.entries.length : 0,
+      };
+      setPending({ name: file.name, json, counts });
+    } catch {
+      toast.error("JSON として読めませんでした");
+    }
+  }
+
+  const runImport = useMutation({
+    mutationFn: (json: unknown) =>
+      apiFetch<{ imported: Record<string, number> }>("/api/data/import", {
+        method: "POST",
+        body: JSON.stringify(json),
+      }),
+    onSuccess: (res) => {
+      setPending(null);
+      qc.invalidateQueries();
+      const n = res.imported;
+      toast.success(
+        `インポートしました (クライアント ${n.clients} / タグ ${n.tags} / プロジェクト ${n.projects} / エントリ ${n.entries})`,
+      );
+    },
+    onError: (err) => {
+      const msg = (err as Error).message;
+      if (msg.includes("inconsistent_data")) {
+        toast.error("参照が壊れているためインポートを中止しました");
+      } else if (msg.includes("invalid_input")) {
+        toast.error("ファイルの形式が Track のエクスポートと合いません");
+      } else {
+        toast.error("インポートに失敗しました");
+      }
+    },
+  });
 
   function toggleDay(day: number) {
     setWorkDays((prev) =>
@@ -186,6 +249,88 @@ export function SettingsPage() {
             </div>
           </div>
         )}
+      </section>
+
+      {/* データ */}
+      <section>
+        <h2 className="mb-2 text-lg font-semibold">データ</h2>
+        <p className="mb-3 text-sm text-neutral-500">
+          クライアント・プロジェクト・タグ・エントリと勤務設定を JSON でまとめて出し入れします。
+        </p>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between rounded-md border border-neutral-200 px-3 py-2">
+            <div className="text-sm">
+              <div className="font-medium text-neutral-700">エクスポート</div>
+              <div className="text-xs text-neutral-500">
+                ~/.track/exports/ に JSON を書き出します
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => runExport.mutate()}
+              disabled={runExport.isPending}
+            >
+              書き出す
+            </Button>
+          </div>
+
+          {lastExport && (
+            <div className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2">
+              <div className="mb-1 text-sm text-neutral-700">書き出しました</div>
+              <code className="block overflow-x-auto text-xs text-neutral-600">
+                {lastExport}
+              </code>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between rounded-md border border-neutral-200 px-3 py-2">
+            <div className="text-sm">
+              <div className="font-medium text-neutral-700">インポート</div>
+              <div className="text-xs text-neutral-500">
+                既存のデータは全て置き換わります
+              </div>
+            </div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={onPickImportFile}
+            />
+            <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
+              ファイルを選ぶ
+            </Button>
+          </div>
+
+          {pending && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 p-3">
+              <div className="mb-1 text-sm font-medium text-amber-900">
+                {pending.name} を読み込みました
+              </div>
+              <div className="mb-3 text-xs text-amber-800">
+                クライアント {pending.counts.clients} / タグ {pending.counts.tags} / プロジェクト{" "}
+                {pending.counts.projects} / エントリ {pending.counts.entries}
+                <br />
+                実行すると<strong>いま入っているデータは全て消えます</strong>。
+                心配なら先にエクスポートしてください。
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => runImport.mutate(pending.json)}
+                  disabled={runImport.isPending}
+                >
+                  置き換える
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setPending(null)}>
+                  やめる
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
       </section>
 
     </div>
