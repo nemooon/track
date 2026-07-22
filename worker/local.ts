@@ -3,7 +3,7 @@
 // Web 版との違いは3点だけ:
 //   1. D1 の代わりにローカルの SQLite ファイル (~/.track/track.db)
 //   2. 認証なし — 単一ユーザー固定。passkey / invitations / PAT / MCP は載せない
-//   3. Workers AI の代わりに Anthropic API (キー未設定ならフォールバック文言)
+//   3. AI 機能なし
 //
 // 127.0.0.1 のみで待ち受け、Origin/Host を検証して他サイトからの
 // クロスオリジン書き込み (CSRF / DNS rebinding) を弾く。
@@ -25,7 +25,6 @@ import { reports } from "./routes/reports";
 import { tags } from "./routes/tags";
 import { account } from "./routes/account";
 import { external } from "./routes/external";
-import { ai } from "./routes/ai";
 import type { Env, AuthVars } from "./types";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -93,39 +92,6 @@ async function resolveOwnerId(): Promise<string> {
 }
 const OWNER_ID = await resolveOwnerId();
 
-// --- Workers AI の代替 ---------------------------------------------------
-
-const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
-
-const aiShim = {
-  async run(_model: string, input: { messages: { role: string; content: string }[]; max_tokens?: number }) {
-    if (!ANTHROPIC_KEY) return { response: "" };
-    const system = input.messages.find((m) => m.role === "system")?.content;
-    const messages = input.messages.filter((m) => m.role !== "system");
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": ANTHROPIC_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: process.env.TRACK_AI_MODEL ?? "claude-sonnet-5",
-        max_tokens: input.max_tokens ?? 200,
-        ...(system ? { system } : {}),
-        messages,
-      }),
-    });
-    if (!res.ok) {
-      console.warn(`AI request failed: ${res.status} ${await res.text().catch(() => "")}`);
-      return { response: "" };
-    }
-    const data = (await res.json()) as { content?: { type: string; text?: string }[] };
-    const text = data.content?.find((b) => b.type === "text")?.text ?? "";
-    return { response: text };
-  },
-};
-
 // --- アプリ --------------------------------------------------------------
 
 const app = new Hono<{ Bindings: Env; Variables: AuthVars }>();
@@ -159,7 +125,7 @@ app.use("*", async (c, next) => {
 
 // env / userId を注入。全ルートは c.env.DB と c.get("userId") しか見ていない。
 app.use("*", async (c, next) => {
-  c.env = { ...c.env, DB: prisma, AI: aiShim as unknown as Ai } as Env;
+  c.env = { ...c.env, DB: prisma } as Env;
   c.set("userId", OWNER_ID);
   await next();
 });
@@ -180,9 +146,12 @@ app.route("/api/reports", reports);
 app.route("/api/tags", tags);
 app.route("/api/account", account);
 app.route("/api/external", external);
-app.route("/api/ai", ai);
 
 app.get("/health", (c) => c.json({ ok: true, db: DB_PATH, userId: OWNER_ID }));
+
+// 未定義の /api/* が下の SPA catch-all に落ちると HTML が 200 で返ってしまい、
+// エージェントから叩いたときに原因が分かりにくい。ここで JSON の 404 にする。
+app.all("/api/*", (c) => c.json({ error: "not_found", path: c.req.path }, 404));
 
 // ビルド済み SPA を配信 (dist/client)。無ければ Vite devサーバを使う前提でスキップ。
 const DIST = path.join(ROOT, "dist/client");
@@ -194,6 +163,5 @@ if (existsSync(DIST)) {
 serve({ fetch: app.fetch, port: PORT, hostname: "127.0.0.1" }, (info) => {
   console.log(`==> Track (local)  http://127.0.0.1:${info.port}`);
   console.log(`    db: ${DB_PATH}`);
-  if (!ANTHROPIC_KEY) console.log(`    AI: 無効 (ANTHROPIC_API_KEY 未設定)`);
   if (!existsSync(DIST)) console.log(`    SPA: 未ビルド — npm run build するか vite dev を使ってください`);
 });
