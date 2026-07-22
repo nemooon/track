@@ -10,8 +10,6 @@
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
-import { PrismaClient } from "@prisma/client";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import Database from "better-sqlite3";
 import { readFileSync, readdirSync, mkdirSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -28,6 +26,7 @@ import { config as configRoute } from "./routes/config";
 import { data } from "./routes/data";
 import { loadConfig } from "./config";
 import { maybeAutoBackup } from "./backup";
+import { initDb, db } from "./dbHandle";
 import { external } from "./routes/external";
 import type { Env, AuthVars } from "./types";
 
@@ -83,7 +82,7 @@ if (migrated > 0) console.log(`==> ${migrated} 件のマイグレーションを
 // マイグレーション専用の接続はここで閉じる。以降は Prisma 側が自前で開く。
 sqlite.close();
 
-const prisma = new PrismaClient({ adapter: new PrismaBetterSqlite3({ url: `file:${DB_PATH}` }) });
+const prisma = initDb(DB_PATH);
 
 // 単一ユーザーを確定する。既存行があればそれを使う (db:pull したデータを尊重)。
 async function resolveOwnerId(): Promise<string> {
@@ -130,7 +129,7 @@ app.use("*", async (c, next) => {
 app.use("*", async (c, next) => {
   c.env = {
     ...c.env,
-    DB: prisma,
+    DB: db(),
     EXPORT_DIR: loadConfig(DATA_DIR).exportDir,
     DATA_DIR,
     HOME_DIR: homedir(),
@@ -167,12 +166,12 @@ if (existsSync(DIST)) {
 async function runAutoBackup() {
   const cfg = loadConfig(DATA_DIR);
   try {
-    const file = await maybeAutoBackup(prisma, OWNER_ID, {
+    const info = await maybeAutoBackup(db(), {
       dir: cfg.exportDir,
       intervalHours: cfg.backupIntervalHours,
       keep: cfg.backupKeep,
     });
-    if (file) console.log(`==> 自動バックアップ: ${file}`);
+    if (info) console.log(`==> 自動バックアップ: ${info.path}`);
   } catch (e) {
     console.warn(`自動バックアップに失敗: ${(e as Error).message}`);
   }

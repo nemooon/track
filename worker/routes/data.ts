@@ -1,8 +1,10 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import type { PrismaClient } from "@prisma/client";
 import { getPrisma } from "../db";
-import { writeExport } from "../backup";
+import { listSnapshots, snapshot, validateSnapshot, restore } from "../backup";
 import type { Env, AuthVars } from "../types";
 
 const data = new Hono<{ Bindings: Env; Variables: AuthVars }>();
@@ -90,7 +92,15 @@ data.post("/export/file", async (c) => {
   const dump = await buildExport(getPrisma(c.env.DB), c.get("userId"));
   if (!dump) return c.json({ error: "not_found" }, 404);
 
-  const file = writeExport(c.env.EXPORT_DIR, dump);
+  const dir = c.env.EXPORT_DIR;
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const file = path.join(
+    dir,
+    `track-export-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.json`,
+  );
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(file, JSON.stringify(dump, null, 2), "utf8");
 
   return c.json({
     ok: true,
@@ -280,6 +290,40 @@ data.post("/import", async (c) => {
       entries: d.entries.length,
     },
   });
+});
+
+// --- DB ファイルまるごとのバックアップ / リストア -------------------------
+
+// GET /api/data/backups — 保存先にあるスナップショット一覧
+data.get("/backups", (c) => c.json(listSnapshots(c.env.EXPORT_DIR)));
+
+// POST /api/data/backup — いま取る
+data.post("/backup", async (c) => {
+  const info = await snapshot(getPrisma(c.env.DB), c.env.EXPORT_DIR, false);
+  return c.json(info);
+});
+
+const restoreSchema = z.object({ path: z.string().min(1) });
+
+// POST /api/data/restore — track.db をスナップショットで置き換える
+data.post("/restore", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = restoreSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid_input" }, 400);
+
+  const check = validateSnapshot(parsed.data.path);
+  if (!check.ok) return c.json({ error: "invalid_snapshot", reason: check.reason }, 400);
+
+  const { safety } = await restore(parsed.data.path, c.env.EXPORT_DIR);
+  return c.json({ ok: true, counts: check.counts, safetyBackup: safety?.path ?? null });
+});
+
+// POST /api/data/backups/validate — 差し替え前の中身確認
+data.post("/backups/validate", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = restoreSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid_input" }, 400);
+  return c.json(validateSnapshot(parsed.data.path));
 });
 
 export { data };

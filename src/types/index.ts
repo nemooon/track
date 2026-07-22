@@ -83,6 +83,14 @@ export type UserSettings = {
   workDays: number[];
 };
 
+export type Snapshot = {
+  name: string;
+  path: string;
+  bytes: number;
+  createdAt: string;
+  auto: boolean;
+};
+
 export type AppConfig = {
   exportDir: string;
   backupIntervalHours: number;

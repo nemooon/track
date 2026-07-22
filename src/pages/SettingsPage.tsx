@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiFetch } from "@/lib/fetcher";
-import type { UserSettings, AppConfig } from "@/types";
+import type { UserSettings, AppConfig, Snapshot } from "@/types";
 import {
   clearWorkspaceHandle,
   getWorkspaceHandle,
@@ -115,6 +115,44 @@ export function SettingsPage() {
       } else {
         toast.error("保存に失敗しました");
       }
+    },
+  });
+
+  // DB スナップショット
+  const { data: backups = [] } = useQuery({
+    queryKey: ["backups"],
+    queryFn: () => apiFetch<Snapshot[]>("/api/data/backups"),
+  });
+  const [restoring, setRestoring] = useState<Snapshot | null>(null);
+
+  const runBackup = useMutation({
+    mutationFn: () =>
+      apiFetch<Snapshot>("/api/data/backup", { method: "POST", body: "{}" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["backups"] });
+      toast.success("バックアップを取りました");
+    },
+    onError: () => toast.error("バックアップに失敗しました"),
+  });
+
+  const runRestore = useMutation({
+    mutationFn: (snap: Snapshot) =>
+      apiFetch<{ safetyBackup: string | null }>("/api/data/restore", {
+        method: "POST",
+        body: JSON.stringify({ path: snap.path }),
+      }),
+    onSuccess: () => {
+      setRestoring(null);
+      qc.invalidateQueries();
+      toast.success("リストアしました");
+    },
+    onError: (err) => {
+      const msg = (err as Error).message;
+      toast.error(
+        msg.includes("invalid_snapshot")
+          ? "このファイルはリストアできません"
+          : "リストアに失敗しました",
+      );
     },
   });
 
@@ -295,7 +333,8 @@ export function SettingsPage() {
       <section>
         <h2 className="mb-2 text-lg font-semibold">データ</h2>
         <p className="mb-3 text-sm text-neutral-500">
-          クライアント・プロジェクト・タグ・エントリと勤務設定を JSON でまとめて出し入れします。
+          バックアップは DB をまるごと1ファイルに写す方式です。JSON の出し入れは
+          他ツール連携や D1 からの移行用で、バックアップ用途ではありません。
         </p>
 
         <div className="space-y-3">
@@ -384,11 +423,78 @@ export function SettingsPage() {
             </p>
           </div>
 
+          <div className="rounded-md border border-neutral-200 px-3 py-3">
+            <div className="mb-1 flex items-center justify-between">
+              <div className="text-sm font-medium text-neutral-700">バックアップ</div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => runBackup.mutate()}
+                disabled={runBackup.isPending}
+              >
+                いま取る
+              </Button>
+            </div>
+            <p className="mb-2 text-xs text-neutral-500">
+              DB をまるごと1ファイルに写します（VACUUM INTO）。書き込み中のファイルではないので、
+              保存先が iCloud Drive でも安全です。
+            </p>
+
+            {backups.length === 0 ? (
+              <p className="text-sm text-neutral-500">まだありません</p>
+            ) : (
+              <div className="space-y-1">
+                {backups.map((b) => (
+                  <div
+                    key={b.path}
+                    className="flex items-center justify-between rounded border border-neutral-200 px-2 py-1.5"
+                  >
+                    <div className="min-w-0 text-xs">
+                      <div className="truncate font-mono text-neutral-700">{b.name}</div>
+                      <div className="text-neutral-500">
+                        {new Date(b.createdAt).toLocaleString("ja-JP")} ·{" "}
+                        {(b.bytes / 1024).toFixed(0)} KB
+                        {b.auto && " · 自動"}
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={() => setRestoring(b)}>
+                      戻す
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {restoring && (
+              <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3">
+                <div className="mb-1 text-sm font-medium text-amber-900">
+                  {restoring.name} に戻しますか？
+                </div>
+                <div className="mb-3 text-xs text-amber-800">
+                  いまの DB は<strong>このスナップショットの内容で上書きされます</strong>。
+                  差し替える直前に現在の DB のバックアップを自動で取るので、戻し間違えても復帰できます。
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => runRestore.mutate(restoring)}
+                    disabled={runRestore.isPending}
+                  >
+                    戻す
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setRestoring(null)}>
+                    やめる
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center justify-between rounded-md border border-neutral-200 px-3 py-2">
             <div className="text-sm">
-              <div className="font-medium text-neutral-700">エクスポート</div>
+              <div className="font-medium text-neutral-700">JSON エクスポート</div>
               <div className="text-xs text-neutral-500">
-                いますぐ保存先に JSON を書き出します
+                他ツールへ渡す / D1 から移す用。バックアップ用途ではありません
               </div>
             </div>
             <Button
@@ -412,7 +518,7 @@ export function SettingsPage() {
 
           <div className="flex items-center justify-between rounded-md border border-neutral-200 px-3 py-2">
             <div className="text-sm">
-              <div className="font-medium text-neutral-700">インポート</div>
+              <div className="font-medium text-neutral-700">JSON インポート</div>
               <div className="text-xs text-neutral-500">
                 既存のデータは全て置き換わります
               </div>
