@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { format } from "date-fns";
+import { differenceInCalendarDays, format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { DAY_END_HOUR, DAY_START_HOUR } from "@/lib/time";
 import type { TimeEntry } from "@/types";
 import { minutesToY, minutesFromDayStart } from "./geometry";
 
@@ -37,8 +38,16 @@ export function EntryBlock({
 }) {
   const start = new Date(entry.start);
   const end = new Date(entry.end);
-  const top = minutesToY(minutesFromDayStart(start), hourPx) + 2;
-  const height = Math.max(minutesToY(minutesFromDayStart(end) - minutesFromDayStart(start), hourPx) - 5, 14);
+  const startMin = minutesFromDayStart(start);
+  // An end at 00:00 belongs to the next calendar day; relative to the start's
+  // day it should be treated as 24:00 so the block spans to the bottom instead
+  // of collapsing to a sliver right below the start.
+  const endMin =
+    differenceInCalendarDays(end, start) > 0
+      ? (DAY_END_HOUR - DAY_START_HOUR) * 60
+      : minutesFromDayStart(end);
+  const top = minutesToY(startMin, hourPx) + 2;
+  const height = Math.max(minutesToY(endMin - startMin, hourPx) - 5, 14);
 
   const rightGutter = 12;
   const width = `calc((100% - ${rightGutter}px) / ${laneCount} - 6px)`;
