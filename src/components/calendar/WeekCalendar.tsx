@@ -290,7 +290,8 @@ export function WeekCalendar({
     const anchorMin = workStart != null ? Math.min(workStart, nowMin) : nowMin;
     const targetMin = Math.max(0, anchorMin - 60);
     scrollRef.current.scrollTop = BUFFER_PX + minutesToY(targetMin, hourPx);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // 初期スクロール位置を決めるだけなので、マウント時の一度きりでよい。
+  // workStart や hourPx が後から変わってもユーザーの現在位置を動かさない。
   }, []);
 
   // -- mutations --
@@ -608,7 +609,8 @@ export function WeekCalendar({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // days / updateEntry はドラッグ中に張り替える必要がないため依存に入れない。
+    // 入れるとポインタ操作の途中でリスナーが差し替わる。
   }, [interaction, hourPx]);
 
   function onEntryPointerDown(e: React.PointerEvent, entry: TimeEntry) {
@@ -773,7 +775,7 @@ export function WeekCalendar({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // 選択中のエントリが変わったときだけ張り替えればよい。
   }, [selectedEntryId, entries]);
 
   return (

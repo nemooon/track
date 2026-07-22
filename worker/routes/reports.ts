@@ -2,9 +2,9 @@ import { Hono } from "hono";
 import { getPrisma } from "../db";
 import { reportsQuerySchema, reportsEntriesQuerySchema } from "@/lib/validators";
 import { getWeekRange, getMonthRange } from "@/lib/time";
-import type { Env, AuthVars } from "../types";
+import type { Env } from "../types";
 
-const reports = new Hono<{ Bindings: Env; Variables: AuthVars }>();
+const reports = new Hono<{ Bindings: Env }>();
 
 type EntryFilters = {
   clientIds?: string[];
@@ -30,9 +30,8 @@ function noTagCondition(): Record<string, unknown> {
   };
 }
 
-function buildWhere(userId: string, from: Date, to: Date, f: EntryFilters) {
+function buildWhere(from: Date, to: Date, f: EntryFilters) {
   const where: Record<string, unknown> = {
-    userId,
     start: { lt: to },
     end: { gt: from },
   };
@@ -74,7 +73,6 @@ function buildWhere(userId: string, from: Date, to: Date, f: EntryFilters) {
 }
 
 reports.get("/", async (c) => {
-  const userId = c.get("userId");
   const q = reportsQuerySchema.safeParse({
     range: c.req.query("range"),
     anchor: c.req.query("anchor"),
@@ -91,7 +89,7 @@ reports.get("/", async (c) => {
 
   const prisma = getPrisma(c.env.DB);
   const allEntries = await prisma.timeEntry.findMany({
-    where: buildWhere(userId, from, to, { clientIds, projectIds, tagIds }),
+    where: buildWhere(from, to, { clientIds, projectIds, tagIds }),
     include: {
       project: { include: { client: true, tags: { include: { tag: true } } } },
       tags: { include: { tag: true } },
@@ -188,7 +186,6 @@ reports.get("/", async (c) => {
 });
 
 reports.get("/entries", async (c) => {
-  const userId = c.get("userId");
   const q = reportsEntriesQuerySchema.safeParse({
     range: c.req.query("range"),
     anchor: c.req.query("anchor"),
@@ -204,7 +201,7 @@ reports.get("/entries", async (c) => {
 
   const prisma = getPrisma(c.env.DB);
   const allEntries = await prisma.timeEntry.findMany({
-    where: buildWhere(userId, from, to, { clientIds, projectIds, tagIds }),
+    where: buildWhere(from, to, { clientIds, projectIds, tagIds }),
     include: {
       project: { include: { client: true } },
       tags: { include: { tag: true } },

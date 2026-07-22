@@ -2,12 +2,11 @@ import { Hono } from "hono";
 import { getPrisma } from "../db";
 import { entryCreateSchema, entryUpdateSchema } from "@/lib/validators";
 import { snapToQuarter, sameDay } from "@/lib/time";
-import type { Env, AuthVars } from "../types";
+import type { Env } from "../types";
 
-const entries = new Hono<{ Bindings: Env; Variables: AuthVars }>();
+const entries = new Hono<{ Bindings: Env }>();
 
 entries.get("/", async (c) => {
-  const userId = c.get("userId");
   const from = c.req.query("from");
   const to = c.req.query("to");
   if (!from || !to) return c.json({ error: "from and to required" }, 400);
@@ -15,7 +14,6 @@ entries.get("/", async (c) => {
   const prisma = getPrisma(c.env.DB);
   const list = await prisma.timeEntry.findMany({
     where: {
-      userId,
       start: { lt: new Date(to) },
       end: { gt: new Date(from) },
     },
@@ -26,7 +24,6 @@ entries.get("/", async (c) => {
 });
 
 entries.get("/titles", async (c) => {
-  const userId = c.get("userId");
   const projectId = c.req.query("projectId");
   const prisma = getPrisma(c.env.DB);
   const projectFilter =
@@ -36,7 +33,7 @@ entries.get("/titles", async (c) => {
         ? { projectId }
         : {};
   const list = await prisma.timeEntry.findMany({
-    where: { userId, title: { not: null }, ...projectFilter },
+    where: { title: { not: null }, ...projectFilter },
     select: { title: true },
     orderBy: { start: "desc" },
     take: 500,
@@ -54,7 +51,6 @@ entries.get("/titles", async (c) => {
 });
 
 entries.post("/", async (c) => {
-  const userId = c.get("userId");
   const body = await c.req.json().catch(() => null);
   const parsed = entryCreateSchema.safeParse(body);
   if (!parsed.success) {
@@ -69,7 +65,6 @@ entries.post("/", async (c) => {
   const tagIds = parsed.data.tagIds ?? [];
   const created = await prisma.timeEntry.create({
     data: {
-      userId,
       projectId: parsed.data.projectId ?? null,
       start,
       end,
@@ -86,7 +81,6 @@ entries.post("/", async (c) => {
 });
 
 entries.patch("/:id", async (c) => {
-  const userId = c.get("userId");
   const id = c.req.param("id");
   const body = await c.req.json().catch(() => null);
   const parsed = entryUpdateSchema.safeParse(body);
@@ -94,7 +88,7 @@ entries.patch("/:id", async (c) => {
     return c.json({ error: "invalid_input", issues: parsed.error.flatten() }, 400);
   }
   const prisma = getPrisma(c.env.DB);
-  const existing = await prisma.timeEntry.findFirst({ where: { id, userId } });
+  const existing = await prisma.timeEntry.findUnique({ where: { id } });
   if (!existing) return c.json({ error: "not_found" }, 404);
 
   const data: Record<string, unknown> = {};
@@ -127,10 +121,9 @@ entries.patch("/:id", async (c) => {
 });
 
 entries.delete("/:id", async (c) => {
-  const userId = c.get("userId");
   const id = c.req.param("id");
   const prisma = getPrisma(c.env.DB);
-  const existing = await prisma.timeEntry.findFirst({ where: { id, userId } });
+  const existing = await prisma.timeEntry.findUnique({ where: { id } });
   if (!existing) return c.json({ error: "not_found" }, 404);
   await prisma.timeEntry.delete({ where: { id } });
   return c.json({ ok: true });

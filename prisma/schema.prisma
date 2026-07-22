@@ -1,4 +1,4 @@
-// Toggl-like time tracker schema (ローカル SQLite)
+// Toggl-like time tracker schema (ローカル SQLite / 単一ユーザー)
 generator client {
   provider = "prisma-client-js"
   output   = "../node_modules/.prisma/client"
@@ -8,52 +8,39 @@ datasource db {
   provider = "sqlite"
 }
 
-// 単一ユーザー。実質は勤務設定の置き場。
-model User {
-  id           String       @id @default(cuid())
-  workStart    Int          @default(600)  // 定時開始 (分, 0-1440) 10:00
-  workEnd      Int          @default(1110) // 定時終了 (分, 0-1440) 18:30
-  workDays     String       @default("1,2,3,4,5") // 使う曜日 (0=Sun..6=Sat) CSV
-  createdAt    DateTime     @default(now())
-  clients      Client[]
-  projects     Project[]
-  entries      TimeEntry[]
-  tags         Tag[]
+// 常に1行。勤務設定の置き場。
+model Settings {
+  id        String   @id @default(cuid())
+  workStart Int      @default(600)  // 定時開始 (分, 0-1440) 10:00
+  workEnd   Int      @default(1110) // 定時終了 (分, 0-1440) 18:30
+  workDays  String   @default("1,2,3,4,5") // 使う曜日 (0=Sun..6=Sat) CSV
+  createdAt DateTime @default(now())
 }
 
 model Client {
   id        String    @id @default(cuid())
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   name      String
   archived  Boolean   @default(false)
   createdAt DateTime  @default(now())
   projects  Project[]
-
-  @@index([userId])
 }
 
 model Project {
-  id        String      @id @default(cuid())
-  userId    String
-  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String         @id @default(cuid())
   clientId  String
-  client    Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client    Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
   name      String
   color     String
-  archived  Boolean     @default(false)
-  createdAt DateTime    @default(now())
+  archived  Boolean        @default(false)
+  createdAt DateTime       @default(now())
   entries   TimeEntry[]
   tags      TagOnProject[]
 
-  @@index([userId])
   @@index([clientId])
 }
 
 model TimeEntry {
   id                  String       @id @default(cuid())
-  userId              String
-  user                User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   projectId           String?
   project             Project?     @relation(fields: [projectId], references: [id], onDelete: Restrict)
   start               DateTime
@@ -67,23 +54,18 @@ model TimeEntry {
   updatedAt           DateTime     @updatedAt
   tags                TagOnEntry[]
 
-  @@index([userId, start])
+  @@index([start])
   @@index([projectId])
   @@index([externalEventId])
 }
 
 model Tag {
-  id        String       @id @default(cuid())
-  userId    String
-  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name      String
-  color     String       // hex #RRGGBB
-  createdAt DateTime     @default(now())
+  id        String         @id @default(cuid())
+  name      String         @unique
+  color     String         // hex #RRGGBB
+  createdAt DateTime       @default(now())
   entries   TagOnEntry[]
   projects  TagOnProject[]
-
-  @@unique([userId, name])
-  @@index([userId])
 }
 
 model TagOnEntry {

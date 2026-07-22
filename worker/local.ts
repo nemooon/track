@@ -10,8 +10,7 @@
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
-import Database from "better-sqlite3";
-import { readFileSync, readdirSync, mkdirSync, existsSync } from "node:fs";
+import { mkdirSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,8 +26,9 @@ import { data } from "./routes/data";
 import { loadConfig } from "./config";
 import { maybeAutoBackup } from "./backup";
 import { initDb, db } from "./dbHandle";
+import { runMigrations, MIGRATIONS_DIR_NAME } from "./migrate";
 import { external } from "./routes/external";
-import type { Env, AuthVars } from "./types";
+import type { Env } from "./types";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = Number(process.env.TRACK_PORT ?? 8787);
@@ -38,65 +38,21 @@ const DB_PATH = path.join(DATA_DIR, "track.db");
 // --- DB 準備 -------------------------------------------------------------
 
 mkdirSync(DATA_DIR, { recursive: true });
-const sqlite = new Database(DB_PATH);
-// GUI と CLI/エージェントが同時に触るので WAL 必須。
-sqlite.pragma("journal_mode = WAL");
-sqlite.pragma("foreign_keys = ON");
 
-function migrate() {
-  sqlite.exec(
-    `CREATE TABLE IF NOT EXISTS "_local_migrations" (
-       "name" TEXT NOT NULL PRIMARY KEY,
-       "appliedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-     )`,
-  );
-  const applied = new Set(
-    (sqlite.prepare(`SELECT name FROM "_local_migrations"`).all() as { name: string }[]).map(
-      (r) => r.name,
-    ),
-  );
-  const dir = path.join(ROOT, "migrations");
-  const pending = readdirSync(dir)
-    .filter((f) => f.endsWith(".sql"))
-    .sort()
-    .filter((f) => !applied.has(f));
-
-  for (const file of pending) {
-    const sql = readFileSync(path.join(dir, file), "utf8");
-    sqlite.exec("BEGIN");
-    try {
-      sqlite.exec(sql);
-      sqlite.prepare(`INSERT INTO "_local_migrations" (name) VALUES (?)`).run(file);
-      sqlite.exec("COMMIT");
-      console.log(`  migrated ${file}`);
-    } catch (e) {
-      sqlite.exec("ROLLBACK");
-      throw new Error(`migration ${file} failed: ${(e as Error).message}`);
-    }
-  }
-  return pending.length;
-}
-
-const migrated = migrate();
-if (migrated > 0) console.log(`==> ${migrated} 件のマイグレーションを適用`);
-// マイグレーション専用の接続はここで閉じる。以降は Prisma 側が自前で開く。
-sqlite.close();
+const migrated = runMigrations(DB_PATH, path.join(ROOT, MIGRATIONS_DIR_NAME));
+if (migrated.length > 0) console.log(`==> ${migrated.length} 件のマイグレーションを適用`);
 
 const prisma = initDb(DB_PATH);
 
-// 単一ユーザーを確定する。既存行があればそれを使う (db:pull したデータを尊重)。
-async function resolveOwnerId(): Promise<string> {
-  const existing = await prisma.user.findFirst({ orderBy: { createdAt: "asc" } });
-  if (existing) return existing.id;
-  const created = await prisma.user.create({ data: {} });
-  console.log(`==> 設定レコードを新規作成`);
-  return created.id;
+// Settings は常に1行。無ければ既定値で作る。
+if (!(await prisma.settings.findFirst())) {
+  await prisma.settings.create({ data: {} });
+  console.log("==> 設定レコードを新規作成");
 }
-const OWNER_ID = await resolveOwnerId();
 
 // --- アプリ --------------------------------------------------------------
 
-const app = new Hono<{ Bindings: Env; Variables: AuthVars }>();
+const app = new Hono<{ Bindings: Env }>();
 
 // ローカルサーバは認証を持たないので、ブラウザ経由の他サイトからの書き込みを
 // Origin / Host で弾く。curl (Origin ヘッダなし) は通る = エージェントは素通り。
@@ -125,7 +81,7 @@ app.use("*", async (c, next) => {
   await next();
 });
 
-// env / userId を注入。全ルートは c.env.DB と c.get("userId") しか見ていない。
+// env を注入。全ルートは c.env しか見ていない。
 app.use("*", async (c, next) => {
   c.env = {
     ...c.env,
@@ -133,8 +89,8 @@ app.use("*", async (c, next) => {
     EXPORT_DIR: loadConfig(DATA_DIR).exportDir,
     DATA_DIR,
     HOME_DIR: homedir(),
+    MIGRATIONS_DIR: path.join(ROOT, MIGRATIONS_DIR_NAME),
   } as Env;
-  c.set("userId", OWNER_ID);
   await next();
 });
 
@@ -148,7 +104,7 @@ app.route("/api/data", data);
 app.route("/api/config", configRoute);
 app.route("/api/external", external);
 
-app.get("/health", (c) => c.json({ ok: true, db: DB_PATH, userId: OWNER_ID }));
+app.get("/health", (c) => c.json({ ok: true, db: DB_PATH }));
 
 // 未定義の /api/* が下の SPA catch-all に落ちると HTML が 200 で返ってしまい、
 // エージェントから叩いたときに原因が分かりにくい。ここで JSON の 404 にする。

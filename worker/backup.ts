@@ -13,13 +13,18 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import type { PrismaClient } from "@prisma/client";
 import { db, closeDb, reopenDb, getDbPath } from "./dbHandle";
+import { runMigrations } from "./migrate";
 
 const AUTO_PREFIX = "track-auto-";
 const MANUAL_PREFIX = "track-backup-";
 const SUFFIX = ".db";
 
-/** リストア先として最低限そろっている必要のあるテーブル */
-const REQUIRED_TABLES = ["User", "Client", "Project", "TimeEntry", "Tag"];
+// リストア候補として最低限そろっている必要のあるテーブル。
+// 設定テーブルは 0008 で User -> Settings に改名したので、古いスナップショットも
+// 受け入れられるようどちらか一方あればよいことにする (差し替え後に
+// マイグレーションを流して現行スキーマへ揃える)。
+const REQUIRED_TABLES = ["Client", "Project", "TimeEntry", "Tag"];
+const SETTINGS_TABLES = ["Settings", "User"];
 
 function stamp(d: Date) {
   const p = (n: number) => String(n).padStart(2, "0");
@@ -142,9 +147,13 @@ export function validateSnapshot(file: string): ValidationResult {
     if (missing.length > 0) {
       return { ok: false, reason: `Track の DB ではないようです (${missing.join(", ")} が無い)` };
     }
+    const settingsTable = SETTINGS_TABLES.find((t) => tables.has(t));
+    if (!settingsTable) {
+      return { ok: false, reason: "Track の DB ではないようです (Settings も User も無い)" };
+    }
 
     const counts: Record<string, number> = {};
-    for (const t of REQUIRED_TABLES) {
+    for (const t of [...REQUIRED_TABLES, settingsTable]) {
       counts[t] = (sdb.prepare(`SELECT COUNT(*) c FROM "${t}"`).get() as { c: number }).c;
     }
     return { ok: true, counts };
@@ -162,13 +171,15 @@ export function validateSnapshot(file: string): ValidationResult {
 export async function restore(
   file: string,
   safetyDir: string,
-): Promise<{ safety: SnapshotInfo | null }> {
+  migrationsDir: string,
+): Promise<{ safety: SnapshotInfo | null; migrated: string[] }> {
   const target = getDbPath();
 
   // 差し替え前の退避。ここで失敗したらリストア自体を中止する。
   const safety = await snapshot(db(), safetyDir, false);
 
   await closeDb();
+  let migrated: string[] = [];
   try {
     copyFileSync(file, target);
     // 旧 DB の WAL が残っていると、差し替えた本体と食い違って壊れる
@@ -176,9 +187,11 @@ export async function restore(
       const side = `${target}${ext}`;
       if (existsSync(side)) unlinkSync(side);
     }
+    // 古いスナップショットに戻した場合は、ここで現行スキーマへ追いつかせる
+    migrated = runMigrations(target, migrationsDir);
   } finally {
     reopenDb();
   }
 
-  return { safety };
+  return { safety, migrated };
 }

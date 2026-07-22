@@ -3,9 +3,9 @@ import { z } from "zod";
 import { existsSync, mkdirSync, accessSync, constants } from "node:fs";
 import path from "node:path";
 import { loadConfig, saveConfig, defaultConfig } from "../config";
-import type { Env, AuthVars } from "../types";
+import type { Env } from "../types";
 
-const config = new Hono<{ Bindings: Env; Variables: AuthVars }>();
+const config = new Hono<{ Bindings: Env }>();
 
 const updateSchema = z.object({
   exportDir: z.string().trim().min(1).optional(),

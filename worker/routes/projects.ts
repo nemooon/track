@@ -1,17 +1,16 @@
 import { Hono } from "hono";
 import { getPrisma } from "../db";
 import { projectCreateSchema, projectUpdateSchema } from "@/lib/validators";
-import type { Env, AuthVars } from "../types";
+import type { Env } from "../types";
 
-const projects = new Hono<{ Bindings: Env; Variables: AuthVars }>();
+const projects = new Hono<{ Bindings: Env }>();
 
 projects.get("/", async (c) => {
-  const userId = c.get("userId");
   const clientId = c.req.query("clientId");
   const includeArchived = c.req.query("includeArchived") === "1";
   const prisma = getPrisma(c.env.DB);
 
-  const where: Record<string, unknown> = { userId };
+  const where: Record<string, unknown> = {};
   if (clientId) where.clientId = clientId;
   if (!includeArchived) where.archived = false;
 
@@ -24,7 +23,6 @@ projects.get("/", async (c) => {
 });
 
 projects.post("/", async (c) => {
-  const userId = c.get("userId");
   const body = await c.req.json().catch(() => null);
   const parsed = projectCreateSchema.safeParse(body);
   if (!parsed.success) {
@@ -35,7 +33,6 @@ projects.post("/", async (c) => {
   const created = await prisma.project.create({
     data: {
       ...projectData,
-      userId,
       tags: tagIds?.length ? { create: tagIds.map((tagId) => ({ tagId })) } : undefined,
     },
     include: { client: true, tags: { include: { tag: true } } },
@@ -44,7 +41,6 @@ projects.post("/", async (c) => {
 });
 
 projects.patch("/:id", async (c) => {
-  const userId = c.get("userId");
   const id = c.req.param("id");
   const body = await c.req.json().catch(() => null);
   const parsed = projectUpdateSchema.safeParse(body);
@@ -52,7 +48,7 @@ projects.patch("/:id", async (c) => {
     return c.json({ error: "invalid_input", issues: parsed.error.flatten() }, 400);
   }
   const prisma = getPrisma(c.env.DB);
-  const existing = await prisma.project.findFirst({ where: { id, userId } });
+  const existing = await prisma.project.findUnique({ where: { id } });
   if (!existing) return c.json({ error: "not_found" }, 404);
   const { tagIds, ...updateData } = parsed.data;
   const data: Record<string, unknown> = { ...updateData };
@@ -71,10 +67,9 @@ projects.patch("/:id", async (c) => {
 });
 
 projects.delete("/:id", async (c) => {
-  const userId = c.get("userId");
   const id = c.req.param("id");
   const prisma = getPrisma(c.env.DB);
-  const existing = await prisma.project.findFirst({ where: { id, userId } });
+  const existing = await prisma.project.findUnique({ where: { id } });
   if (!existing) return c.json({ error: "not_found" }, 404);
   const entryCount = await prisma.timeEntry.count({ where: { projectId: id } });
   if (entryCount > 0) {

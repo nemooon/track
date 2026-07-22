@@ -1,22 +1,19 @@
 import { Hono } from "hono";
 import { getPrisma } from "../db";
 import { clientCreateSchema, clientUpdateSchema } from "@/lib/validators";
-import type { Env, AuthVars } from "../types";
+import type { Env } from "../types";
 
-const clients = new Hono<{ Bindings: Env; Variables: AuthVars }>();
+const clients = new Hono<{ Bindings: Env }>();
 
 clients.get("/", async (c) => {
-  const userId = c.get("userId");
   const prisma = getPrisma(c.env.DB);
   const list = await prisma.client.findMany({
-    where: { userId },
     orderBy: { createdAt: "asc" },
   });
   return c.json(list);
 });
 
 clients.post("/", async (c) => {
-  const userId = c.get("userId");
   const body = await c.req.json().catch(() => null);
   const parsed = clientCreateSchema.safeParse(body);
   if (!parsed.success) {
@@ -24,13 +21,12 @@ clients.post("/", async (c) => {
   }
   const prisma = getPrisma(c.env.DB);
   const created = await prisma.client.create({
-    data: { ...parsed.data, userId },
+    data: parsed.data,
   });
   return c.json(created, 201);
 });
 
 clients.patch("/:id", async (c) => {
-  const userId = c.get("userId");
   const id = c.req.param("id");
   const body = await c.req.json().catch(() => null);
   const parsed = clientUpdateSchema.safeParse(body);
@@ -38,7 +34,7 @@ clients.patch("/:id", async (c) => {
     return c.json({ error: "invalid_input", issues: parsed.error.flatten() }, 400);
   }
   const prisma = getPrisma(c.env.DB);
-  const existing = await prisma.client.findFirst({ where: { id, userId } });
+  const existing = await prisma.client.findUnique({ where: { id } });
   if (!existing) return c.json({ error: "not_found" }, 404);
   const updated = await prisma.client.update({
     where: { id },
@@ -48,10 +44,9 @@ clients.patch("/:id", async (c) => {
 });
 
 clients.delete("/:id", async (c) => {
-  const userId = c.get("userId");
   const id = c.req.param("id");
   const prisma = getPrisma(c.env.DB);
-  const existing = await prisma.client.findFirst({ where: { id, userId } });
+  const existing = await prisma.client.findUnique({ where: { id } });
   if (!existing) return c.json({ error: "not_found" }, 404);
   await prisma.client.delete({ where: { id } });
   return c.json({ ok: true });

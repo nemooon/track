@@ -5,41 +5,38 @@ import path from "node:path";
 import type { PrismaClient } from "@prisma/client";
 import { getPrisma } from "../db";
 import { listSnapshots, snapshot, validateSnapshot, restore } from "../backup";
-import type { Env, AuthVars } from "../types";
+import type { Env } from "../types";
 
-const data = new Hono<{ Bindings: Env; Variables: AuthVars }>();
+const data = new Hono<{ Bindings: Env }>();
 
 export const EXPORT_VERSION = 1;
 
-// userId は単一ユーザーの内部 ID でしかないので出力には含めない。
-export async function buildExport(prisma: PrismaClient, userId: string) {
-  const [user, clients, tags, projects, entries] = await Promise.all([
-    prisma.user.findUnique({
-      where: { id: userId },
+// エクスポート形式は import 側と対で維持すること。
+export async function buildExport(prisma: PrismaClient) {
+  const [current, clients, tags, projects, entries] = await Promise.all([
+    prisma.settings.findFirst({
       select: { workStart: true, workEnd: true, workDays: true },
     }),
-    prisma.client.findMany({ where: { userId }, orderBy: { createdAt: "asc" } }),
-    prisma.tag.findMany({ where: { userId }, orderBy: { createdAt: "asc" } }),
+    prisma.client.findMany({ orderBy: { createdAt: "asc" } }),
+    prisma.tag.findMany({ orderBy: { createdAt: "asc" } }),
     prisma.project.findMany({
-      where: { userId },
       orderBy: { createdAt: "asc" },
       include: { tags: { select: { tagId: true } } },
     }),
     prisma.timeEntry.findMany({
-      where: { userId },
       orderBy: { start: "asc" },
       include: { tags: { select: { tagId: true } } },
     }),
   ]);
-  if (!user) return null;
+  if (!current) return null;
 
   return {
     version: EXPORT_VERSION,
     exportedAt: new Date().toISOString(),
     settings: {
-      workStart: user.workStart,
-      workEnd: user.workEnd,
-      workDays: user.workDays.split(",").map(Number).filter((n) => !isNaN(n)),
+      workStart: current.workStart,
+      workEnd: current.workEnd,
+      workDays: current.workDays.split(",").map(Number).filter((n) => !isNaN(n)),
     },
     clients: clients.map((x) => ({
       id: x.id,
@@ -80,7 +77,7 @@ export async function buildExport(prisma: PrismaClient, userId: string) {
 
 // GET /api/data/export — 全データを JSON で返す (curl / エージェント向け)
 data.get("/export", async (c) => {
-  const dump = await buildExport(getPrisma(c.env.DB), c.get("userId"));
+  const dump = await buildExport(getPrisma(c.env.DB));
   if (!dump) return c.json({ error: "not_found" }, 404);
   return c.json(dump);
 });
@@ -89,7 +86,7 @@ data.get("/export", async (c) => {
 // Tauri の WebView は blob のダウンロードが素直に動かないため、
 // 画面からのエクスポートはこちらを使う。
 data.post("/export/file", async (c) => {
-  const dump = await buildExport(getPrisma(c.env.DB), c.get("userId"));
+  const dump = await buildExport(getPrisma(c.env.DB));
   if (!dump) return c.json({ error: "not_found" }, 404);
 
   const dir = c.env.EXPORT_DIR;
@@ -169,7 +166,6 @@ const importSchema = z.object({
 // 部分マージはせず「まるごと差し替え」だけを提供する。ID は元のまま保つので
 // 同じファイルを二度入れても結果は変わらない。
 data.post("/import", async (c) => {
-  const userId = c.get("userId");
   const body = await c.req.json().catch(() => null);
   const parsed = importSchema.safeParse(body);
   if (!parsed.success) {
@@ -203,15 +199,14 @@ data.post("/import", async (c) => {
 
   await prisma.$transaction(async (tx) => {
     // 削除は FK の順序に従う
-    await tx.tagOnEntry.deleteMany({ where: { entry: { userId } } });
-    await tx.tagOnProject.deleteMany({ where: { project: { userId } } });
-    await tx.timeEntry.deleteMany({ where: { userId } });
-    await tx.project.deleteMany({ where: { userId } });
-    await tx.client.deleteMany({ where: { userId } });
-    await tx.tag.deleteMany({ where: { userId } });
+    await tx.tagOnEntry.deleteMany();
+    await tx.tagOnProject.deleteMany();
+    await tx.timeEntry.deleteMany();
+    await tx.project.deleteMany();
+    await tx.client.deleteMany();
+    await tx.tag.deleteMany();
 
-    await tx.user.update({
-      where: { id: userId },
+    await tx.settings.updateMany({
       data: {
         workStart: d.settings.workStart,
         workEnd: d.settings.workEnd,
@@ -223,7 +218,6 @@ data.post("/import", async (c) => {
       await tx.client.createMany({
         data: d.clients.map((x) => ({
           id: x.id,
-          userId,
           name: x.name,
           archived: x.archived,
           createdAt: date(x.createdAt),
@@ -234,7 +228,6 @@ data.post("/import", async (c) => {
       await tx.tag.createMany({
         data: d.tags.map((x) => ({
           id: x.id,
-          userId,
           name: x.name,
           color: x.color,
           createdAt: date(x.createdAt),
@@ -245,7 +238,6 @@ data.post("/import", async (c) => {
       await tx.project.createMany({
         data: d.projects.map((x) => ({
           id: x.id,
-          userId,
           clientId: x.clientId,
           name: x.name,
           color: x.color,
@@ -262,7 +254,6 @@ data.post("/import", async (c) => {
       await tx.timeEntry.createMany({
         data: d.entries.map((x) => ({
           id: x.id,
-          userId,
           projectId: x.projectId,
           start: new Date(x.start),
           end: new Date(x.end),
@@ -314,8 +305,17 @@ data.post("/restore", async (c) => {
   const check = validateSnapshot(parsed.data.path);
   if (!check.ok) return c.json({ error: "invalid_snapshot", reason: check.reason }, 400);
 
-  const { safety } = await restore(parsed.data.path, c.env.EXPORT_DIR);
-  return c.json({ ok: true, counts: check.counts, safetyBackup: safety?.path ?? null });
+  const { safety, migrated } = await restore(
+    parsed.data.path,
+    c.env.EXPORT_DIR,
+    c.env.MIGRATIONS_DIR,
+  );
+  return c.json({
+    ok: true,
+    counts: check.counts,
+    safetyBackup: safety?.path ?? null,
+    migrated,
+  });
 });
 
 // POST /api/data/backups/validate — 差し替え前の中身確認

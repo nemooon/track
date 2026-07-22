@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import { getPrisma } from "../db";
 import { settingsUpdateSchema } from "@/lib/validators";
-import type { Env, AuthVars } from "../types";
+import type { Env } from "../types";
 
-const settings = new Hono<{ Bindings: Env; Variables: AuthVars }>();
+const settings = new Hono<{ Bindings: Env }>();
 
 function toSettings(u: { workStart: number; workEnd: number; workDays: string }) {
   return {
@@ -13,21 +13,18 @@ function toSettings(u: { workStart: number; workEnd: number; workDays: string })
   };
 }
 
-// GET /api/settings — 勤務設定
+// GET /api/settings — 勤務設定 (Settings は常に1行)
 settings.get("/", async (c) => {
-  const userId = c.get("userId");
   const prisma = getPrisma(c.env.DB);
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
+  const row = await prisma.settings.findFirst({
     select: { workStart: true, workEnd: true, workDays: true },
   });
-  if (!user) return c.json({ error: "not_found" }, 404);
-  return c.json(toSettings(user));
+  if (!row) return c.json({ error: "not_found" }, 404);
+  return c.json(toSettings(row));
 });
 
 // PATCH /api/settings — 勤務設定の更新
 settings.patch("/", async (c) => {
-  const userId = c.get("userId");
   const body = await c.req.json().catch(() => null);
   const parsed = settingsUpdateSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid_input", issues: parsed.error.flatten() }, 400);
@@ -38,12 +35,14 @@ settings.patch("/", async (c) => {
   if (parsed.data.workDays !== undefined) data.workDays = parsed.data.workDays.join(",");
 
   const prisma = getPrisma(c.env.DB);
-  const updated = await prisma.user.update({
-    where: { id: userId },
-    data,
+  // 1行しかないので id を知らずに更新できる
+  await prisma.settings.updateMany({ data });
+
+  const row = await prisma.settings.findFirst({
     select: { workStart: true, workEnd: true, workDays: true },
   });
-  return c.json(toSettings(updated));
+  if (!row) return c.json({ error: "not_found" }, 404);
+  return c.json(toSettings(row));
 });
 
 export { settings };

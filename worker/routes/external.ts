@@ -1,9 +1,9 @@
 import { Hono } from "hono";
-import type { Env, AuthVars } from "../types";
+import type { Env } from "../types";
 import { getKotEvents } from "../fixtures/kot";
 import { getOutlookEvents } from "../fixtures/outlook";
 
-const external = new Hono<{ Bindings: Env; Variables: AuthVars }>();
+const external = new Hono<{ Bindings: Env }>();
 
 external.get("/kot/events", (c) => {
   const from = c.req.query("from");
