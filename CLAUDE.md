@@ -27,4 +27,6 @@ import alias は `@client/*`、`@server/*`、`@shared/*` を使う。
 - `npm run tauri:build` — macOS `.app` を生成
 - `npm run tauri:dmg` — DMG を生成
 
-実行時 DB は既定で `~/.track/track.db`。Tauri は resource ディレクトリとデータディレクトリを環境変数で sidecar に渡す。利用端末に Node.js や Bun は不要。
+実行時 DB は既定で `~/.track/track.db`。Tauri はresourceディレクトリと待受ポートを環境変数でsidecarに渡す。利用端末にNode.jsやBunは不要。
+
+本番Tauriアプリは空きloopbackポートを動的に選び、Single Instanceプラグインで二重起動を防ぐ。sidecar起動失敗はDialogプラグインでネイティブ表示する。localhostで配信される設定画面には、バックアップ先フォルダを選ぶ`dialog:allow-open`権限だけを個別に付与する。

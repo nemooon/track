@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "loopback-dialog",
+  "description": "Trackのlocalhost画面にバックアップ先フォルダの選択だけを許可する",
+  "windows": [
+    "main"
+  ],
+  "remote": {
+    "urls": [
+      "http://127.0.0.1:*"
+    ]
+  },
+  "platforms": [
+    "macOS"
+  ],
+  "permissions": [
+    "dialog:allow-open"
+  ]
+}

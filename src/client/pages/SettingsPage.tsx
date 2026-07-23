@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { open } from "@tauri-apps/plugin-dialog";
+import { FolderOpen } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@client/components/ui/button";
 import { Input } from "@client/components/ui/input";
@@ -22,6 +24,7 @@ function timeToMinutes(value: string): number {
 
 export function SettingsPage() {
   const qc = useQueryClient();
+  const isTauri = "__TAURI_INTERNALS__" in window;
   const { data: current, isLoading } = useQuery({
     queryKey: ["settings"],
     queryFn: () => apiFetch<UserSettings>("/api/settings"),
@@ -88,6 +91,23 @@ export function SettingsPage() {
       }
     },
   });
+
+  async function pickExportDir() {
+    try {
+      const selected = await open({
+        title: "バックアップ保存先を選択",
+        directory: true,
+        multiple: false,
+        canCreateDirectories: true,
+        defaultPath: exportDir || config?.defaults.exportDir,
+      });
+      if (typeof selected === "string") {
+        setExportDir(selected);
+      }
+    } catch {
+      toast.error("フォルダ選択を開けませんでした");
+    }
+  }
 
   // DB スナップショット
   const { data: backups = [] } = useQuery({
@@ -286,6 +306,18 @@ export function SettingsPage() {
                 spellCheck={false}
                 className="flex-1 font-mono text-xs"
               />
+              {isTauri && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={pickExportDir}
+                  disabled={updateConfig.isPending}
+                >
+                  <FolderOpen className="h-4 w-4" />
+                  選択
+                </Button>
+              )}
               <Button
                 size="sm"
                 onClick={() => updateConfig.mutate({ exportDir })}
