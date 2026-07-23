@@ -29,4 +29,6 @@ import alias は `@client/*`、`@server/*`、`@shared/*` を使う。
 
 実行時 DB は既定で `~/.track/track.db`。Tauri はresourceディレクトリと待受ポートを環境変数でsidecarに渡す。利用端末にNode.jsやBunは不要。
 
-本番Tauriアプリは空きloopbackポートを動的に選び、Single Instanceプラグインで二重起動を防ぐ。sidecar起動失敗はDialogプラグインでネイティブ表示する。localhostで配信される設定画面には、バックアップ先フォルダを選ぶ`dialog:allow-open`権限だけを個別に付与する。
+本番Tauriアプリは空きloopbackポートを動的に選び、Single Instanceプラグインで二重起動を防ぐ。sidecar起動失敗はDialogプラグインでネイティブ表示する。localhostで配信される画面には、バックアップ先フォルダを選ぶ`dialog:allow-open`、タイトルバーをドラッグする`core:window:allow-start-dragging`、ネイティブメニューイベントを受ける`core:event:allow-listen`だけを個別に付与する。
+
+デスクトップUIは左サイドバーを持たない。共通ヘッダーは左にカレンダー・レポート切替、中央に`PageHeaderPortal`で差し込むページ固有操作、右に`HeaderDateNavigation`とアプリメニューを置く。ヘッダーの操作部品以外を押した場合は`startDragging`を呼び、ウインドウのドラッグ領域として扱う。macOSのネイティブメニューは標準動作とショートカットを維持した日本語メニューとしてRust側で構築する。画面切替は`⌘1`（カレンダー）・`⌘2`（レポート）、表示期間の移動は`⌘[`・`⌘]`、今日への移動は`⌘T`、カレンダーの時間軸拡大縮小は`⌘+`・`⌘-`で行え、Rustのメニューイベントとブラウザのキーボードイベントを共通のReactナビゲーションへ接続する。設定オーバーレイの開閉はURLではなく`AppUiContext`が所有し、macOSのTrackメニューまたは`⌘,`からTauriイベントで開く。クライアント・プロジェクト・タグ管理も設定画面に含める。

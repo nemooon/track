@@ -1,13 +1,19 @@
 import { useState } from "react";
 import {
   addDays,
+  endOfDay,
   endOfMonth,
   format,
+  isWithinInterval,
+  startOfDay,
   startOfMonth,
   startOfWeek,
 } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { cn } from "@client/lib/utils";
+import {
+  HeaderControlButton,
+  HeaderControlGroup,
+} from "@client/components/HeaderControls";
 import { DatePickerPopover } from "./DatePickerPopover";
 
 export type DateRange =
@@ -22,6 +28,7 @@ interface Props {
   onPrev: () => void;
   onNext: () => void;
   onAnchorChange: (next: Date) => void;
+  onToday?: () => void;
   className?: string;
 }
 
@@ -59,40 +66,59 @@ export function DateRangeNavigator({
   onPrev,
   onNext,
   onAnchorChange,
+  onToday,
   className,
 }: Props) {
   const { start, end } = rangeBounds(anchor, range);
 
   const label = formatLabel(start, end, range.kind);
+  const includesToday = isWithinInterval(new Date(), {
+    start: startOfDay(start),
+    end: endOfDay(end),
+  });
 
   const [pickerOpen, setPickerOpen] = useState(false);
 
   return (
-    <div className={cn("relative inline-flex items-center gap-1", className)}>
-      <button
-        type="button"
+    <HeaderControlGroup className={`relative ${className ?? ""}`}>
+      <HeaderControlButton
         onClick={onPrev}
-        title="前へ"
-        className="inline-flex items-center justify-center rounded-md border border-neutral-200 px-2 py-1.5 text-neutral-600 hover:bg-neutral-50"
+        title="前の期間（⌘[）"
+        aria-label="前の期間"
+        aria-keyshortcuts="Meta+["
+        iconOnly
       >
-        <ChevronLeft className="size-5" strokeWidth={2.5} />
-      </button>
-      <button
-        type="button"
+        <ChevronLeft className="size-4" strokeWidth={2.5} />
+      </HeaderControlButton>
+      <HeaderControlButton
         onClick={() => setPickerOpen((o) => !o)}
         title="日付を選択"
-        className="inline-flex w-44 items-center justify-center rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm font-semibold tabular-nums text-neutral-900 hover:bg-neutral-50"
+        aria-expanded={pickerOpen}
+        active
+        className="w-36 font-semibold tabular-nums sm:w-44"
       >
         {label}
-      </button>
-      <button
-        type="button"
+      </HeaderControlButton>
+      <HeaderControlButton
         onClick={onNext}
-        title="次へ"
-        className="inline-flex items-center justify-center rounded-md border border-neutral-200 px-2 py-1.5 text-neutral-600 hover:bg-neutral-50"
+        title="次の期間（⌘]）"
+        aria-label="次の期間"
+        aria-keyshortcuts="Meta+]"
+        iconOnly
       >
-        <ChevronRight className="size-5" strokeWidth={2.5} />
-      </button>
+        <ChevronRight className="size-4" strokeWidth={2.5} />
+      </HeaderControlButton>
+      {onToday && (
+        <HeaderControlButton
+          onClick={onToday}
+          title="今日（⌘T）"
+          aria-keyshortcuts="Meta+T"
+          aria-pressed={includesToday}
+          active={includesToday}
+        >
+          今日
+        </HeaderControlButton>
+      )}
       {pickerOpen && (
         <DatePickerPopover
           value={anchor}
@@ -107,6 +133,6 @@ export function DateRangeNavigator({
           }
         />
       )}
-    </div>
+    </HeaderControlGroup>
   );
 }

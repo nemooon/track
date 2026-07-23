@@ -18,7 +18,12 @@ import {
 } from "date-fns";
 import { Check, Copy } from "lucide-react";
 import { apiFetch } from "@client/lib/fetcher";
-import { DateRangeNavigator } from "@client/components/ui/DateRangeNavigator";
+import { HeaderDateNavigation } from "@client/components/HeaderDateNavigation";
+import { PageHeaderPortal } from "@client/components/PageHeaderPortal";
+import {
+  HeaderControlButton,
+  HeaderControlGroup,
+} from "@client/components/HeaderControls";
 import { FilterMultiSelect, type FilterOption } from "@client/components/reports/FilterMultiSelect";
 import {
   ReportRow,
@@ -414,47 +419,46 @@ export function ReportsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
-      {/* Navigation / Range / GroupBy */}
-      <div className="flex flex-wrap items-center gap-3">
-        <DateRangeNavigator
+    <>
+      <PageHeaderPortal slot="right">
+        <HeaderDateNavigation
           anchor={anchor}
           range={range === "week" ? { kind: "week" } : { kind: "month" }}
           onPrev={prev}
           onNext={next}
           onAnchorChange={setAnchor}
+          onToday={() => setAnchor(new Date())}
         />
-        <button
-          type="button"
-          onClick={() => setAnchor(new Date())}
-          className="inline-flex items-center justify-center rounded-md border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50"
-        >
-          今日
-        </button>
-        <div className="flex gap-1 rounded-md border border-neutral-200 p-0.5">
+      </PageHeaderPortal>
+
+      <PageHeaderPortal slot="center">
+        <HeaderControlGroup>
           {(["week", "month"] as const).map((r) => (
-            <button
+            <HeaderControlButton
               key={r}
               onClick={() => setRange(r)}
-              className={`rounded px-3 py-1 text-sm ${range === r ? "bg-neutral-900 text-white" : "text-neutral-600 hover:bg-neutral-100"}`}
+              active={range === r}
+              aria-pressed={range === r}
             >
               {r === "week" ? "週" : "月"}
-            </button>
+            </HeaderControlButton>
           ))}
-        </div>
-        <div className="flex gap-1 rounded-md border border-neutral-200 p-0.5">
+        </HeaderControlGroup>
+        <HeaderControlGroup>
           {(["client", "project", "tag"] as const).map((g) => (
-            <button
+            <HeaderControlButton
               key={g}
               onClick={() => setGroupBy(g)}
-              className={`rounded px-3 py-1 text-sm ${groupBy === g ? "bg-neutral-900 text-white" : "text-neutral-600 hover:bg-neutral-100"}`}
+              active={groupBy === g}
+              aria-pressed={groupBy === g}
             >
               {g === "client" ? "クライアント" : g === "project" ? "プロジェクト" : "タグ"}
-            </button>
+            </HeaderControlButton>
           ))}
-        </div>
-      </div>
+        </HeaderControlGroup>
+      </PageHeaderPortal>
 
+      <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs text-neutral-500">絞り込み:</span>
@@ -692,6 +696,7 @@ export function ReportsPage() {
           </table>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }

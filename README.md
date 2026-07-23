@@ -68,9 +68,50 @@ npm run tauri:dmg
 
 `.app` は `src-tauri/target/release/bundle/macos/Track.app` に生成されます。Bun の実行環境、React のビルド成果物、SQLite マイグレーションを同梱するため、利用端末への Node.js や Bun のインストールは不要です。
 
+現在のsidecarは`aarch64-apple-darwin`向けで最低動作環境がmacOS 13.0のため、配布対象はmacOS Ventura以降のApple Silicon Macです。Tauri側の`LSMinimumSystemVersion`もsidecarに合わせて13.0に設定しています。
+
 本番アプリは空いているlocalhostポートを起動時に選びます。二度起動した場合は新しいプロセスを増やさず、既存ウィンドウを前面へ戻します。sidecarやDBの起動に失敗した場合は、macOSのエラーダイアログに原因を表示します。
 
 バックアップ先は設定画面の「選択」ボタンからmacOS標準のフォルダ選択ダイアログで指定できます。ブラウザ開発時は従来どおりパスを直接入力します。
+
+カレンダーとレポートはヘッダー左側、または `⌘1`（カレンダー）・`⌘2`（レポート）で切り替えます。ヘッダー中央には画面固有の操作、右側には日付選択とアプリメニューを表示します。表示期間は `⌘[`・`⌘]` で前後へ移動し、`⌘T` で今日へ戻れます。表示中の期間に今日が含まれる場合は「今日」ボタンを強調します。カレンダーの時間軸は `⌘+`・`⌘-` で拡大縮小できます。macOSのメニューバーは「ファイル」「編集」「表示」「ウインドウ」「ヘルプ」を含めて日本語で表示します。設定は「Track」メニューにある「設定…」または `⌘,` でオーバーレイ表示し、勤務・プロジェクト・タグ・バックアップをまとめて管理します。
+
+ヘッダーの操作部品以外の空白は、ウインドウを移動するドラッグ領域として動作します。
+ヘッダーは緑がかったチャコールグレーを基調にし、操作グループは半透明、選択中の項目は明るい面で表示します。
+
+macOSアプリの開発言語は`src-tauri/Info.plist`で日本語に設定し、OSが「ウインドウ」メニューへ自動追加するタイル表示やディスプレイ移動などの項目も日本語で表示します。
+
+## Homebrewでの配布
+
+配布開始後は、`hako`・`neruna`と同じtapからインストールできます。
+
+```bash
+brew install --cask nemooon/tap/track
+```
+
+現時点のアプリはApple Developer IDではなくad-hoc署名です。macOSに初回起動を止められた場合は、次のコマンドで隔離属性を削除します。
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Track.app
+```
+
+リリースの流れは次のとおりです。
+
+1. `npm run version:set -- 0.3.0`で`package.json`、Tauri、Cargoのバージョンをまとめて更新する
+2. `npm run version:check`でバージョンの一致を確認する
+3. 変更をコミットし、GitHubへpushする
+4. `npm run release`でApple Silicon向け`.app`をビルドし、`Track-<version>.zip`をGitHub Releaseへ公開する
+5. `.github/workflows/bump-cask.yml`がsha256を計算し、`nemooon/homebrew-tap`の`Casks/track.rb`を更新する
+
+リリースノートを指定する場合は`npm run release -- path/to/notes.md`を使います。省略時はGitHubが前回のタグとの差分からリリースノートを生成します。zipだけをローカルで確認するときは`npm run release:package`を使います。
+
+初回リリース前に、次の準備が必要です。
+
+- `nemooon/track`をpublicリポジトリにする（通常のHomebrew CaskはprivateなGitHub Releaseを取得できません）
+- TrackリポジトリのActions secret `TAP_GITHUB_TOKEN`に、`nemooon/homebrew-tap`へ書き込めるfine-grained PATを登録する
+- GitHub Actionsを有効にする
+
+Homebrew Caskの原型は`packaging/homebrew/track.rb.template`に置いてあります。release workflowは実際のバージョンとsha256を埋め、tap側のCaskを新規作成または更新します。
 
 ## コマンド
 
@@ -84,3 +125,7 @@ npm run tauri:dmg
 | `npm run tauri:dev` | Tauri アプリを開発起動 |
 | `npm run tauri:build` | macOS `.app` をビルド |
 | `npm run tauri:dmg` | DMG をビルド |
+| `npm run version:check` | 配布に関係する全ファイルのバージョン一致を確認 |
+| `npm run version:set -- <version>` | 配布に関係する全ファイルのバージョンを更新 |
+| `npm run release:package` | Homebrew配布用のzipをローカル生成 |
+| `npm run release` | zipをビルドし、GitHub Releaseとして公開 |

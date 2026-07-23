@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, addDays, isSameDay } from "date-fns";
 import { ja } from "date-fns/locale";
@@ -25,7 +26,13 @@ import { useCalendarStore, ZOOM_LEVELS } from "./calendarStore";
 import { EntryEditDialog } from "./EntryEditDialog";
 import { cn } from "@client/lib/utils";
 import { useMediaQuery } from "@client/lib/useMediaQuery";
-import { DateRangeNavigator, type DateRange } from "@client/components/ui/DateRangeNavigator";
+import type { DateRange } from "@client/components/ui/DateRangeNavigator";
+import { HeaderDateNavigation } from "@client/components/HeaderDateNavigation";
+import { PageHeaderPortal } from "@client/components/PageHeaderPortal";
+import {
+  HeaderControlButton,
+  HeaderControlGroup,
+} from "@client/components/HeaderControls";
 
 type Interaction =
   | { kind: "idle" }
@@ -201,6 +208,68 @@ export function WeekCalendar({
   const zoomIn = useCalendarStore((s) => s.zoomIn);
   const zoomOut = useCalendarStore((s) => s.zoomOut);
   const hourPx = ZOOM_LEVELS[zoomIndex].hourPx;
+
+  React.useEffect(() => {
+    let ignoredNativeDirection: "in" | "out" | null = null;
+    let ignoreNativeUntil = 0;
+
+    function perform(direction: "in" | "out") {
+      if (direction === "in") zoomIn();
+      else zoomOut();
+    }
+
+    function onZoomKeyDown(event: KeyboardEvent) {
+      if (
+        event.defaultPrevented ||
+        event.repeat ||
+        event.altKey ||
+        !(event.metaKey || event.ctrlKey)
+      ) {
+        return;
+      }
+
+      const direction =
+        event.code === "Equal" || event.code === "NumpadAdd"
+          ? "in"
+          : event.code === "Minus" || event.code === "NumpadSubtract"
+            ? "out"
+            : null;
+      if (!direction) return;
+
+      event.preventDefault();
+      perform(direction);
+      ignoredNativeDirection = direction;
+      ignoreNativeUntil = Date.now() + 250;
+    }
+
+    const isTauri = "__TAURI_INTERNALS__" in window;
+    window.addEventListener("keydown", onZoomKeyDown);
+
+    let active = true;
+    let unlisten: UnlistenFn | undefined;
+    if (isTauri) {
+      void listen<string>("track-calendar-zoom", ({ payload }) => {
+        if (payload !== "in" && payload !== "out") return;
+        if (
+          payload === ignoredNativeDirection &&
+          Date.now() <= ignoreNativeUntil
+        ) {
+          ignoredNativeDirection = null;
+          return;
+        }
+        perform(payload);
+      }).then((dispose) => {
+        if (active) unlisten = dispose;
+        else dispose();
+      });
+    }
+
+    return () => {
+      active = false;
+      window.removeEventListener("keydown", onZoomKeyDown);
+      unlisten?.();
+    };
+  }, [zoomIn, zoomOut]);
   const [dialogEntry, setDialogEntry] = React.useState<TimeEntry | null>(null);
   const [hoverState, setHoverState] = React.useState<{ dayIndex: number; minute: number } | null>(null);
   const currentTime = useCurrentMinutes();
@@ -722,8 +791,7 @@ export function WeekCalendar({
         }
       }}
     >
-      {/* Week navigation */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-neutral-200 px-3 py-3 sm:px-6">
+      <PageHeaderPortal slot="right">
         {(() => {
           const isMulti = effectiveDayCount !== 1 && effectiveDayCount !== 3;
           const step = isMulti ? 7 : (effectiveDayCount as number);
@@ -734,53 +802,52 @@ export function WeekCalendar({
                 ? { kind: "days", count: 3 }
                 : { kind: "week" };
           return (
-            <>
-              <DateRangeNavigator
-                anchor={anchor}
-                range={navRange}
-                onPrev={() => onNavigate(addDays(anchor, -step))}
-                onNext={() => onNavigate(addDays(anchor, step))}
-                onAnchorChange={onNavigate}
-              />
-              <button
-                type="button"
-                onClick={() => onNavigate(new Date())}
-                className="inline-flex items-center justify-center rounded-md border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50"
-              >
-                今日
-              </button>
-            </>
+            <HeaderDateNavigation
+              anchor={anchor}
+              range={navRange}
+              onPrev={() => onNavigate(addDays(anchor, -step))}
+              onNext={() => onNavigate(addDays(anchor, step))}
+              onAnchorChange={onNavigate}
+              onToday={() => onNavigate(new Date())}
+            />
           );
         })()}
+      </PageHeaderPortal>
+
+      <PageHeaderPortal slot="center">
         {!isMobile && (
-          <>
-            <button
+          <HeaderControlGroup>
+            <HeaderControlButton
               onClick={toggleShowKot}
               title="KING OF TIME の打刻・スケジュール（モックデータ）を表示"
-              className={cn(
-                "ml-3 rounded border px-2 py-1 text-sm",
-                showKot
-                  ? "border-kot bg-kot/10 text-kot"
-                  : "border-neutral-200 text-neutral-500 hover:bg-neutral-50",
-              )}
+              active={showKot}
+              aria-pressed={showKot}
             >
+              <span
+                className={cn(
+                  "size-1.5 rounded-full",
+                  showKot ? "bg-kot" : "bg-neutral-300",
+                )}
+              />
               KING OF TIME 連携（モック）
-            </button>
-            <button
+            </HeaderControlButton>
+            <HeaderControlButton
               onClick={toggleShowOutlook}
               title="Outlook の予定（モックデータ）を表示"
-              className={cn(
-                "ml-1 rounded border px-2 py-1 text-sm",
-                showOutlook
-                  ? "border-outlook bg-outlook/10 text-outlook"
-                  : "border-neutral-200 text-neutral-500 hover:bg-neutral-50",
-              )}
+              active={showOutlook}
+              aria-pressed={showOutlook}
             >
+              <span
+                className={cn(
+                  "size-1.5 rounded-full",
+                  showOutlook ? "bg-outlook" : "bg-neutral-300",
+                )}
+              />
               Outlook 連携（モック）
-            </button>
-          </>
+            </HeaderControlButton>
+          </HeaderControlGroup>
         )}
-        <div className="ml-auto flex gap-1">
+        <HeaderControlGroup>
           {(
             [
               { key: 1, label: "1日", minWidth: 0 },
@@ -795,21 +862,17 @@ export function WeekCalendar({
               return !isMobile && !isTablet;
             })
             .map(({ key, label }) => (
-              <button
+              <HeaderControlButton
                 key={key}
                 onClick={() => onDayCountChange(key)}
-                className={cn(
-                  "rounded border px-2 py-1 text-sm",
-                  effectiveDayCount === key
-                    ? "border-neutral-700 bg-neutral-700 text-white"
-                    : "border-neutral-200 hover:bg-neutral-50",
-                )}
+                active={effectiveDayCount === key}
+                aria-pressed={effectiveDayCount === key}
               >
                 {label}
-              </button>
+              </HeaderControlButton>
             ))}
-        </div>
-      </div>
+        </HeaderControlGroup>
+      </PageHeaderPortal>
 
       {/* Day header */}
       <div className="flex border-b border-neutral-200" style={{ paddingRight: scrollbarWidth }}>
@@ -817,6 +880,9 @@ export function WeekCalendar({
           <button
             onClick={zoomOut}
             disabled={zoomIndex === 0}
+            title="カレンダーを縮小（⌘-）"
+            aria-label="カレンダーを縮小"
+            aria-keyshortcuts="Meta+-"
             className="rounded size-5 text-sm text-neutral-500 font-bold leading-none hover:bg-neutral-100 disabled:opacity-30"
           >
             −
@@ -824,6 +890,9 @@ export function WeekCalendar({
           <button
             onClick={zoomIn}
             disabled={zoomIndex === ZOOM_LEVELS.length - 1}
+            title="カレンダーを拡大（⌘+）"
+            aria-label="カレンダーを拡大"
+            aria-keyshortcuts="Meta++"
             className="rounded size-5 text-sm text-neutral-500 font-bold leading-none hover:bg-neutral-100 disabled:opacity-30"
           >
             +

@@ -12,7 +12,11 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build --bundles app",
-    "tauri:dmg": "tauri build --bundles dmg"
+    "tauri:dmg": "tauri build --bundles dmg",
+    "version:check": "node scripts/check-version.mjs",
+    "version:set": "node scripts/set-version.mjs",
+    "release:package": "scripts/package-release.sh",
+    "release": "scripts/release.sh"
   },
   "dependencies": {
     "@holiday-jp/holiday_jp": "^2.5.1",

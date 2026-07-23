@@ -39,7 +39,11 @@ function useTags() {
 
 /* ── Page ─────────────────────────────────────────────── */
 
-export function ProjectsPage() {
+export function ProjectsPage({
+  embedded = false,
+}: {
+  embedded?: boolean;
+} = {}) {
   const qc = useQueryClient();
   const { data: clients = [] } = useClients();
   const { data: projects = [] } = useProjects();
@@ -247,7 +251,7 @@ export function ProjectsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 p-4 sm:p-6">
+    <div className={embedded ? "space-y-8" : "mx-auto max-w-3xl space-y-8 p-4 sm:p-6"}>
       {/* Clients */}
       <section>
         <div className="mb-3 flex items-center justify-between">

@@ -7,6 +7,7 @@ import { Button } from "@client/components/ui/button";
 import { Input } from "@client/components/ui/input";
 import { Label } from "@client/components/ui/label";
 import { apiFetch } from "@client/lib/fetcher";
+import { ProjectsPage } from "@client/pages/ProjectsPage";
 import type { UserSettings, AppConfig, Snapshot } from "@shared/types";
 
 const DAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
@@ -22,7 +23,11 @@ function timeToMinutes(value: string): number {
   return h * 60 + m;
 }
 
-export function SettingsPage() {
+export function SettingsPage({
+  embedded = false,
+}: {
+  embedded?: boolean;
+} = {}) {
   const qc = useQueryClient();
   const isTauri = "__TAURI_INTERNALS__" in window;
   const { data: current, isLoading } = useQuery({
@@ -225,7 +230,17 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-xl space-y-8 p-4 sm:p-6">
+    <div
+      className={
+        embedded
+          ? "space-y-8 p-4 sm:p-6"
+          : "mx-auto max-w-3xl space-y-8 p-4 sm:p-6"
+      }
+    >
+      {!embedded && (
+        <h1 className="text-2xl font-semibold tracking-tight">設定</h1>
+      )}
+
       {/* Work schedule */}
       <section>
         <h2 className="mb-4 text-lg font-semibold">勤務設定</h2>
@@ -283,8 +298,13 @@ export function SettingsPage() {
         </form>
       </section>
 
+      <section id="projects" className="border-t border-neutral-200 pt-8">
+        <h2 className="mb-6 text-xl font-semibold">プロジェクト設定</h2>
+        <ProjectsPage embedded />
+      </section>
+
       {/* データ */}
-      <section>
+      <section className="border-t border-neutral-200 pt-8">
         <h2 className="mb-2 text-lg font-semibold">データ</h2>
         <p className="mb-3 text-sm text-neutral-500">
           バックアップは DB をまるごと1ファイルに写す方式です。JSON の出し入れは

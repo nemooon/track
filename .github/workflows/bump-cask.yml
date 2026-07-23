@@ -1,0 +1,81 @@
+name: Bump Homebrew cask
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "対象のリリースタグ (例: v0.2.0)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: リリース元をチェックアウト
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+          path: source
+
+      - name: リリースアセットのsha256を取得
+        id: info
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          VERSION="${TAG#v}"
+          ASSET="Track-${VERSION}.zip"
+          mkdir -p release
+
+          # release published直後はアセットが見えない場合があるためリトライする。
+          for i in 1 2 3 4 5; do
+            gh release download "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern "$ASSET" \
+              --dir release \
+              --clobber && break
+            echo "アセット取得失敗 (${i}回目)、30秒待って再試行..."
+            sleep 30
+          done
+
+          test -s "release/${ASSET}"
+          SHA=$(sha256sum "release/${ASSET}" | cut -d' ' -f1)
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "sha256=${SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: tapをチェックアウト
+        uses: actions/checkout@v4
+        with:
+          repository: nemooon/homebrew-tap
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          path: tap
+
+      - name: Caskを更新してpush
+        env:
+          VERSION: ${{ steps.info.outputs.version }}
+          SHA256: ${{ steps.info.outputs.sha256 }}
+        run: |
+          mkdir -p tap/Casks
+          sed \
+            -e "s/__VERSION__/${VERSION}/g" \
+            -e "s/__SHA256__/${SHA256}/g" \
+            source/packaging/homebrew/track.rb.template \
+            > tap/Casks/track.rb
+
+          cd tap
+          if [[ -z "$(git status --porcelain -- Casks/track.rb)" ]]; then
+            echo "Caskは既に最新です。何もしません。"
+            exit 0
+          fi
+
+          git diff -- Casks/track.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/track.rb
+          git commit -m "track ${VERSION}"
+          git push

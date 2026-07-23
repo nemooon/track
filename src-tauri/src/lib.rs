@@ -6,10 +6,28 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+#[cfg(desktop)]
+use tauri::Emitter;
 use tauri::{Manager, RunEvent, Url};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 const DEV_SERVER_URL: &str = "http://127.0.0.1:8787";
+#[cfg(desktop)]
+const SETTINGS_MENU_ID: &str = "open-settings";
+#[cfg(desktop)]
+const CALENDAR_MENU_ID: &str = "open-calendar";
+#[cfg(desktop)]
+const REPORTS_MENU_ID: &str = "open-reports";
+#[cfg(desktop)]
+const PREVIOUS_PERIOD_MENU_ID: &str = "previous-period";
+#[cfg(desktop)]
+const NEXT_PERIOD_MENU_ID: &str = "next-period";
+#[cfg(desktop)]
+const TODAY_MENU_ID: &str = "go-to-today";
+#[cfg(desktop)]
+const ZOOM_IN_MENU_ID: &str = "calendar-zoom-in";
+#[cfg(desktop)]
+const ZOOM_OUT_MENU_ID: &str = "calendar-zoom-out";
 
 #[derive(Default)]
 struct SidecarState(Mutex<Option<Child>>);
@@ -118,6 +136,50 @@ fn focus_main_window(app: &tauri::AppHandle) {
     let _ = window.set_focus();
 }
 
+#[cfg(desktop)]
+fn open_settings_overlay(app: &tauri::AppHandle) {
+    focus_main_window(app);
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    if let Err(error) = window.emit("track-open-settings", ()) {
+        log::error!("設定オーバーレイを開けません: {error}");
+    }
+}
+
+#[cfg(desktop)]
+fn open_app_view(app: &tauri::AppHandle, path: &str) {
+    focus_main_window(app);
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    if let Err(error) = window.emit("track-open-view", path) {
+        log::error!("画面を切り替えられません: {error}");
+    }
+}
+
+#[cfg(desktop)]
+fn navigate_date(app: &tauri::AppHandle, action: &str) {
+    focus_main_window(app);
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    if let Err(error) = window.emit("track-date-navigation", action) {
+        log::error!("表示期間を移動できません: {error}");
+    }
+}
+
+#[cfg(desktop)]
+fn zoom_calendar(app: &tauri::AppHandle, direction: &str) {
+    focus_main_window(app);
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    if let Err(error) = window.emit("track-calendar-zoom", direction) {
+        log::error!("カレンダーを拡大縮小できません: {error}");
+    }
+}
+
 fn stop_sidecar(app: &tauri::AppHandle) {
     let Some(state) = app.try_state::<SidecarState>() else {
         return;
@@ -165,9 +227,175 @@ pub fn run() {
     let mut builder = tauri::Builder::default();
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            focus_main_window(app);
-        }));
+        builder = builder
+            .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+                focus_main_window(app);
+            }))
+            .menu(|app| {
+                #[cfg(target_os = "macos")]
+                {
+                    use tauri::menu::{
+                        AboutMetadata, MenuBuilder, MenuItem, SubmenuBuilder, HELP_SUBMENU_ID,
+                        WINDOW_SUBMENU_ID,
+                    };
+
+                    let app_name = app
+                        .config()
+                        .product_name
+                        .clone()
+                        .unwrap_or_else(|| app.package_info().name.clone());
+                    let package = app.package_info();
+                    let about_metadata = AboutMetadata {
+                        name: Some(app_name.clone()),
+                        version: Some(package.version.to_string()),
+                        copyright: app.config().bundle.copyright.clone(),
+                        authors: app.config().bundle.publisher.clone().map(|name| vec![name]),
+                        ..Default::default()
+                    };
+                    let settings = MenuItem::with_id(
+                        app,
+                        SETTINGS_MENU_ID,
+                        "設定…",
+                        true,
+                        Some("CmdOrCtrl+,"),
+                    )?;
+                    let calendar = MenuItem::with_id(
+                        app,
+                        CALENDAR_MENU_ID,
+                        "カレンダー",
+                        true,
+                        Some("CmdOrCtrl+1"),
+                    )?;
+                    let reports = MenuItem::with_id(
+                        app,
+                        REPORTS_MENU_ID,
+                        "レポート",
+                        true,
+                        Some("CmdOrCtrl+2"),
+                    )?;
+                    let previous_period = MenuItem::with_id(
+                        app,
+                        PREVIOUS_PERIOD_MENU_ID,
+                        "前の期間",
+                        true,
+                        Some("CmdOrCtrl+["),
+                    )?;
+                    let next_period = MenuItem::with_id(
+                        app,
+                        NEXT_PERIOD_MENU_ID,
+                        "次の期間",
+                        true,
+                        Some("CmdOrCtrl+]"),
+                    )?;
+                    let today =
+                        MenuItem::with_id(app, TODAY_MENU_ID, "今日", true, Some("CmdOrCtrl+T"))?;
+                    let zoom_in = MenuItem::with_id(
+                        app,
+                        ZOOM_IN_MENU_ID,
+                        "カレンダーを拡大",
+                        true,
+                        Some("CmdOrCtrl++"),
+                    )?;
+                    let zoom_out = MenuItem::with_id(
+                        app,
+                        ZOOM_OUT_MENU_ID,
+                        "カレンダーを縮小",
+                        true,
+                        Some("CmdOrCtrl+-"),
+                    )?;
+
+                    let app_menu = SubmenuBuilder::new(app, &app_name)
+                        .about_with_text(format!("{app_name}について"), Some(about_metadata))
+                        .separator()
+                        .item(&settings)
+                        .separator()
+                        .services_with_text("サービス")
+                        .separator()
+                        .hide_with_text(format!("{app_name}を隠す"))
+                        .hide_others_with_text("ほかを隠す")
+                        .show_all_with_text("すべてを表示")
+                        .separator()
+                        .quit_with_text(format!("{app_name}を終了"))
+                        .build()?;
+                    let file_menu = SubmenuBuilder::new(app, "ファイル")
+                        .close_window_with_text("ウインドウを閉じる")
+                        .build()?;
+                    let edit_menu = SubmenuBuilder::new(app, "編集")
+                        .undo_with_text("取り消す")
+                        .redo_with_text("やり直す")
+                        .separator()
+                        .cut_with_text("カット")
+                        .copy_with_text("コピー")
+                        .paste_with_text("ペースト")
+                        .select_all_with_text("すべてを選択")
+                        .build()?;
+                    let view_menu = SubmenuBuilder::new(app, "表示")
+                        .item(&calendar)
+                        .item(&reports)
+                        .separator()
+                        .item(&previous_period)
+                        .item(&next_period)
+                        .item(&today)
+                        .separator()
+                        .item(&zoom_in)
+                        .item(&zoom_out)
+                        .separator()
+                        .fullscreen_with_text("フルスクリーンにする")
+                        .build()?;
+                    let window_menu = SubmenuBuilder::with_id(app, WINDOW_SUBMENU_ID, "ウインドウ")
+                        .minimize_with_text("しまう")
+                        .maximize_with_text("ズーム")
+                        .separator()
+                        .close_window_with_text("ウインドウを閉じる")
+                        .separator()
+                        .bring_all_to_front_with_text("すべてを手前に移動")
+                        .build()?;
+                    let help_menu =
+                        SubmenuBuilder::with_id(app, HELP_SUBMENU_ID, "ヘルプ").build()?;
+
+                    MenuBuilder::new(app)
+                        .items(&[
+                            &app_menu,
+                            &file_menu,
+                            &edit_menu,
+                            &view_menu,
+                            &window_menu,
+                            &help_menu,
+                        ])
+                        .build()
+                }
+
+                #[cfg(not(target_os = "macos"))]
+                {
+                    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+
+                    let menu = Menu::default(app)?;
+                    let settings = MenuItem::with_id(
+                        app,
+                        SETTINGS_MENU_ID,
+                        "設定…",
+                        true,
+                        Some("CmdOrCtrl+,"),
+                    )?;
+                    let separator = PredefinedMenuItem::separator(app)?;
+                    let items = menu.items()?;
+                    if let Some(app_menu) = items.first().and_then(|item| item.as_submenu()) {
+                        app_menu.insert_items(&[&settings, &separator], 2)?;
+                    }
+                    Ok(menu)
+                }
+            })
+            .on_menu_event(|app, event| match event.id().as_ref() {
+                SETTINGS_MENU_ID => open_settings_overlay(app),
+                CALENDAR_MENU_ID => open_app_view(app, "/calendar"),
+                REPORTS_MENU_ID => open_app_view(app, "/reports"),
+                PREVIOUS_PERIOD_MENU_ID => navigate_date(app, "previous"),
+                NEXT_PERIOD_MENU_ID => navigate_date(app, "next"),
+                TODAY_MENU_ID => navigate_date(app, "today"),
+                ZOOM_IN_MENU_ID => zoom_calendar(app, "in"),
+                ZOOM_OUT_MENU_ID => zoom_calendar(app, "out"),
+                _ => {}
+            });
     }
 
     let app = builder

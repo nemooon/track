@@ -1,0 +1,21 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "loopback-app",
+  "description": "Trackのlocalhost画面に必要なデスクトップ連携だけを許可する",
+  "windows": [
+    "main"
+  ],
+  "remote": {
+    "urls": [
+      "http://127.0.0.1:*"
+    ]
+  },
+  "platforms": [
+    "macOS"
+  ],
+  "permissions": [
+    "dialog:allow-open",
+    "core:window:allow-start-dragging",
+    "core:event:allow-listen"
+  ]
+}
