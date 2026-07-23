@@ -12,7 +12,7 @@ cask "track" do
 
   app "Track.app"
 
-  uninstall quit: "dev.nemoto.track"
+  uninstall quit: "com.nemooon.track"
 
   caveats <<~EOS
     Track is not signed with an Apple Developer ID, so macOS may quarantine it

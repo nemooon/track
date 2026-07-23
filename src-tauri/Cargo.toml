@@ -1,6 +1,6 @@
 [package]
 name = "track"
-version = "0.2.0"
+version = "0.2.1"
 description = "Track — ローカル工数管理"
 authors = ["Keisuke Nemoto"]
 license = ""

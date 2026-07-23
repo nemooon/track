@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Track",
-  "version": "0.2.0",
-  "identifier": "dev.nemoto.track",
+  "version": "0.2.1",
+  "identifier": "com.nemooon.track",
   "build": {
     "frontendDist": "http://127.0.0.1:8787",
     "devUrl": "http://127.0.0.1:8787",
