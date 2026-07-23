@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <mask id="clock-cutout">
+      <rect width="1024" height="1024" fill="white"/>
+      <path
+        d="M512 570V356M512 570L670 680"
+        fill="none"
+        stroke="black"
+        stroke-width="78"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    </mask>
+  </defs>
+  <g fill="#18181b" mask="url(#clock-cutout)">
+    <rect x="414" y="64" width="196" height="116" rx="58"/>
+    <rect x="474" y="140" width="76" height="130" rx="38"/>
+    <circle cx="512" cy="584" r="352"/>
+  </g>
+</svg>
