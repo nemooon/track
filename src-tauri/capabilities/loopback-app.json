@@ -18,6 +18,7 @@
     "core:window:allow-start-dragging",
     "core:event:allow-listen",
     "allow-generate-weekly-report",
+    "allow-show-ai-integration-installer",
     {
       "identifier": "opener:allow-open-url",
       "allow": [

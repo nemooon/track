@@ -35,11 +35,13 @@
   "bundle": {
     "active": true,
     "externalBin": [
-      "binaries/track-server"
+      "binaries/track-server",
+      "binaries/track-cli"
     ],
     "resources": {
       "../dist/client": "dist/client",
       "../database/migrations": "database/migrations",
+      "../integrations": "integrations",
       "binaries/TrackAIHelper.app": "TrackAIHelper.app"
     },
     "macOS": {

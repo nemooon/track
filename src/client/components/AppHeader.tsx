@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   BarChart3,
+  Bot,
   CalendarDays,
   Ellipsis,
   ExternalLink,
@@ -9,6 +10,7 @@ import {
   Settings,
 } from "lucide-react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Link, useLocation } from "react-router";
@@ -190,6 +192,20 @@ export function AppHeader() {
               <span>設定…</span>
               <kbd className="ml-auto text-xs text-neutral-400">⌘,</kbd>
             </button>
+            {"__TAURI_INTERNALS__" in window && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  void invoke("show_ai_integration_installer");
+                }}
+                className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+              >
+                <Bot className="size-4 text-neutral-500" />
+                <span>AI連携をインストール…</span>
+              </button>
+            )}
             <div
               role="separator"
               className="mx-2 my-1 h-px bg-neutral-200"

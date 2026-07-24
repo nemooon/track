@@ -11,6 +11,7 @@ export type RuntimeInfo = {
   pid: number;
   baseUrl: string;
   apiBase: string;
+  cliPath?: string;
   startedAt: string;
 };
 
@@ -24,12 +25,14 @@ export function writeRuntimeInfo(
   dataDir: string,
   baseUrl: string,
   pid = process.pid,
+  cliPath = process.env.TRACK_CLI_PATH,
 ): RuntimeInfo {
   const normalizedBase = baseUrl.replace(/\/+$/, "");
   const info: RuntimeInfo = {
     pid,
     baseUrl: normalizedBase,
     apiBase: `${normalizedBase}/api`,
+    ...(cliPath ? { cliPath: path.resolve(cliPath) } : {}),
     startedAt: new Date().toISOString(),
   };
   const destination = runtimePath(dataDir);

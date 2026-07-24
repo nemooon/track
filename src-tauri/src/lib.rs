@@ -9,7 +9,7 @@ use std::{
 #[cfg(desktop)]
 use tauri::Emitter;
 use tauri::{Manager, RunEvent, Url};
-use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 #[cfg(target_os = "macos")]
 mod weekly_report {
@@ -132,6 +132,347 @@ mod weekly_report {
     }
 }
 
+#[cfg(target_os = "macos")]
+mod ai_integration {
+    use std::{
+        env, fs,
+        fs::OpenOptions,
+        io::{self, ErrorKind, Write},
+        os::unix::fs::OpenOptionsExt,
+        path::{Path, PathBuf},
+        time::{SystemTime, UNIX_EPOCH},
+    };
+    use tauri::Manager;
+
+    #[derive(Debug)]
+    pub struct InstallResult {
+        pub codex_path: PathBuf,
+        pub claude_path: PathBuf,
+    }
+
+    fn integration_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+        let bundled = app
+            .path()
+            .resource_dir()
+            .map_err(|error| format!("アプリのリソースを取得できません: {error}"))?
+            .join("integrations");
+        if bundled.is_dir() {
+            return Ok(bundled);
+        }
+
+        let development = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .ok_or("開発用リソースの場所を取得できません")?
+            .join("integrations");
+        if development.is_dir() {
+            return Ok(development);
+        }
+        Err("AI連携ファイルが見つかりません。アプリを再インストールしてください。".into())
+    }
+
+    fn is_track_skill(path: &Path) -> bool {
+        fs::read_to_string(path)
+            .map(|content| content.lines().any(|line| line.trim() == "name: track"))
+            .unwrap_or(false)
+    }
+
+    fn is_track_command(path: &Path) -> bool {
+        fs::read_to_string(path)
+            .map(|content| content.contains("# /track") && content.contains("個人用工数管理アプリ"))
+            .unwrap_or(false)
+    }
+
+    fn directory_is_empty(path: &Path) -> io::Result<bool> {
+        Ok(fs::read_dir(path)?.next().is_none())
+    }
+
+    fn validate_codex_destination(path: &Path) -> Result<(), String> {
+        match fs::symlink_metadata(path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {}
+            Ok(metadata) if metadata.is_dir() => {
+                let skill = path.join("SKILL.md");
+                if skill.exists() {
+                    if !is_track_skill(&skill) {
+                        return Err(format!(
+                            "同名のCodexスキルが既にあります: {}",
+                            path.display()
+                        ));
+                    }
+                } else if !directory_is_empty(path).map_err(|error| error.to_string())? {
+                    return Err(format!(
+                        "空ではないCodexスキルフォルダが既にあります: {}",
+                        path.display()
+                    ));
+                }
+            }
+            Ok(_) => {
+                return Err(format!(
+                    "Codexスキルのインストール先にファイルがあります: {}",
+                    path.display()
+                ));
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => return Err(error.to_string()),
+        }
+        Ok(())
+    }
+
+    fn validate_claude_destination(path: &Path) -> Result<(), String> {
+        match fs::symlink_metadata(path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {}
+            Ok(metadata) if metadata.is_file() => {
+                if !is_track_command(path) {
+                    return Err(format!(
+                        "同名のClaude Codeコマンドが既にあります: {}",
+                        path.display()
+                    ));
+                }
+            }
+            Ok(_) => {
+                return Err(format!(
+                    "Claude Codeコマンドのインストール先にフォルダがあります: {}",
+                    path.display()
+                ));
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => return Err(error.to_string()),
+        }
+        Ok(())
+    }
+
+    fn replace_symlink(path: &Path) -> io::Result<()> {
+        if fs::symlink_metadata(path)
+            .map(|metadata| metadata.file_type().is_symlink())
+            .unwrap_or(false)
+        {
+            fs::remove_file(path)?;
+        }
+        Ok(())
+    }
+
+    fn copy_atomic(source: &Path, destination: &Path) -> io::Result<()> {
+        let parent = destination
+            .parent()
+            .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "インストール先が不正です"))?;
+        fs::create_dir_all(parent)?;
+
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(io::Error::other)?
+            .as_nanos();
+        let filename = destination
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "ファイル名が不正です"))?;
+        let temporary = parent.join(format!(".{filename}.{}-{stamp}.tmp", std::process::id()));
+        let bytes = fs::read(source)?;
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o644)
+            .open(&temporary)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+        drop(file);
+
+        if let Err(error) = fs::rename(&temporary, destination) {
+            let _ = fs::remove_file(&temporary);
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    fn install_from(root: &Path, home: &Path) -> Result<InstallResult, String> {
+        let codex_source = root.join("codex/track");
+        let claude_source = root.join("claude/track.md");
+        for source in [
+            codex_source.join("SKILL.md"),
+            codex_source.join("agents/openai.yaml"),
+            claude_source.clone(),
+        ] {
+            if !source.is_file() {
+                return Err(format!("AI連携ファイルがありません: {}", source.display()));
+            }
+        }
+
+        let codex_path = home.join(".codex/skills/track");
+        let claude_path = home.join(".claude/commands/track.md");
+        let legacy_codex_path = home.join(".agents/skills/track");
+        validate_codex_destination(&codex_path)?;
+        validate_claude_destination(&claude_path)?;
+        let remove_legacy_codex_link = fs::symlink_metadata(&legacy_codex_path)
+            .map(|metadata| {
+                metadata.file_type().is_symlink()
+                    && is_track_skill(&legacy_codex_path.join("SKILL.md"))
+            })
+            .unwrap_or(false);
+
+        replace_symlink(&codex_path).map_err(|error| error.to_string())?;
+        replace_symlink(&claude_path).map_err(|error| error.to_string())?;
+        fs::create_dir_all(codex_path.join("agents")).map_err(|error| error.to_string())?;
+        copy_atomic(&codex_source.join("SKILL.md"), &codex_path.join("SKILL.md"))
+            .map_err(|error| error.to_string())?;
+        copy_atomic(
+            &codex_source.join("agents/openai.yaml"),
+            &codex_path.join("agents/openai.yaml"),
+        )
+        .map_err(|error| error.to_string())?;
+        copy_atomic(&claude_source, &claude_path).map_err(|error| error.to_string())?;
+        if remove_legacy_codex_link {
+            fs::remove_file(&legacy_codex_path).map_err(|error| error.to_string())?;
+        }
+
+        Ok(InstallResult {
+            codex_path,
+            claude_path,
+        })
+    }
+
+    pub fn install(app: &tauri::AppHandle) -> Result<InstallResult, String> {
+        let root = integration_root(app)?;
+        let home = env::var_os("HOME").ok_or("ホームディレクトリを取得できません")?;
+        install_from(&root, Path::new(&home))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::install_from;
+        use std::{
+            fs,
+            os::unix::fs::symlink,
+            path::{Path, PathBuf},
+            time::{SystemTime, UNIX_EPOCH},
+        };
+
+        fn test_dir(name: &str) -> PathBuf {
+            let stamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let directory =
+                std::env::temp_dir().join(format!("track-ai-integration-{name}-{stamp}"));
+            fs::create_dir_all(&directory).unwrap();
+            directory
+        }
+
+        fn create_sources(root: &Path, skill: &str, command: &str) {
+            fs::create_dir_all(root.join("codex/track/agents")).unwrap();
+            fs::create_dir_all(root.join("claude")).unwrap();
+            fs::write(root.join("codex/track/SKILL.md"), skill).unwrap();
+            fs::write(
+                root.join("codex/track/agents/openai.yaml"),
+                "interface:\n  display_name: \"Track\"\n",
+            )
+            .unwrap();
+            fs::write(root.join("claude/track.md"), command).unwrap();
+        }
+
+        #[test]
+        fn installs_and_updates_both_integrations() {
+            let directory = test_dir("install");
+            let root = directory.join("resources/integrations");
+            let home = directory.join("home");
+            create_sources(
+                &root,
+                "---\nname: track\n---\nfirst",
+                "# /track\n個人用工数管理アプリ first",
+            );
+            install_from(&root, &home).unwrap();
+
+            create_sources(
+                &root,
+                "---\nname: track\n---\nsecond",
+                "# /track\n個人用工数管理アプリ second",
+            );
+            install_from(&root, &home).unwrap();
+
+            assert!(
+                fs::read_to_string(home.join(".codex/skills/track/SKILL.md"))
+                    .unwrap()
+                    .contains("second")
+            );
+            assert!(fs::read_to_string(home.join(".claude/commands/track.md"))
+                .unwrap()
+                .contains("second"));
+            fs::remove_dir_all(directory).unwrap();
+        }
+
+        #[test]
+        fn migrates_existing_track_symlinks_without_deleting_targets() {
+            let directory = test_dir("symlink");
+            let root = directory.join("resources/integrations");
+            let home = directory.join("home");
+            let legacy = directory.join("legacy");
+            create_sources(
+                &root,
+                "---\nname: track\n---\nnew",
+                "# /track\n個人用工数管理アプリ new",
+            );
+            fs::create_dir_all(legacy.join("skill")).unwrap();
+            fs::write(
+                legacy.join("skill/SKILL.md"),
+                "---\nname: track\n---\nlegacy",
+            )
+            .unwrap();
+            fs::create_dir_all(home.join(".codex/skills")).unwrap();
+            symlink(legacy.join("skill"), home.join(".codex/skills/track")).unwrap();
+            fs::create_dir_all(home.join(".agents/skills")).unwrap();
+            symlink(legacy.join("skill"), home.join(".agents/skills/track")).unwrap();
+            fs::create_dir_all(home.join(".claude/commands")).unwrap();
+            fs::write(
+                legacy.join("track.md"),
+                "この内容はインストーラーの判定対象にしない",
+            )
+            .unwrap();
+            symlink(
+                legacy.join("track.md"),
+                home.join(".claude/commands/track.md"),
+            )
+            .unwrap();
+
+            install_from(&root, &home).unwrap();
+
+            assert!(!fs::symlink_metadata(home.join(".codex/skills/track"))
+                .unwrap()
+                .file_type()
+                .is_symlink());
+            assert!(legacy.join("skill/SKILL.md").is_file());
+            assert!(legacy.join("track.md").is_file());
+            assert!(!home.join(".agents/skills/track").exists());
+            fs::remove_dir_all(directory).unwrap();
+        }
+
+        #[test]
+        fn refuses_unrelated_files() {
+            let directory = test_dir("collision");
+            let root = directory.join("resources/integrations");
+            let home = directory.join("home");
+            create_sources(
+                &root,
+                "---\nname: track\n---\nnew",
+                "# /track\n個人用工数管理アプリ new",
+            );
+            fs::create_dir_all(home.join(".codex/skills/track")).unwrap();
+            fs::write(
+                home.join(".codex/skills/track/SKILL.md"),
+                "---\nname: unrelated\n---",
+            )
+            .unwrap();
+
+            let error = install_from(&root, &home).unwrap_err();
+            assert!(error.contains("同名のCodexスキル"));
+
+            fs::remove_dir_all(home.join(".codex/skills/track")).unwrap();
+            fs::create_dir_all(home.join(".claude/commands")).unwrap();
+            fs::write(home.join(".claude/commands/track.md"), "unrelated command").unwrap();
+
+            let error = install_from(&root, &home).unwrap_err();
+            assert!(error.contains("同名のClaude Codeコマンド"));
+            fs::remove_dir_all(directory).unwrap();
+        }
+    }
+}
+
 #[tauri::command]
 async fn generate_weekly_report(app: tauri::AppHandle, prompt: String) -> Result<String, String> {
     #[cfg(target_os = "macos")]
@@ -149,11 +490,21 @@ async fn generate_weekly_report(app: tauri::AppHandle, prompt: String) -> Result
     }
 }
 
+#[tauri::command]
+fn show_ai_integration_installer(app: tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    prompt_install_ai_integration(&app);
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
+}
+
 const DEV_FRONTEND_URL: &str = "http://127.0.0.1:5173";
 #[cfg(desktop)]
 const SETTINGS_MENU_ID: &str = "open-settings";
 #[cfg(desktop)]
 const ABOUT_MENU_ID: &str = "open-about";
+#[cfg(target_os = "macos")]
+const INSTALL_AI_INTEGRATION_MENU_ID: &str = "install-ai-integration";
 #[cfg(desktop)]
 const CALENDAR_MENU_ID: &str = "open-calendar";
 #[cfg(desktop)]
@@ -225,6 +576,15 @@ fn start_sidecar(app: &tauri::App) -> Result<StartedSidecar, Box<dyn std::error:
         "track-server"
     };
     let sidecar_path = executable_dir.join(sidecar_name);
+    let cli_name = if cfg!(windows) {
+        "track-cli.exe"
+    } else {
+        "track-cli"
+    };
+    let cli_path = executable_dir.join(cli_name);
+    if !cli_path.is_file() {
+        return Err(format!("同梱CLIが見つかりません: {}", cli_path.display()).into());
+    }
     let resource_dir = app.path().resource_dir()?;
 
     log::info!(
@@ -234,6 +594,7 @@ fn start_sidecar(app: &tauri::App) -> Result<StartedSidecar, Box<dyn std::error:
     let mut child = Command::new(&sidecar_path)
         .env("TRACK_RESOURCE_DIR", &resource_dir)
         .env("TRACK_PORT", port.to_string())
+        .env("TRACK_CLI_PATH", &cli_path)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -296,6 +657,45 @@ fn open_about_dialog(app: &tauri::AppHandle) {
     if let Err(error) = window.emit("track-open-about", ()) {
         log::error!("Trackについてを開けません: {error}");
     }
+}
+
+#[cfg(target_os = "macos")]
+fn prompt_install_ai_integration(app: &tauri::AppHandle) {
+    let app_handle = app.clone();
+    app.dialog()
+        .message(
+            "TrackのAI連携をインストールします。\n\nCodexスキル:\n~/.codex/skills/track\n\nClaude Codeコマンド:\n~/.claude/commands/track.md\n\n既存のTrack連携は最新版へ更新します。",
+        )
+        .title("AI連携をインストール")
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "インストール".into(),
+            "キャンセル".into(),
+        ))
+        .show(move |confirmed| {
+            if !confirmed {
+                return;
+            }
+            let (message, kind) = match ai_integration::install(&app_handle) {
+                Ok(result) => (
+                    format!(
+                        "AI連携をインストールしました。\n\nCodex:\n{}\n\nClaude Code:\n{}\n\n新しいセッションから$trackまたは/trackを利用できます。",
+                        result.codex_path.display(),
+                        result.claude_path.display(),
+                    ),
+                    MessageDialogKind::Info,
+                ),
+                Err(error) => (
+                    format!("AI連携をインストールできませんでした。\n\n{error}"),
+                    MessageDialogKind::Error,
+                ),
+            };
+            app_handle
+                .dialog()
+                .message(message)
+                .title("Track AI連携")
+                .kind(kind)
+                .show(|_| {});
+        });
 }
 
 #[cfg(desktop)]
@@ -408,6 +808,13 @@ pub fn run() {
                         true,
                         Some("CmdOrCtrl+,"),
                     )?;
+                    let install_ai_integration = MenuItem::with_id(
+                        app,
+                        INSTALL_AI_INTEGRATION_MENU_ID,
+                        "AI連携をインストール…",
+                        true,
+                        None::<&str>,
+                    )?;
                     let calendar = MenuItem::with_id(
                         app,
                         CALENDAR_MENU_ID,
@@ -457,6 +864,7 @@ pub fn run() {
                         .item(&about)
                         .separator()
                         .item(&settings)
+                        .item(&install_ai_integration)
                         .separator()
                         .services_with_text("サービス")
                         .separator()
@@ -536,6 +944,8 @@ pub fn run() {
             })
             .on_menu_event(|app, event| match event.id().as_ref() {
                 ABOUT_MENU_ID => open_about_dialog(app),
+                #[cfg(target_os = "macos")]
+                INSTALL_AI_INTEGRATION_MENU_ID => prompt_install_ai_integration(app),
                 SETTINGS_MENU_ID => open_settings_overlay(app),
                 CALENDAR_MENU_ID => open_app_view(app, "/calendar"),
                 REPORTS_MENU_ID => open_app_view(app, "/reports"),
@@ -555,7 +965,10 @@ pub fn run() {
                 .level(log::LevelFilter::Info)
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![generate_weekly_report])
+        .invoke_handler(tauri::generate_handler![
+            generate_weekly_report,
+            show_ai_integration_installer
+        ])
         .setup(|app| {
             if let Err(error) = setup_app(app) {
                 show_startup_error(app, error.as_ref());

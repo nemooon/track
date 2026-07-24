@@ -77,6 +77,13 @@ function formatDuration(min: number) {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
+function formatJapaneseDuration(min: number) {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (h === 0) return `${m}分`;
+  return m > 0 ? `${h}時間${m}分` : `${h}時間`;
+}
+
 function ReportTableColumns() {
   return (
     <colgroup>
@@ -108,77 +115,133 @@ function buildWeeklyReportPrompt(opts: {
   template: string;
   period: string;
   data: ReportEntriesResponse;
-}): string {
+}): { prompt: string; mainWork: string } {
   const { period, data } = opts;
   const template = opts.template
     .replaceAll("{{期間}}", period)
-    .replaceAll("{{合計時間}}", formatDuration(data.totalMinutes));
-  const grouped = new Map<
+    .replaceAll("{{合計時間}}", formatJapaneseDuration(data.totalMinutes))
+    .replaceAll(
+      '- なければ「特になし」',
+      "（工数記録に明示された課題・確認事項を記載。なければ指定の定型文を記載）",
+    );
+  const projectTotals = new Map<
     string,
     {
-      dates: Set<string>;
-      project: string;
-      title: string;
+      label: string;
       minutes: number;
-      tags: string;
-      note: string;
+      count: number;
+      facts: Map<string, { title: string; note: string }>;
     }
   >();
   for (const entry of data.entries) {
+    const clientName = entry.project?.client.name ?? "クライアントなし";
     const project = entry.project
-      ? `${entry.project.client.name} / ${entry.project.name}`
+      ? `${clientName} / ${entry.project.name}`
       : "プロジェクトなし";
     const title = entry.title?.trim() || "タイトルなし";
-    const tags =
-      entry.tags.length > 0
-        ? entry.tags.map((tag) => tag.name).sort().join(", ")
-        : "タグなし";
     const note = entry.note?.replace(/\s+/g, " ").trim() || "";
-    const key = JSON.stringify([project, title, tags, note]);
-    const existing = grouped.get(key);
-    if (existing) {
-      existing.minutes += entry.minutes;
-      existing.dates.add(format(new Date(entry.start), "M/d"));
+    const factKey = JSON.stringify([title, note]);
+    const projectKey = entry.project?.id ?? "__no_project__";
+    const projectTotal = projectTotals.get(projectKey);
+    if (projectTotal) {
+      projectTotal.minutes += entry.minutes;
+      projectTotal.count += 1;
+      projectTotal.facts.set(factKey, { title, note });
     } else {
-      grouped.set(key, {
-        dates: new Set([format(new Date(entry.start), "M/d")]),
-        project,
-        title,
+      projectTotals.set(projectKey, {
+        label: project,
         minutes: entry.minutes,
-        tags,
-        note,
+        count: 1,
+        facts: new Map([[factKey, { title, note }]]),
       });
     }
   }
-  const entries = [...grouped.values()].map((entry) => {
-    return [
-      `- ${[...entry.dates].join(", ")}`,
-      entry.project,
-      entry.title,
-      formatDuration(entry.minutes),
-      `タグ: ${entry.tags}`,
-      ...(entry.note ? [`メモ: ${entry.note}`] : []),
-    ].join(" | ");
-  });
+  const formatAggregate = (entry: {
+    minutes: number;
+    count: number;
+  }) => `${formatJapaneseDuration(entry.minutes)}（${entry.count}件）`;
+  const sortedProjects = [...projectTotals.values()].sort(
+    (a, b) => b.minutes - a.minutes || a.label.localeCompare(b.label, "ja"),
+  );
+  const projects = sortedProjects.map(
+    (entry) => `- ${entry.label}: ${formatAggregate(entry)}`,
+  );
+  const mainWork = sortedProjects
+    .map((entry) => {
+      const facts = [...entry.facts.values()]
+        .map((fact) => {
+          if (fact.title === "タイトルなし" && fact.note) return fact.note;
+          return `${fact.title}${fact.note ? `（メモ: ${fact.note}）` : ""}`;
+        })
+        .join("、");
+      return `- **${entry.label}**（${formatJapaneseDuration(entry.minutes)}）：${facts}`;
+    })
+    .join("\n");
 
-  return `
+  const prompt = `
 以下の出力テンプレートに沿って、工数記録から週報を作成してください。
-テンプレートの見出し、順番、固定文は維持してください。
-テンプレートに存在しない見出しや項目は追加しないでください。
-括弧書きの説明は生成指示なので、完成した週報には残さないでください。
-同じプロジェクトや同じ作業は、事実関係を変えずにまとめて構いません。
-工数記録が根拠にない内容は追加しないでください。
-対象期間は${period}、合計時間は${formatDuration(data.totalMinutes)}です。
-この対象期間と合計時間は、テンプレートに記載欄がある場合だけ出力してください。
+工数記録を単に列挙せず、同じプロジェクトと目的に属する作業をまとめ、読み手が今週の活動内容と成果を短時間で把握できる文章にしてください。
+
+必須ルール:
+- テンプレートの見出し、順番、固定文は維持してください。
+- テンプレートに存在しない見出しや項目は追加しないでください。「### クライアント名」のような小見出しも禁止です。
+- 括弧書きや「なければ〜」などの説明は生成指示なので、完成した週報には残さないでください。
+- 「主な作業」には、後述の確定本文をそのままコピーしてください。内容や形式を変更してはいけません。
+- 完了、改善、解決などの成果は、タイトルまたはメモから明確に確認できる場合だけ記載してください。
+- 「脆弱性検証を実施」は記載できますが、「セキュリティ強化のために脆弱性を検証」のように、記録にない目的を補ってはいけません。
+- 工数記録が根拠にない内容や、推測した成果、進捗、予定、課題は追加しないでください。
+- 概要では、工数の多いプロジェクトと具体的な作業を事実に沿って要約してください。「ニーズに合わせたソリューションを提供」のような抽象的な評価表現は禁止です。
+- 概要では、「順調」「進展」「貢献」「重点を置いた」など、工数記録から確認できない評価や状態を記載しないでください。
+- 課題が記録されていない場合は、「工数記録上、明示された課題・確認事項はありません」と記載してください。
+- 確定集計の数値を変更したり再計算したりしないでください。
+- 対象期間と合計時間は、テンプレートに記載欄がある場合だけ出力してください。
 
 <出力テンプレート>
 ${template}
 </出力テンプレート>
 
-<工数記録>
-${entries.join("\n")}
-</工数記録>
+<主な作業の確定本文>
+${mainWork}
+</主な作業の確定本文>
+
+<確定集計>
+対象期間: ${period}
+合計時間: ${formatJapaneseDuration(data.totalMinutes)}
+記録件数: ${data.entries.length}件
+
+プロジェクト別:
+${projects.join("\n")}
+</確定集計>
 `.trim();
+
+  return { prompt, mainWork };
+}
+
+function replaceMarkdownSection(
+  markdown: string,
+  heading: string,
+  body: string,
+): string {
+  const lines = markdown.trim().split("\n");
+  const headingIndex = lines.findIndex(
+    (line) => line.trim() === `## ${heading}`,
+  );
+  if (headingIndex === -1) return markdown.trim();
+
+  let nextHeadingIndex = lines.findIndex(
+    (line, index) => index > headingIndex && /^##\s+/.test(line.trim()),
+  );
+  if (nextHeadingIndex === -1) nextHeadingIndex = lines.length;
+
+  return [
+    ...lines.slice(0, headingIndex + 1),
+    "",
+    body.trim(),
+    "",
+    ...lines.slice(nextHeadingIndex),
+  ]
+    .join("\n")
+    .trim();
 }
 
 type SlackGroup = {
@@ -596,7 +659,7 @@ export function ReportsPage() {
         return;
       }
 
-      const prompt = buildWeeklyReportPrompt({
+      const { prompt, mainWork } = buildWeeklyReportPrompt({
         template: settings.weeklyReportTemplate,
         period: periodLabel(anchor, "week"),
         data: entries,
@@ -604,7 +667,7 @@ export function ReportsPage() {
       const generated = await invoke<string>("generate_weekly_report", {
         prompt,
       });
-      setWeeklyReport(generated);
+      setWeeklyReport(replaceMarkdownSection(generated, "主な作業", mainWork));
     } catch (error) {
       setWeeklyReportError(
         typeof error === "string"

@@ -140,11 +140,23 @@ setInterval(() => void runAutoBackup(), 60 * 60 * 1000);
 
 const server = Bun.serve({ fetch: app.fetch, port: PORT, hostname: "127.0.0.1" });
 const baseUrl = `http://127.0.0.1:${server.port}`;
+let runtimePid: number | undefined;
 try {
   const runtime = writeRuntimeInfo(DATA_DIR, baseUrl);
-  process.once("exit", () => clearRuntimeInfo(DATA_DIR, runtime.pid));
+  runtimePid = runtime.pid;
 } catch (error) {
   console.warn(`AIツール向け接続情報を書き出せません: ${(error as Error).message}`);
+}
+const cleanupRuntime = () => {
+  if (runtimePid !== undefined) clearRuntimeInfo(DATA_DIR, runtimePid);
+};
+process.once("exit", cleanupRuntime);
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => {
+    cleanupRuntime();
+    server.stop(true);
+    process.exit(0);
+  });
 }
 console.log(`==> Track (local)  ${baseUrl}`);
 console.log(`    db: ${DB_PATH}`);

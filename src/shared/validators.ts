@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const emailSchema = z.string().email().max(200);
+const isoDateTimeSchema = z.string().datetime({ offset: true });
 
 export const signupSchema = z.object({
   email: emailSchema.refine((e) => e.endsWith("@alfasado.jp"), "このメールアドレスでは登録できません"),
@@ -37,8 +38,8 @@ export const projectUpdateSchema = z.object({
 export const entryCreateSchema = z
   .object({
     projectId: z.string().min(1).nullable().optional(),
-    start: z.string().datetime(),
-    end: z.string().datetime(),
+    start: isoDateTimeSchema,
+    end: isoDateTimeSchema,
     title: z.string().max(100).nullable().optional(),
     note: z.string().max(500).nullable().optional(),
     tagIds: z.array(z.string().min(1)).optional(),
@@ -51,8 +52,8 @@ export const entryCreateSchema = z
 export const entryUpdateSchema = z
   .object({
     projectId: z.string().min(1).nullable().optional(),
-    start: z.string().datetime().optional(),
-    end: z.string().datetime().optional(),
+    start: isoDateTimeSchema.optional(),
+    end: isoDateTimeSchema.optional(),
     title: z.string().max(100).nullable().optional(),
     note: z.string().max(500).nullable().optional(),
     tagIds: z.array(z.string().min(1)).optional(),
@@ -64,8 +65,8 @@ export const entryUpdateSchema = z
   );
 
 export const entryRangeSchema = z.object({
-  from: z.string().datetime(),
-  to: z.string().datetime(),
+  from: isoDateTimeSchema,
+  to: isoDateTimeSchema,
 });
 
 export const tagCreateSchema = z.object({
@@ -88,7 +89,7 @@ const csvIds = z
 
 export const reportsQuerySchema = z.object({
   range: z.enum(["week", "month"]),
-  anchor: z.string().datetime(),
+  anchor: isoDateTimeSchema,
   groupBy: z.enum(["client", "project", "tag"]),
   clientIds: csvIds,
   projectIds: csvIds,
@@ -97,7 +98,7 @@ export const reportsQuerySchema = z.object({
 
 export const reportsEntriesQuerySchema = z.object({
   range: z.enum(["week", "month"]),
-  anchor: z.string().datetime(),
+  anchor: isoDateTimeSchema,
   clientIds: csvIds,
   projectIds: csvIds,
   tagIds: csvIds,

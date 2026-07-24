@@ -1,0 +1,4 @@
+interface:
+  display_name: "Track 工数記録"
+  short_description: "現在のCodex作業時間をTrackへ確認付きで安全に記録する"
+  default_prompt: "$track を使って、現在のCodex作業をTrackへ記録する候補を作成してください。"
