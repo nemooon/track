@@ -105,6 +105,10 @@ createRoot(document.getElementById("root")!).render(
                     element={<SettingsPage category="work-hours" />}
                   />
                   <Route
+                    path="weekly-report"
+                    element={<SettingsPage category="weekly-report" />}
+                  />
+                  <Route
                     path="projects"
                     element={<SettingsPage category="projects" />}
                   />

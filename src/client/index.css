@@ -37,20 +37,41 @@
   background-clip: padding-box;
 }
 
-@property --entry-angle {
-  syntax: "<angle>";
-  initial-value: 0deg;
-  inherits: false;
+.calendar-entry {
+  border-color: color-mix(in srgb, var(--entry-accent) 24%, #e5e7eb);
+  background-color: color-mix(in srgb, var(--entry-accent) 8%, white);
+  color: color-mix(in srgb, var(--entry-accent) 52%, #171717);
+  box-shadow:
+    0 1px 1px rgb(0 0 0 / 0.035),
+    inset 0 1px rgb(255 255 255 / 0.55);
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
 }
 
-@property --entry-fill {
-  syntax: "<color>";
-  initial-value: white;
-  inherits: false;
+.calendar-entry:hover {
+  border-color: color-mix(in srgb, var(--entry-accent) 36%, #d4d4d4);
+  background-color: color-mix(in srgb, var(--entry-accent) 12%, white);
+  box-shadow:
+    0 2px 5px rgb(0 0 0 / 0.08),
+    inset 0 1px rgb(255 255 255 / 0.65);
 }
 
-@keyframes entry-selected-rotate {
-  to { --entry-angle: 360deg; }
+.calendar-entry[data-selected="true"] {
+  z-index: 2;
+  border-color: color-mix(in srgb, var(--entry-accent) 56%, #a3a3a3);
+  background-color: color-mix(in srgb, var(--entry-accent) 14%, white);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--entry-accent) 20%, transparent),
+    0 2px 5px rgb(0 0 0 / 0.08),
+    inset 0 1px rgb(255 255 255 / 0.7);
+}
+
+.calendar-entry-time {
+  background-color: rgb(255 255 255 / 0.62);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.045);
 }
 
 /* iOS Safari auto-zooms inputs whose font-size is < 16px on focus.

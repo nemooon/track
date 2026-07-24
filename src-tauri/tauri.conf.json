@@ -39,7 +39,8 @@
     ],
     "resources": {
       "../dist/client": "dist/client",
-      "../database/migrations": "database/migrations"
+      "../database/migrations": "database/migrations",
+      "binaries/TrackAIHelper.app": "TrackAIHelper.app"
     },
     "macOS": {
       "signingIdentity": "-",

@@ -3,6 +3,7 @@ import {
   BriefcaseBusiness,
   Clock3,
   DatabaseBackup,
+  Sparkles,
   X,
 } from "lucide-react";
 import { NavLink, Outlet, useLocation } from "react-router";
@@ -14,6 +15,11 @@ const categories = [
     href: "/settings/work-hours",
     label: "勤務時間",
     icon: Clock3,
+  },
+  {
+    href: "/settings/weekly-report",
+    label: "週報",
+    icon: Sparkles,
   },
   {
     href: "/settings/projects",

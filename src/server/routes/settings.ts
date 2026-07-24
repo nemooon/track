@@ -5,11 +5,17 @@ import type { Env } from "../types";
 
 const settings = new Hono<{ Bindings: Env }>();
 
-function toSettings(u: { workStart: number; workEnd: number; workDays: string }) {
+function toSettings(u: {
+  workStart: number;
+  workEnd: number;
+  workDays: string;
+  weeklyReportTemplate: string;
+}) {
   return {
     workStart: u.workStart,
     workEnd: u.workEnd,
     workDays: u.workDays.split(",").map(Number).filter((n) => !isNaN(n)),
+    weeklyReportTemplate: u.weeklyReportTemplate,
   };
 }
 
@@ -17,7 +23,12 @@ function toSettings(u: { workStart: number; workEnd: number; workDays: string })
 settings.get("/", async (c) => {
   const prisma = getPrisma(c.env.DB);
   const row = await prisma.settings.findFirst({
-    select: { workStart: true, workEnd: true, workDays: true },
+    select: {
+      workStart: true,
+      workEnd: true,
+      workDays: true,
+      weeklyReportTemplate: true,
+    },
   });
   if (!row) return c.json({ error: "not_found" }, 404);
   return c.json(toSettings(row));
@@ -31,7 +42,12 @@ settings.patch("/", async (c) => {
 
   const prisma = getPrisma(c.env.DB);
   const current = await prisma.settings.findFirst({
-    select: { workStart: true, workEnd: true, workDays: true },
+    select: {
+      workStart: true,
+      workEnd: true,
+      workDays: true,
+      weeklyReportTemplate: true,
+    },
   });
   if (!current) return c.json({ error: "not_found" }, 404);
 
@@ -48,12 +64,20 @@ settings.patch("/", async (c) => {
   if (parsed.data.workStart !== undefined) data.workStart = parsed.data.workStart;
   if (parsed.data.workEnd !== undefined) data.workEnd = parsed.data.workEnd;
   if (parsed.data.workDays !== undefined) data.workDays = parsed.data.workDays.join(",");
+  if (parsed.data.weeklyReportTemplate !== undefined) {
+    data.weeklyReportTemplate = parsed.data.weeklyReportTemplate;
+  }
 
   // 1行しかないので id を知らずに更新できる
   await prisma.settings.updateMany({ data });
 
   const row = await prisma.settings.findFirst({
-    select: { workStart: true, workEnd: true, workDays: true },
+    select: {
+      workStart: true,
+      workEnd: true,
+      workDays: true,
+      weeklyReportTemplate: true,
+    },
   });
   if (!row) return c.json({ error: "not_found" }, 404);
   return c.json(toSettings(row));

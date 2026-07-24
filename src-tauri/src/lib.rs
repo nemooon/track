@@ -11,6 +11,144 @@ use tauri::Emitter;
 use tauri::{Manager, RunEvent, Url};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
+#[cfg(target_os = "macos")]
+mod weekly_report {
+    use std::{
+        fs::{self, OpenOptions},
+        io::Write,
+        os::unix::fs::OpenOptionsExt,
+        path::{Path, PathBuf},
+        process::Command,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+    use tauri::Manager;
+
+    fn helper_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+        let resource = app
+            .path()
+            .resource_dir()
+            .map_err(|error| format!("アプリのリソースを取得できません: {error}"))?
+            .join("TrackAIHelper.app");
+        if resource.exists() {
+            return Ok(resource);
+        }
+
+        let development = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("binaries")
+            .join("TrackAIHelper.app");
+        if development.exists() {
+            return Ok(development);
+        }
+        Err("Apple Intelligenceヘルパーが見つかりません。アプリを再ビルドしてください。".into())
+    }
+
+    fn write_private(path: &Path, content: &[u8]) -> Result<(), String> {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(path)
+            .map_err(|error| format!("週報生成の一時ファイルを作成できません: {error}"))?;
+        file.write_all(content)
+            .map_err(|error| format!("週報生成の一時ファイルへ書き込めません: {error}"))
+    }
+
+    fn macos_major_version() -> Result<u32, String> {
+        let output = Command::new("/usr/bin/sw_vers")
+            .arg("-productVersion")
+            .output()
+            .map_err(|error| format!("macOSのバージョンを確認できません: {error}"))?;
+        let version = String::from_utf8_lossy(&output.stdout);
+        version
+            .trim()
+            .split('.')
+            .next()
+            .and_then(|part| part.parse().ok())
+            .ok_or_else(|| format!("macOSのバージョンを判定できません: {version}"))
+    }
+
+    pub fn generate(app: &tauri::AppHandle, prompt: &str) -> Result<String, String> {
+        if prompt.trim().is_empty() {
+            return Err("週報生成の入力が空です。".into());
+        }
+        if prompt.len() > 200_000 {
+            return Err("週報生成の入力が大きすぎます。絞り込みを指定してください。".into());
+        }
+        if macos_major_version()? < 26 {
+            return Err("週報のAI生成にはmacOS 26以降が必要です。".into());
+        }
+
+        let helper = helper_path(app)?;
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| error.to_string())?
+            .as_nanos();
+        let temp_dir = std::env::temp_dir().join(format!(
+            "track-weekly-report-{}-{stamp}",
+            std::process::id()
+        ));
+        fs::create_dir(&temp_dir)
+            .map_err(|error| format!("週報生成の一時フォルダを作成できません: {error}"))?;
+
+        let result = (|| {
+            let input = temp_dir.join("prompt.txt");
+            let stdout = temp_dir.join("response.txt");
+            let stderr = temp_dir.join("error.txt");
+            write_private(&input, prompt.as_bytes())?;
+            write_private(&stdout, b"")?;
+            write_private(&stderr, b"")?;
+
+            let status = Command::new("/usr/bin/open")
+                .arg("-n")
+                .arg("-W")
+                .arg("--stdout")
+                .arg(&stdout)
+                .arg("--stderr")
+                .arg(&stderr)
+                .arg(&helper)
+                .arg("--args")
+                .arg(&input)
+                .status()
+                .map_err(|error| format!("Apple Intelligenceを起動できません: {error}"))?;
+
+            let response = fs::read_to_string(&stdout)
+                .map_err(|error| format!("生成した週報を読み込めません: {error}"))?;
+            let helper_error = fs::read_to_string(&stderr).unwrap_or_default();
+            if !status.success() || response.trim().is_empty() {
+                let detail = helper_error.trim();
+                return Err(if detail.is_empty() {
+                    "Apple Intelligenceから応答がありませんでした。".into()
+                } else {
+                    detail.into()
+                });
+            }
+            Ok(response.trim().to_string())
+        })();
+
+        if let Err(error) = fs::remove_dir_all(&temp_dir) {
+            log::warn!("週報生成の一時ファイルを削除できません: {error}");
+        }
+        result
+    }
+}
+
+#[tauri::command]
+async fn generate_weekly_report(app: tauri::AppHandle, prompt: String) -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        return tauri::async_runtime::spawn_blocking(move || {
+            weekly_report::generate(&app, &prompt)
+        })
+        .await
+        .map_err(|error| format!("週報生成処理を完了できません: {error}"))?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, prompt);
+        Err("週報のAI生成はmacOSでのみ利用できます。".into())
+    }
+}
+
 const DEV_FRONTEND_URL: &str = "http://127.0.0.1:5173";
 #[cfg(desktop)]
 const SETTINGS_MENU_ID: &str = "open-settings";
@@ -417,6 +555,7 @@ pub fn run() {
                 .level(log::LevelFilter::Info)
                 .build(),
         )
+        .invoke_handler(tauri::generate_handler![generate_weekly_report])
         .setup(|app| {
             if let Err(error) = setup_app(app) {
                 show_startup_error(app, error.as_ref());

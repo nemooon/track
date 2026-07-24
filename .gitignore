@@ -4,6 +4,7 @@
 # tests and builds
 /coverage
 /dist
+/samples/apple-intelligence/.build
 
 # local environment
 .env*

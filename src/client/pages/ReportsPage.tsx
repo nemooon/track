@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
+import { invoke } from "@tauri-apps/api/core";
 import {
   PieChart,
   Pie,
@@ -29,8 +30,18 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   Copy,
+  LoaderCircle,
+  RefreshCw,
+  Sparkles,
 } from "lucide-react";
 import { apiFetch } from "@client/lib/fetcher";
+import { Button } from "@client/components/ui/button";
+import {
+  Dialog,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@client/components/ui/dialog";
 import { ToolbarDateNavigation } from "@client/components/ToolbarDateNavigation";
 import { ViewToolbar } from "@client/components/ViewToolbar";
 import {
@@ -52,6 +63,7 @@ import type {
   Tag,
   ReportResponse,
   ReportEntriesResponse,
+  UserSettings,
 } from "@shared/types";
 
 const COLORS = [
@@ -90,6 +102,83 @@ function periodLabel(anchor: Date, range: "week" | "month"): string {
   return sameMonth
     ? `${format(start, "yyyy/M/d")} – ${format(end, "d")}`
     : `${format(start, "yyyy/M/d")} – ${format(end, "M/d")}`;
+}
+
+function buildWeeklyReportPrompt(opts: {
+  template: string;
+  period: string;
+  data: ReportEntriesResponse;
+}): string {
+  const { period, data } = opts;
+  const template = opts.template
+    .replaceAll("{{期間}}", period)
+    .replaceAll("{{合計時間}}", formatDuration(data.totalMinutes));
+  const grouped = new Map<
+    string,
+    {
+      dates: Set<string>;
+      project: string;
+      title: string;
+      minutes: number;
+      tags: string;
+      note: string;
+    }
+  >();
+  for (const entry of data.entries) {
+    const project = entry.project
+      ? `${entry.project.client.name} / ${entry.project.name}`
+      : "プロジェクトなし";
+    const title = entry.title?.trim() || "タイトルなし";
+    const tags =
+      entry.tags.length > 0
+        ? entry.tags.map((tag) => tag.name).sort().join(", ")
+        : "タグなし";
+    const note = entry.note?.replace(/\s+/g, " ").trim() || "";
+    const key = JSON.stringify([project, title, tags, note]);
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.minutes += entry.minutes;
+      existing.dates.add(format(new Date(entry.start), "M/d"));
+    } else {
+      grouped.set(key, {
+        dates: new Set([format(new Date(entry.start), "M/d")]),
+        project,
+        title,
+        minutes: entry.minutes,
+        tags,
+        note,
+      });
+    }
+  }
+  const entries = [...grouped.values()].map((entry) => {
+    return [
+      `- ${[...entry.dates].join(", ")}`,
+      entry.project,
+      entry.title,
+      formatDuration(entry.minutes),
+      `タグ: ${entry.tags}`,
+      ...(entry.note ? [`メモ: ${entry.note}`] : []),
+    ].join(" | ");
+  });
+
+  return `
+以下の出力テンプレートに沿って、工数記録から週報を作成してください。
+テンプレートの見出し、順番、固定文は維持してください。
+テンプレートに存在しない見出しや項目は追加しないでください。
+括弧書きの説明は生成指示なので、完成した週報には残さないでください。
+同じプロジェクトや同じ作業は、事実関係を変えずにまとめて構いません。
+工数記録が根拠にない内容は追加しないでください。
+対象期間は${period}、合計時間は${formatDuration(data.totalMinutes)}です。
+この対象期間と合計時間は、テンプレートに記載欄がある場合だけ出力してください。
+
+<出力テンプレート>
+${template}
+</出力テンプレート>
+
+<工数記録>
+${entries.join("\n")}
+</工数記録>
+`.trim();
 }
 
 type SlackGroup = {
@@ -244,6 +333,10 @@ export function ReportsPage() {
   const { data: tagList = [] } = useQuery({
     queryKey: ["tags"],
     queryFn: () => apiFetch<Tag[]>("/api/tags"),
+  });
+  const { data: settings } = useQuery({
+    queryKey: ["settings"],
+    queryFn: () => apiFetch<UserSettings>("/api/settings"),
   });
 
   const clientOptions: FilterOption[] = useMemo(
@@ -407,6 +500,11 @@ export function ReportsPage() {
   const queryClient = useQueryClient();
   const [copied, setCopied] = useState(false);
   const [copying, setCopying] = useState(false);
+  const [weeklyReportOpen, setWeeklyReportOpen] = useState(false);
+  const [weeklyReport, setWeeklyReport] = useState("");
+  const [weeklyReportError, setWeeklyReportError] = useState("");
+  const [weeklyReportGenerating, setWeeklyReportGenerating] = useState(false);
+  const [weeklyReportCopied, setWeeklyReportCopied] = useState(false);
   async function copyTable() {
     setCopying(true);
     let text: string;
@@ -465,6 +563,74 @@ export function ReportsPage() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
+  }
+
+  async function generateWeeklyReport() {
+    setWeeklyReportOpen(true);
+    setWeeklyReport("");
+    setWeeklyReportError("");
+    setWeeklyReportCopied(false);
+
+    if (!("__TAURI_INTERNALS__" in window)) {
+      setWeeklyReportError(
+        "Apple Intelligenceによる週報生成はデスクトップアプリで利用できます。",
+      );
+      return;
+    }
+    if (!settings?.weeklyReportTemplate.trim()) {
+      setWeeklyReportError(
+        "設定の「週報」で出力テンプレートを保存してください。",
+      );
+      return;
+    }
+
+    setWeeklyReportGenerating(true);
+    try {
+      const url = buildEntriesUrl(baseFilters, {});
+      const entries = await queryClient.fetchQuery({
+        queryKey: ["reports-entries", url],
+        queryFn: () => apiFetch<ReportEntriesResponse>(url),
+      });
+      if (entries.entries.length === 0) {
+        setWeeklyReportError("この週には週報に含める工数がありません。");
+        return;
+      }
+
+      const prompt = buildWeeklyReportPrompt({
+        template: settings.weeklyReportTemplate,
+        period: periodLabel(anchor, "week"),
+        data: entries,
+      });
+      const generated = await invoke<string>("generate_weekly_report", {
+        prompt,
+      });
+      setWeeklyReport(generated);
+    } catch (error) {
+      setWeeklyReportError(
+        typeof error === "string"
+          ? error
+          : error instanceof Error
+            ? error.message
+            : "週報を生成できませんでした。",
+      );
+    } finally {
+      setWeeklyReportGenerating(false);
+    }
+  }
+
+  async function copyWeeklyReport() {
+    try {
+      await navigator.clipboard.writeText(weeklyReport);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = weeklyReport;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    setWeeklyReportCopied(true);
+    setTimeout(() => setWeeklyReportCopied(false), 2000);
   }
 
   return (
@@ -714,6 +880,21 @@ export function ReportsPage() {
               <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-neutral-200 px-3 py-2.5">
                 <h2 className="text-sm font-medium text-neutral-800">明細</h2>
                 <div className="flex flex-wrap items-center justify-end gap-3">
+                  {range === "week" && (
+                    <button
+                      type="button"
+                      onClick={generateWeeklyReport}
+                      disabled={weeklyReportGenerating}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+                    >
+                      {weeklyReportGenerating ? (
+                        <LoaderCircle className="size-3.5 animate-spin" />
+                      ) : (
+                        <Sparkles className="size-3.5" />
+                      )}
+                      {weeklyReportGenerating ? "生成中…" : "週報を生成"}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={copyTable}
@@ -839,6 +1020,67 @@ export function ReportsPage() {
           )}
         </div>
       </div>
+
+      <Dialog
+        open={weeklyReportOpen}
+        onOpenChange={setWeeklyReportOpen}
+        contentClassName="w-[min(760px,92vw)]"
+      >
+        <DialogHeader>
+          <DialogTitle>週報</DialogTitle>
+          <p className="text-sm text-neutral-500">
+            {periodLabel(anchor, "week")} · 表示中の絞り込みを反映
+          </p>
+        </DialogHeader>
+
+        {weeklyReportGenerating ? (
+          <div className="flex min-h-72 flex-col items-center justify-center gap-3 text-sm text-neutral-500">
+            <LoaderCircle className="size-6 animate-spin text-emerald-700" />
+            端末内のApple Intelligenceで生成しています…
+          </div>
+        ) : weeklyReportError ? (
+          <div
+            role="alert"
+            className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700"
+          >
+            {weeklyReportError}
+          </div>
+        ) : (
+          <textarea
+            aria-label="生成した週報"
+            value={weeklyReport}
+            onChange={(event) => setWeeklyReport(event.target.value)}
+            rows={18}
+            spellCheck
+            className="w-full resize-y rounded-md border border-neutral-300 bg-white px-3 py-2 font-mono text-sm leading-6 outline-none focus:border-neutral-500 focus:ring-2 focus:ring-neutral-200"
+          />
+        )}
+
+        <DialogFooter className="flex-wrap items-center">
+          <Button
+            variant="ghost"
+            onClick={() => setWeeklyReportOpen(false)}
+          >
+            閉じる
+          </Button>
+          {!weeklyReportGenerating && (
+            <Button variant="outline" onClick={generateWeeklyReport}>
+              <RefreshCw className="size-4" />
+              再生成
+            </Button>
+          )}
+          {!!weeklyReport && !weeklyReportGenerating && (
+            <Button onClick={copyWeeklyReport}>
+              {weeklyReportCopied ? (
+                <Check className="size-4" />
+              ) : (
+                <Copy className="size-4" />
+              )}
+              {weeklyReportCopied ? "コピーしました" : "週報をコピー"}
+            </Button>
+          )}
+        </DialogFooter>
+      </Dialog>
     </div>
   );
 }

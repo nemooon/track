@@ -63,6 +63,7 @@ export type ReportEntry = {
   end: string;
   minutes: number;
   title: string | null;
+  note: string | null;
   project: {
     id: string;
     name: string;
@@ -81,6 +82,7 @@ export type UserSettings = {
   workStart: number;
   workEnd: number;
   workDays: number[];
+  weeklyReportTemplate: string;
 };
 
 export type Snapshot = {

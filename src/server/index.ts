@@ -25,6 +25,7 @@ import { maybeAutoBackup } from "./db/backup";
 import { initDb, db } from "./db/client";
 import { runMigrations, MIGRATIONS_PATH } from "./db/migrate";
 import { external } from "./routes/external";
+import { clearRuntimeInfo, writeRuntimeInfo } from "./runtime";
 import type { Env } from "./types";
 
 // 本番では Tauri が同梱 resource の場所を渡す。開発時は
@@ -138,7 +139,14 @@ void runAutoBackup();
 setInterval(() => void runAutoBackup(), 60 * 60 * 1000);
 
 const server = Bun.serve({ fetch: app.fetch, port: PORT, hostname: "127.0.0.1" });
-console.log(`==> Track (local)  http://127.0.0.1:${server.port}`);
+const baseUrl = `http://127.0.0.1:${server.port}`;
+try {
+  const runtime = writeRuntimeInfo(DATA_DIR, baseUrl);
+  process.once("exit", () => clearRuntimeInfo(DATA_DIR, runtime.pid));
+} catch (error) {
+  console.warn(`AIツール向け接続情報を書き出せません: ${(error as Error).message}`);
+}
+console.log(`==> Track (local)  ${baseUrl}`);
 console.log(`    db: ${DB_PATH}`);
 console.log(`    exports: ${loadConfig(DATA_DIR).exportDir}`);
 if (!existsSync(DIST)) console.log(`    SPA: 未ビルド — npm run build するか vite dev を使ってください`);

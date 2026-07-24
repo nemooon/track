@@ -15,7 +15,12 @@ export const EXPORT_VERSION = 1;
 export async function buildExport(prisma: PrismaClient) {
   const [current, clients, tags, projects, entries] = await Promise.all([
     prisma.settings.findFirst({
-      select: { workStart: true, workEnd: true, workDays: true },
+      select: {
+        workStart: true,
+        workEnd: true,
+        workDays: true,
+        weeklyReportTemplate: true,
+      },
     }),
     prisma.client.findMany({ orderBy: { createdAt: "asc" } }),
     prisma.tag.findMany({ orderBy: { createdAt: "asc" } }),
@@ -37,6 +42,7 @@ export async function buildExport(prisma: PrismaClient) {
       workStart: current.workStart,
       workEnd: current.workEnd,
       workDays: current.workDays.split(",").map(Number).filter((n) => !isNaN(n)),
+      weeklyReportTemplate: current.weeklyReportTemplate,
     },
     clients: clients.map((x) => ({
       id: x.id,
@@ -118,6 +124,7 @@ const importSchema = z.object({
     workStart: z.number().int().min(0).max(1440),
     workEnd: z.number().int().min(0).max(1440),
     workDays: z.array(z.number().int().min(0).max(6)),
+    weeklyReportTemplate: z.string().min(1).max(10_000).optional(),
   }),
   clients: z.array(
     z.object({
@@ -267,6 +274,9 @@ data.post("/import", async (c) => {
         workStart: d.settings.workStart,
         workEnd: d.settings.workEnd,
         workDays: d.settings.workDays.join(","),
+        ...(d.settings.weeklyReportTemplate
+          ? { weeklyReportTemplate: d.settings.weeklyReportTemplate }
+          : {}),
       },
     });
 

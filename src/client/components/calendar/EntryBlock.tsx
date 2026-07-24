@@ -49,9 +49,8 @@ export function EntryBlock({
   const top = minutesToY(startMin, hourPx) + 2;
   const height = Math.max(minutesToY(endMin - startMin, hourPx) - 5, 14);
 
-  const rightGutter = 12;
-  const width = `calc((100% - ${rightGutter}px) / ${laneCount} - 6px)`;
-  const left = `calc(${laneIndex} * (100% - ${rightGutter}px) / ${laneCount} + 2px)`;
+  const width = `calc(100% / ${laneCount} - 6px)`;
+  const left = `calc(${laneIndex} * 100% / ${laneCount} + 2px)`;
 
   const breakMin = entry.breakMinutes ?? 0;
   const grossMin = Math.round((end.getTime() - start.getTime()) / 60000);
@@ -65,18 +64,16 @@ export function EntryBlock({
 
   const projectName = entry.project?.name ?? "プロジェクトなし";
   const baseColor = entry.project?.color ?? "#9ca3af";
-  const fillColor = `color-mix(in srgb, ${baseColor} 18%, white)`;
-  const fillColorSelected = `color-mix(in srgb, ${baseColor} 28%, white)`;
-  const endStop = entry.tags?.[0]?.tag.color ?? `color-mix(in srgb, ${baseColor} 65%, white)`;
 
   return (
     <div
       onPointerDown={onPointerDown}
       onClick={onSelect}
       onDoubleClick={onDoubleClick}
+      data-selected={selected || undefined}
       className={cn(
-        "absolute rounded-sm border border-transparent px-1.5 py-0.5 text-xs",
-        !ghost && "cursor-grab hover:shadow-sm",
+        "calendar-entry absolute overflow-hidden rounded-md border px-2 py-1 text-xs",
+        !ghost && "cursor-grab",
         ghost && "cursor-grabbing opacity-60",
       )}
       style={{
@@ -84,21 +81,15 @@ export function EntryBlock({
         height,
         left,
         width,
-        ["--entry-fill" as never]: selected ? fillColorSelected : fillColor,
-        background: selected
-          ? `linear-gradient(color-mix(in srgb, var(--entry-fill) 80%, white), var(--entry-fill)) padding-box, conic-gradient(from var(--entry-angle), color-mix(in srgb, ${baseColor} 80%, black) 0deg, ${baseColor} 40deg, color-mix(in srgb, ${baseColor} 55%, white) 90deg, color-mix(in srgb, ${endStop} 55%, white) 130deg, ${endStop} 140deg, color-mix(in srgb, ${endStop} 80%, black) 180deg, ${endStop} 220deg, color-mix(in srgb, ${endStop} 55%, white) 230deg, color-mix(in srgb, ${baseColor} 55%, white) 270deg, ${baseColor} 320deg, color-mix(in srgb, ${baseColor} 80%, black) 360deg) border-box`
-          : `linear-gradient(color-mix(in srgb, var(--entry-fill) 80%, white), var(--entry-fill)) padding-box, linear-gradient(to bottom right, ${baseColor} 0%, var(--entry-fill) 50%, ${endStop} 100%) border-box`,
-        transition: "--entry-fill 220ms ease, box-shadow 150ms ease",
-        ...(selected
-          ? {
-              animation: "entry-selected-rotate 8s linear infinite",
-            }
-          : {}),
-        color: `color-mix(in srgb, ${baseColor} 60%, black)`,
+        ["--entry-accent" as never]: baseColor,
         touchAction,
         ...style,
       }}
     >
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute bottom-1.5 left-0 top-1.5 w-[3px] rounded-r-full bg-[var(--entry-accent)]"
+      />
       {onTopHandleDown && !ghost && (
         <div
           onPointerDown={(e) => {
@@ -109,30 +100,42 @@ export function EntryBlock({
         />
       )}
       <div className="flex h-full flex-col gap-0.5 overflow-hidden">
-        <div className="flex items-baseline gap-2">
+        <div className="flex items-start gap-1.5">
           <div className="min-w-0 flex-1 truncate font-semibold leading-tight">
             {entry.title ? entry.title : projectName}
           </div>
-          <div className="shrink-0 text-[10px] leading-tight tabular-nums opacity-60">
+          <div className="calendar-entry-time shrink-0 rounded px-1 py-px text-[9px] font-medium leading-tight tabular-nums">
             {format(start, "HH:mm")}–{format(end, "HH:mm")}
           </div>
         </div>
         {entry.title && (
-          <div className="flex items-baseline gap-2 leading-tight">
-            <div className="min-w-0 flex-1 text-[12px] truncate opacity-75">{projectName}</div>
-            <div className="ml-auto shrink-0 text-[10px] tabular-nums opacity-60">
+          <div className="flex items-baseline gap-1.5 leading-tight">
+            <div className="min-w-0 flex-1 truncate text-[11px] font-medium opacity-65">
+              {projectName}
+            </div>
+            <div className="ml-auto shrink-0 text-[10px] tabular-nums opacity-55">
               {durLabel}
               {breakLabel}
             </div>
           </div>
         )}
         {(!entry.title || (entry.tags && entry.tags.length > 0)) && (
-          <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[10px] leading-tight opacity-70">
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] leading-tight">
             {entry.tags?.map((te) => (
-              <span key={te.tagId}>{te.tag.name}</span>
+              <span
+                key={te.tagId}
+                className="inline-flex min-w-0 items-center gap-1 opacity-65"
+              >
+                <span
+                  aria-hidden="true"
+                  className="size-1.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: te.tag.color }}
+                />
+                <span className="truncate">{te.tag.name}</span>
+              </span>
             ))}
             {!entry.title && (
-              <span className="ml-auto tabular-nums opacity-85">
+              <span className="ml-auto tabular-nums opacity-55">
                 {durLabel}
                 {breakLabel}
               </span>

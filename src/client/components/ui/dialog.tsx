@@ -9,11 +9,17 @@ interface DialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   children: React.ReactNode;
+  contentClassName?: string;
 }
 
 const DialogContext = React.createContext<{ titleId: string } | null>(null);
 
-export function Dialog({ open, onOpenChange, children }: DialogProps) {
+export function Dialog({
+  open,
+  onOpenChange,
+  children,
+  contentClassName,
+}: DialogProps) {
   const [mounted, setMounted] = React.useState(false);
   const titleId = React.useId();
   const layerRef = React.useRef<HTMLDivElement>(null);
@@ -91,7 +97,10 @@ export function Dialog({ open, onOpenChange, children }: DialogProps) {
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="relative z-10 w-[min(480px,90vw)] rounded-lg bg-white p-6 shadow-xl outline-none"
+        className={cn(
+          "relative z-10 w-[min(480px,90vw)] rounded-lg bg-white p-6 shadow-xl outline-none",
+          contentClassName,
+        )}
       >
         <DialogContext.Provider value={{ titleId }}>
           {children}

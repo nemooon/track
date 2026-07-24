@@ -17,6 +17,7 @@
     "dialog:allow-open",
     "core:window:allow-start-dragging",
     "core:event:allow-listen",
+    "allow-generate-weekly-report",
     {
       "identifier": "opener:allow-open-url",
       "allow": [

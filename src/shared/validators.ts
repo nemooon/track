@@ -107,5 +107,5 @@ export const settingsUpdateSchema = z.object({
   workStart: z.number().int().min(0).max(1440).optional(),
   workEnd: z.number().int().min(0).max(1440).optional(),
   workDays: z.array(z.number().int().min(0).max(6)).optional(),
+  weeklyReportTemplate: z.string().trim().min(1).max(10_000).optional(),
 });
-

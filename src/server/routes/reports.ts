@@ -225,6 +225,7 @@ reports.get("/entries", async (c) => {
       end: entry.end.toISOString(),
       minutes,
       title: entry.title,
+      note: entry.note,
       project: entry.project
         ? {
             id: entry.project.id,
