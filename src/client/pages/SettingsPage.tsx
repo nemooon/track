@@ -4,8 +4,15 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { FolderOpen } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@client/components/ui/button";
+import {
+  Dialog,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@client/components/ui/dialog";
 import { Input } from "@client/components/ui/input";
 import { Label } from "@client/components/ui/label";
+import { useAppUi } from "@client/components/AppUiContext";
 import { apiFetch } from "@client/lib/fetcher";
 import { ProjectsPage } from "@client/pages/ProjectsPage";
 import type { UserSettings, AppConfig, Snapshot } from "@shared/types";
@@ -23,12 +30,15 @@ function timeToMinutes(value: string): number {
   return h * 60 + m;
 }
 
-export function SettingsPage({
-  embedded = false,
-}: {
-  embedded?: boolean;
-} = {}) {
+export type SettingsCategory =
+  | "work-hours"
+  | "projects"
+  | "backup"
+  | "data-transfer";
+
+export function SettingsPage({ category }: { category: SettingsCategory }) {
   const qc = useQueryClient();
+  const { setSettingsDirty } = useAppUi();
   const isTauri = "__TAURI_INTERNALS__" in window;
   const { data: current, isLoading } = useQuery({
     queryKey: ["settings"],
@@ -46,6 +56,27 @@ export function SettingsPage({
       setWorkDays(current.workDays);
     }
   }, [current]);
+
+  const normalizedWorkDays = [...workDays].sort((a, b) => a - b);
+  const workDirty =
+    !!current &&
+    (workStart !== current.workStart ||
+      workEnd !== current.workEnd ||
+      normalizedWorkDays.join(",") !==
+        [...current.workDays].sort((a, b) => a - b).join(","));
+  const workError =
+    workEnd <= workStart
+      ? "勤務終了は勤務開始より後にしてください"
+      : workDays.length === 0
+        ? "勤務日を1日以上選択してください"
+        : null;
+
+  function resetWorkSettings() {
+    if (!current) return;
+    setWorkStart(current.workStart);
+    setWorkEnd(current.workEnd);
+    setWorkDays(current.workDays);
+  }
 
   const updateSettings = useMutation({
     mutationFn: (data: { workStart?: number; workEnd?: number; workDays?: number[] }) =>
@@ -77,6 +108,54 @@ export function SettingsPage({
       setBackupKeep(config.backupKeep);
     }
   }, [config]);
+
+  const configDirty =
+    !!config &&
+    (exportDir !== config.exportDir ||
+      backupIntervalHours !== config.backupIntervalHours ||
+      backupKeep !== config.backupKeep);
+  let configError: string | null = null;
+  if (config) {
+    if (!exportDir.trim()) {
+      configError = "バックアップの保存先を指定してください";
+    } else if (
+      !Number.isInteger(backupIntervalHours) ||
+      backupIntervalHours < 0 ||
+      backupIntervalHours > 720
+    ) {
+      configError = "実行間隔は0〜720時間で指定してください";
+    } else if (
+      !Number.isInteger(backupKeep) ||
+      backupKeep < 1 ||
+      backupKeep > 1000
+    ) {
+      configError = "残す本数は1〜1000本で指定してください";
+    }
+  }
+
+  function resetBackupSettings() {
+    if (!config) return;
+    setExportDir(config.exportDir);
+    setBackupIntervalHours(config.backupIntervalHours);
+    setBackupKeep(config.backupKeep);
+  }
+
+  useEffect(() => {
+    setSettingsDirty(
+      category === "work-hours"
+        ? workDirty
+        : category === "backup"
+          ? configDirty
+          : false,
+    );
+  }, [category, configDirty, setSettingsDirty, workDirty]);
+
+  useEffect(
+    () => () => {
+      setSettingsDirty(false);
+    },
+    [setSettingsDirty],
+  );
 
   const updateConfig = useMutation({
     mutationFn: (patch: Partial<AppConfig>) =>
@@ -155,9 +234,11 @@ export function SettingsPage({
   // データのエクスポート / インポート
   const fileRef = useRef<HTMLInputElement>(null);
   const [lastExport, setLastExport] = useState<string | null>(null);
+  const [validatingImport, setValidatingImport] = useState(false);
   const [pending, setPending] = useState<{
     name: string;
     json: unknown;
+    exportedAt: string | null;
     counts: { clients: number; tags: number; projects: number; entries: number };
   } | null>(null);
 
@@ -171,27 +252,60 @@ export function SettingsPage({
     onError: () => toast.error("エクスポートに失敗しました"),
   });
 
+  function showImportError(err: unknown) {
+    const msg = (err as Error).message;
+    if (msg.includes("inconsistent_data")) {
+      toast.error("参照が壊れているためインポートできません");
+    } else if (msg.includes("invalid_input")) {
+      toast.error("ファイルの形式が Track のエクスポートと合いません");
+    } else {
+      toast.error("ファイルを確認できませんでした");
+    }
+  }
+
   async function onPickImportFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = ""; // 同じファイルを続けて選べるようにする
     if (!file) return;
+
+    let json: unknown;
     try {
-      const json = JSON.parse(await file.text());
-      const counts = {
-        clients: Array.isArray(json.clients) ? json.clients.length : 0,
-        tags: Array.isArray(json.tags) ? json.tags.length : 0,
-        projects: Array.isArray(json.projects) ? json.projects.length : 0,
-        entries: Array.isArray(json.entries) ? json.entries.length : 0,
-      };
-      setPending({ name: file.name, json, counts });
+      json = JSON.parse(await file.text());
     } catch {
       toast.error("JSON として読めませんでした");
+      return;
+    }
+
+    setValidatingImport(true);
+    try {
+      const validation = await apiFetch<{
+        exportedAt: string | null;
+        counts: {
+          clients: number;
+          tags: number;
+          projects: number;
+          entries: number;
+        };
+      }>("/api/data/import/validate", {
+        method: "POST",
+        body: JSON.stringify(json),
+      });
+      setPending({
+        name: file.name,
+        json,
+        exportedAt: validation.exportedAt,
+        counts: validation.counts,
+      });
+    } catch (err) {
+      showImportError(err);
+    } finally {
+      setValidatingImport(false);
     }
   }
 
   const runImport = useMutation({
     mutationFn: (json: unknown) =>
-      apiFetch<{ imported: Record<string, number> }>("/api/data/import", {
+      apiFetch<{ imported: Record<string, number>; safetyBackup: string }>("/api/data/import", {
         method: "POST",
         body: JSON.stringify(json),
       }),
@@ -200,19 +314,10 @@ export function SettingsPage({
       qc.invalidateQueries();
       const n = res.imported;
       toast.success(
-        `インポートしました (クライアント ${n.clients} / タグ ${n.tags} / プロジェクト ${n.projects} / エントリ ${n.entries})`,
+        `安全バックアップを作成してインポートしました (クライアント ${n.clients} / タグ ${n.tags} / プロジェクト ${n.projects} / エントリ ${n.entries})`,
       );
     },
-    onError: (err) => {
-      const msg = (err as Error).message;
-      if (msg.includes("inconsistent_data")) {
-        toast.error("参照が壊れているためインポートを中止しました");
-      } else if (msg.includes("invalid_input")) {
-        toast.error("ファイルの形式が Track のエクスポートと合いません");
-      } else {
-        toast.error("インポートに失敗しました");
-      }
-    },
+    onError: showImportError,
   });
 
   function toggleDay(day: number) {
@@ -221,7 +326,7 @@ export function SettingsPage({
     );
   }
 
-  if (isLoading) {
+  if (category === "work-hours" && isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="h-6 w-6 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-700" />
@@ -230,90 +335,133 @@ export function SettingsPage({
   }
 
   return (
-    <div
-      className={
-        embedded
-          ? "space-y-8 p-4 sm:p-6"
-          : "mx-auto max-w-3xl space-y-8 p-4 sm:p-6"
-      }
-    >
-      {!embedded && (
-        <h1 className="text-2xl font-semibold tracking-tight">設定</h1>
+    <div>
+      {category === "work-hours" && (
+        <section>
+          <div className="mb-6">
+            <h2 className="text-2xl font-semibold tracking-tight">勤務時間</h2>
+            <p className="mt-1 text-sm text-neutral-500">
+              カレンダーの稼働日表示と勤務状況の判定に使います。
+            </p>
+          </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              updateSettings.mutate({ workStart, workEnd, workDays });
+            }}
+            className="space-y-5 rounded-lg border border-neutral-200 p-5"
+          >
+            <div className="flex gap-4">
+              <div className="space-y-1">
+                <Label htmlFor="work-start">勤務開始</Label>
+                <Input
+                  id="work-start"
+                  type="time"
+                  step={1800}
+                  value={minutesToTime(workStart)}
+                  onChange={(e) => setWorkStart(timeToMinutes(e.target.value))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="work-end">勤務終了</Label>
+                <Input
+                  id="work-end"
+                  type="time"
+                  step={1800}
+                  value={minutesToTime(workEnd)}
+                  onChange={(e) => setWorkEnd(timeToMinutes(e.target.value))}
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <div className="text-sm font-medium">勤務日</div>
+              <div
+                role="group"
+                aria-label="勤務日"
+                className="flex flex-wrap gap-2"
+              >
+                {DAY_LABELS.map((label, i) => (
+                  <label
+                    key={i}
+                    className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border text-sm ${
+                      workDays.includes(i)
+                        ? "border-neutral-900 bg-neutral-900 text-white"
+                        : "border-neutral-200 text-neutral-500 hover:bg-neutral-50"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={workDays.includes(i)}
+                      onChange={() => toggleDay(i)}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
+            {workError && (
+              <p role="alert" className="text-sm text-red-600">
+                {workError}
+              </p>
+            )}
+            <div className="flex items-center gap-2">
+              <Button
+                type="submit"
+                size="sm"
+                disabled={!workDirty || !!workError || updateSettings.isPending}
+              >
+                {updateSettings.isPending ? "保存中…" : "変更を保存"}
+              </Button>
+              {workDirty && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={resetWorkSettings}
+                  disabled={updateSettings.isPending}
+                >
+                  変更を破棄
+                </Button>
+              )}
+              {!workDirty && !workError && (
+                <span className="text-xs text-neutral-500">保存済み</span>
+              )}
+            </div>
+          </form>
+        </section>
       )}
 
-      {/* Work schedule */}
-      <section>
-        <h2 className="mb-4 text-lg font-semibold">勤務設定</h2>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            updateSettings.mutate({ workStart, workEnd, workDays });
-          }}
-          className="space-y-4"
-        >
-          <div className="flex gap-4">
-            <div className="space-y-1">
-              <Label>定時開始</Label>
-              <Input
-                type="time"
-                step={1800}
-                value={minutesToTime(workStart)}
-                onChange={(e) => setWorkStart(timeToMinutes(e.target.value))}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>定時終了</Label>
-              <Input
-                type="time"
-                step={1800}
-                value={minutesToTime(workEnd)}
-                onChange={(e) => setWorkEnd(timeToMinutes(e.target.value))}
-              />
-            </div>
+      {category === "projects" && (
+        <section id="projects">
+          <div className="mb-6">
+            <h2 className="text-2xl font-semibold tracking-tight">
+              プロジェクト管理
+            </h2>
+            <p className="mt-1 text-sm text-neutral-500">
+              クライアント、プロジェクト、タグを管理します。
+            </p>
           </div>
-          <div className="space-y-1">
-            <Label>使う曜日</Label>
-            <div className="flex gap-2">
-              {DAY_LABELS.map((label, i) => (
-                <label
-                  key={i}
-                  className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border text-sm ${
-                    workDays.includes(i)
-                      ? "border-neutral-900 bg-neutral-900 text-white"
-                      : "border-neutral-200 text-neutral-500 hover:bg-neutral-50"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    className="sr-only"
-                    checked={workDays.includes(i)}
-                    onChange={() => toggleDay(i)}
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
+          <ProjectsPage embedded />
+        </section>
+      )}
+
+      {category === "backup" && (
+        <section>
+          <div className="mb-6">
+            <h2 className="text-2xl font-semibold tracking-tight">
+              バックアップと復元
+            </h2>
+            <p className="mt-1 text-sm text-neutral-500">
+              データベース全体のバックアップ先と履歴を管理します。
+            </p>
           </div>
-          <Button type="submit" size="sm">保存</Button>
-        </form>
-      </section>
 
-      <section id="projects" className="border-t border-neutral-200 pt-8">
-        <h2 className="mb-6 text-xl font-semibold">プロジェクト設定</h2>
-        <ProjectsPage embedded />
-      </section>
-
-      {/* データ */}
-      <section className="border-t border-neutral-200 pt-8">
-        <h2 className="mb-2 text-lg font-semibold">データ</h2>
-        <p className="mb-3 text-sm text-neutral-500">
-          バックアップは DB をまるごと1ファイルに写す方式です。JSON の出し入れは
-          他ツール連携や旧環境からの移行用で、バックアップ用途ではありません。
-        </p>
-
-        <div className="space-y-3">
+          <div className="space-y-3">
           <div className="rounded-md border border-neutral-200 px-3 py-3">
-            <div className="mb-1 text-sm font-medium text-neutral-700">保存先</div>
+            <Label htmlFor="backup-directory" className="mb-1 block text-sm">
+              保存先
+            </Label>
             <p className="mb-2 text-xs text-neutral-500">
               iCloud Drive のフォルダを指定すると、そのままバックアップになります。
               DB 本体（track.db）は同期フォルダに置かないでください — WAL と合わせて
@@ -321,6 +469,7 @@ export function SettingsPage({
             </p>
             <div className="flex gap-2">
               <Input
+                id="backup-directory"
                 value={exportDir}
                 onChange={(e) => setExportDir(e.target.value)}
                 spellCheck={false}
@@ -338,13 +487,6 @@ export function SettingsPage({
                   選択
                 </Button>
               )}
-              <Button
-                size="sm"
-                onClick={() => updateConfig.mutate({ exportDir })}
-                disabled={updateConfig.isPending || !exportDir.trim()}
-              >
-                保存
-              </Button>
             </div>
             {suggestions.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
@@ -375,8 +517,11 @@ export function SettingsPage({
             <div className="mb-2 text-sm font-medium text-neutral-700">自動バックアップ</div>
             <div className="flex items-end gap-3">
               <div className="space-y-1">
-                <Label className="text-xs">間隔（時間・0で無効）</Label>
+                <Label htmlFor="backup-interval" className="text-xs">
+                  実行間隔（時間、0で停止）
+                </Label>
                 <Input
+                  id="backup-interval"
                   type="number"
                   min={0}
                   max={720}
@@ -386,8 +531,11 @@ export function SettingsPage({
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">残す本数</Label>
+                <Label htmlFor="backup-keep" className="text-xs">
+                  残す本数
+                </Label>
                 <Input
+                  id="backup-keep"
                   type="number"
                   min={1}
                   max={1000}
@@ -396,17 +544,44 @@ export function SettingsPage({
                   className="w-28"
                 />
               </div>
-              <Button
-                size="sm"
-                onClick={() => updateConfig.mutate({ backupIntervalHours, backupKeep })}
-                disabled={updateConfig.isPending}
-              >
-                保存
-              </Button>
             </div>
             <p className="mt-2 text-xs text-neutral-500">
               手動で書き出したファイルは本数制限の対象外です。
             </p>
+          </div>
+
+          {configError && (
+            <p role="alert" className="text-sm text-red-600">
+              {configError}
+            </p>
+          )}
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={() =>
+                updateConfig.mutate({
+                  exportDir,
+                  backupIntervalHours,
+                  backupKeep,
+                })
+              }
+              disabled={!configDirty || !!configError || updateConfig.isPending}
+            >
+              {updateConfig.isPending ? "保存中…" : "設定を保存"}
+            </Button>
+            {configDirty && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={resetBackupSettings}
+                disabled={updateConfig.isPending}
+              >
+                変更を破棄
+              </Button>
+            )}
+            {!configDirty && !configError && (
+              <span className="text-xs text-neutral-500">保存済み</span>
+            )}
           </div>
 
           <div className="rounded-md border border-neutral-200 px-3 py-3">
@@ -418,7 +593,7 @@ export function SettingsPage({
                 onClick={() => runBackup.mutate()}
                 disabled={runBackup.isPending}
               >
-                いま取る
+                {runBackup.isPending ? "作成中…" : "今すぐバックアップ"}
               </Button>
             </div>
             <p className="mb-2 text-xs text-neutral-500">
@@ -444,39 +619,64 @@ export function SettingsPage({
                       </div>
                     </div>
                     <Button variant="ghost" size="sm" onClick={() => setRestoring(b)}>
-                      戻す
+                      この状態に復元
                     </Button>
                   </div>
                 ))}
               </div>
             )}
 
-            {restoring && (
-              <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3">
-                <div className="mb-1 text-sm font-medium text-amber-900">
-                  {restoring.name} に戻しますか？
+            <Dialog
+              open={!!restoring}
+              onOpenChange={(open) => {
+                if (!open && !runRestore.isPending) setRestoring(null);
+              }}
+            >
+              {restoring && (
+                <div>
+                  <DialogHeader>
+                    <DialogTitle>バックアップから復元</DialogTitle>
+                  </DialogHeader>
+                  <p className="text-sm text-neutral-600">
+                    <strong>{restoring.name}</strong>
+                    の内容で現在のデータを上書きします。実行直前に現在のデータを自動でバックアップします。
+                  </p>
+                  <DialogFooter>
+                    <Button
+                      variant="ghost"
+                      onClick={() => setRestoring(null)}
+                      disabled={runRestore.isPending}
+                    >
+                      キャンセル
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => runRestore.mutate(restoring)}
+                      disabled={runRestore.isPending}
+                    >
+                      {runRestore.isPending ? "復元中…" : "復元する"}
+                    </Button>
+                  </DialogFooter>
                 </div>
-                <div className="mb-3 text-xs text-amber-800">
-                  いまの DB は<strong>このスナップショットの内容で上書きされます</strong>。
-                  差し替える直前に現在の DB のバックアップを自動で取るので、戻し間違えても復帰できます。
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() => runRestore.mutate(restoring)}
-                    disabled={runRestore.isPending}
-                  >
-                    戻す
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setRestoring(null)}>
-                    やめる
-                  </Button>
-                </div>
-              </div>
-            )}
+              )}
+            </Dialog>
           </div>
 
-          <div className="flex items-center justify-between rounded-md border border-neutral-200 px-3 py-2">
+          </div>
+        </section>
+      )}
+
+      {category === "data-transfer" && (
+        <section>
+          <div className="mb-6">
+            <h2 className="text-2xl font-semibold tracking-tight">データ移行</h2>
+            <p className="mt-1 text-sm text-neutral-500">
+              JSON形式で他の環境やツールへデータを移します。通常のバックアップには使用しません。
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-md border border-neutral-200 px-3 py-3">
             <div className="text-sm">
               <div className="font-medium text-neutral-700">JSON エクスポート</div>
               <div className="text-xs text-neutral-500">
@@ -502,7 +702,7 @@ export function SettingsPage({
             </div>
           )}
 
-          <div className="flex items-center justify-between rounded-md border border-neutral-200 px-3 py-2">
+            <div className="flex items-center justify-between rounded-md border border-neutral-200 px-3 py-3">
             <div className="text-sm">
               <div className="font-medium text-neutral-700">JSON インポート</div>
               <div className="text-xs text-neutral-500">
@@ -516,40 +716,67 @@ export function SettingsPage({
               className="hidden"
               onChange={onPickImportFile}
             />
-            <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
-              ファイルを選ぶ
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fileRef.current?.click()}
+              disabled={validatingImport}
+            >
+              {validatingImport ? "確認中…" : "ファイルを選ぶ"}
             </Button>
           </div>
 
-          {pending && (
-            <div className="rounded-md border border-amber-300 bg-amber-50 p-3">
-              <div className="mb-1 text-sm font-medium text-amber-900">
-                {pending.name} を読み込みました
+          <Dialog
+            open={!!pending}
+            onOpenChange={(open) => {
+              if (!open && !runImport.isPending) setPending(null);
+            }}
+          >
+            {pending && (
+              <div>
+                <DialogHeader>
+                  <DialogTitle>データを置き換えますか？</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-2 text-sm text-neutral-600">
+                  <p className="font-medium text-neutral-900">{pending.name}</p>
+                  {pending.exportedAt && (
+                    <p>
+                      書き出し日時:{" "}
+                      {new Date(pending.exportedAt).toLocaleString("ja-JP")}
+                    </p>
+                  )}
+                  <p>
+                    クライアント {pending.counts.clients} / タグ{" "}
+                    {pending.counts.tags} / プロジェクト{" "}
+                    {pending.counts.projects} / エントリ{" "}
+                    {pending.counts.entries}
+                  </p>
+                  <p>
+                    現在のデータはすべて置き換わります。実行直前に現在のデータを自動でバックアップします。
+                  </p>
+                </div>
+                <DialogFooter>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setPending(null)}
+                    disabled={runImport.isPending}
+                  >
+                    キャンセル
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={() => runImport.mutate(pending.json)}
+                    disabled={runImport.isPending}
+                  >
+                    {runImport.isPending ? "置き換え中…" : "データを置き換える"}
+                  </Button>
+                </DialogFooter>
               </div>
-              <div className="mb-3 text-xs text-amber-800">
-                クライアント {pending.counts.clients} / タグ {pending.counts.tags} / プロジェクト{" "}
-                {pending.counts.projects} / エントリ {pending.counts.entries}
-                <br />
-                実行すると<strong>いま入っているデータは全て消えます</strong>。
-                心配なら先にエクスポートしてください。
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  onClick={() => runImport.mutate(pending.json)}
-                  disabled={runImport.isPending}
-                >
-                  置き換える
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => setPending(null)}>
-                  やめる
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-      </section>
-
+            )}
+          </Dialog>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

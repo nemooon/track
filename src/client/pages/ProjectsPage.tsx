@@ -1,11 +1,16 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Plus, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@client/components/ui/button";
 import { Input } from "@client/components/ui/input";
 import { Label } from "@client/components/ui/label";
-import { Dialog, DialogHeader, DialogTitle } from "@client/components/ui/dialog";
+import {
+  Dialog,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@client/components/ui/dialog";
 import { apiFetch } from "@client/lib/fetcher";
 import { PROJECT_COLORS, randomColor } from "@client/lib/utils";
 import type { Client, Project, Tag } from "@shared/types";
@@ -48,6 +53,13 @@ export function ProjectsPage({
   const { data: clients = [] } = useClients();
   const { data: projects = [] } = useProjects();
   const { data: tags = [] } = useTags();
+  const activeClients = clients.filter((client) => !client.archived);
+  const orderedClients = [...clients].sort(
+    (a, b) => Number(a.archived) - Number(b.archived),
+  );
+  const orderedProjects = [...projects].sort(
+    (a, b) => Number(a.archived) - Number(b.archived),
+  );
 
   const [clientDialogOpen, setClientDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
@@ -64,6 +76,7 @@ export function ProjectsPage({
   const [editingTag, setEditingTag] = useState<Tag | null>(null);
   const [tagName, setTagName] = useState("");
   const [tagColor, setTagColor] = useState(randomColor());
+  const [deletingTag, setDeletingTag] = useState<Tag | null>(null);
 
   // Client mutations
   const createClient = useMutation({
@@ -85,13 +98,22 @@ export function ProjectsPage({
     },
   });
 
-  const deleteClient = useMutation({
-    mutationFn: (id: string) => apiFetch(`/api/clients/${id}`, { method: "DELETE" }),
-    onSuccess: () => {
+  const setClientArchived = useMutation({
+    mutationFn: ({ id, archived }: { id: string; archived: boolean }) =>
+      apiFetch(`/api/clients/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ archived }),
+      }),
+    onSuccess: (_data, { archived }) => {
       qc.invalidateQueries({ queryKey: ["clients"] });
-      toast.success("クライアントを削除しました");
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      toast.success(
+        archived
+          ? "クライアントと配下のプロジェクトをアーカイブしました"
+          : "クライアントを復元しました",
+      );
     },
-    onError: () => toast.error("削除に失敗しました"),
+    onError: () => toast.error("クライアントの状態を更新できませんでした"),
   });
 
   // Project mutations
@@ -113,19 +135,21 @@ export function ProjectsPage({
     },
   });
 
-  const deleteProject = useMutation({
-    mutationFn: (id: string) => apiFetch(`/api/projects/${id}`, { method: "DELETE" }),
-    onSuccess: () => {
+  const setProjectArchived = useMutation({
+    mutationFn: ({ id, archived }: { id: string; archived: boolean }) =>
+      apiFetch(`/api/projects/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ archived }),
+      }),
+    onSuccess: (_data, { archived }) => {
       qc.invalidateQueries({ queryKey: ["projects"] });
-      toast.success("プロジェクトを削除しました");
+      toast.success(
+        archived
+          ? "プロジェクトをアーカイブしました"
+          : "プロジェクトを復元しました",
+      );
     },
-    onError: (err) => {
-      if ((err as Error).message.includes("project_has_entries")) {
-        toast.error("エントリーがあるプロジェクトは削除できません");
-      } else {
-        toast.error("削除に失敗しました");
-      }
-    },
+    onError: () => toast.error("プロジェクトの状態を更新できませんでした"),
   });
 
   // Tag mutations
@@ -158,6 +182,7 @@ export function ProjectsPage({
   const deleteTag = useMutation({
     mutationFn: (id: string) => apiFetch(`/api/tags/${id}`, { method: "DELETE" }),
     onSuccess: () => {
+      setDeletingTag(null);
       qc.invalidateQueries({ queryKey: ["tags"] });
       qc.invalidateQueries({ queryKey: ["entries"] });
       toast.success("タグを削除しました");
@@ -210,7 +235,7 @@ export function ProjectsPage({
   function openNewProject() {
     setEditingProject(null);
     setProjectName("");
-    setProjectClientId(clients[0]?.id ?? "");
+    setProjectClientId(activeClients[0]?.id ?? "");
     setProjectColor(randomColor());
     setProjectTagIds([]);
     setProjectDialogOpen(true);
@@ -250,12 +275,17 @@ export function ProjectsPage({
     setProjectDialogOpen(false);
   }
 
+  const SectionHeading = embedded ? "h3" : "h2";
+  const selectableClients = clients.filter(
+    (client) => !client.archived || client.id === projectClientId,
+  );
+
   return (
     <div className={embedded ? "space-y-8" : "mx-auto max-w-3xl space-y-8 p-4 sm:p-6"}>
       {/* Clients */}
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">クライアント</h2>
+          <SectionHeading className="text-lg font-semibold">クライアント</SectionHeading>
           <Button size="sm" onClick={openNewClient}>
             <Plus className="mr-1 h-4 w-4" /> 追加
           </Button>
@@ -264,25 +294,48 @@ export function ProjectsPage({
           <p className="text-sm text-neutral-400">クライアントがありません</p>
         ) : (
           <ul className="divide-y divide-neutral-100 rounded-md border border-neutral-200">
-            {clients.map((client) => (
-              <li key={client.id} className="flex items-center justify-between px-4 py-2">
-                <span className="text-sm">{client.name}</span>
+            {orderedClients.map((client) => (
+              <li
+                key={client.id}
+                className={`flex items-center justify-between px-4 py-2 ${
+                  client.archived ? "bg-neutral-50 text-neutral-500" : ""
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">{client.name}</span>
+                  {client.archived && (
+                    <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-[10px] font-medium text-neutral-600">
+                      アーカイブ済み
+                    </span>
+                  )}
+                </div>
                 <div className="flex gap-1">
                   <button
+                    type="button"
                     onClick={() => openEditClient(client)}
+                    aria-label={`${client.name}を編集`}
+                    title="編集"
                     className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
                   <button
-                    onClick={() => {
-                      if (confirm(`「${client.name}」を削除しますか？`)) {
-                        deleteClient.mutate(client.id);
-                      }
-                    }}
-                    className="rounded p-1 text-neutral-400 hover:bg-red-50 hover:text-red-600"
+                    type="button"
+                    onClick={() =>
+                      setClientArchived.mutate({
+                        id: client.id,
+                        archived: !client.archived,
+                      })
+                    }
+                    aria-label={`${client.name}を${client.archived ? "復元" : "アーカイブ"}`}
+                    title={client.archived ? "復元" : "アーカイブ"}
+                    className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    {client.archived ? (
+                      <ArchiveRestore className="h-3.5 w-3.5" />
+                    ) : (
+                      <Archive className="h-3.5 w-3.5" />
+                    )}
                   </button>
                 </div>
               </li>
@@ -294,8 +347,8 @@ export function ProjectsPage({
       {/* Projects */}
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">プロジェクト</h2>
-          <Button size="sm" onClick={openNewProject} disabled={clients.length === 0}>
+          <SectionHeading className="text-lg font-semibold">プロジェクト</SectionHeading>
+          <Button size="sm" onClick={openNewProject} disabled={activeClients.length === 0}>
             <Plus className="mr-1 h-4 w-4" /> 追加
           </Button>
         </div>
@@ -303,8 +356,13 @@ export function ProjectsPage({
           <p className="text-sm text-neutral-400">プロジェクトがありません</p>
         ) : (
           <ul className="divide-y divide-neutral-100 rounded-md border border-neutral-200">
-            {projects.map((project) => (
-              <li key={project.id} className="flex items-center justify-between px-4 py-2">
+            {orderedProjects.map((project) => (
+              <li
+                key={project.id}
+                className={`flex items-center justify-between px-4 py-2 ${
+                  project.archived ? "bg-neutral-50 text-neutral-500" : ""
+                }`}
+              >
                 <div className="flex items-center gap-2">
                   <span
                     className="inline-block h-3 w-3 rounded-sm"
@@ -313,6 +371,11 @@ export function ProjectsPage({
                   <span className="text-sm">
                     {project.client.name} / {project.name}
                   </span>
+                  {project.archived && (
+                    <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-[10px] font-medium text-neutral-600">
+                      アーカイブ済み
+                    </span>
+                  )}
                   {project.tags && project.tags.length > 0 && (
                     <div className="flex gap-1">
                       {project.tags.map((t) => (
@@ -329,20 +392,38 @@ export function ProjectsPage({
                 </div>
                 <div className="flex gap-1">
                   <button
+                    type="button"
                     onClick={() => openEditProject(project)}
+                    aria-label={`${project.name}を編集`}
+                    title="編集"
                     className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
                   <button
-                    onClick={() => {
-                      if (confirm(`「${project.name}」を削除しますか？`)) {
-                        deleteProject.mutate(project.id);
-                      }
-                    }}
-                    className="rounded p-1 text-neutral-400 hover:bg-red-50 hover:text-red-600"
+                    type="button"
+                    onClick={() =>
+                      setProjectArchived.mutate({
+                        id: project.id,
+                        archived: !project.archived,
+                      })
+                    }
+                    aria-label={`${project.name}を${project.archived ? "復元" : "アーカイブ"}`}
+                    title={
+                      project.archived && project.client.archived
+                        ? "クライアントを先に復元してください"
+                        : project.archived
+                          ? "復元"
+                          : "アーカイブ"
+                    }
+                    disabled={project.archived && project.client.archived}
+                    className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    {project.archived ? (
+                      <ArchiveRestore className="h-3.5 w-3.5" />
+                    ) : (
+                      <Archive className="h-3.5 w-3.5" />
+                    )}
                   </button>
                 </div>
               </li>
@@ -354,7 +435,7 @@ export function ProjectsPage({
       {/* Tags */}
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">タグ</h2>
+          <SectionHeading className="text-lg font-semibold">タグ</SectionHeading>
           <Button size="sm" onClick={openNewTag}>
             <Plus className="mr-1 h-4 w-4" /> 追加
           </Button>
@@ -374,17 +455,19 @@ export function ProjectsPage({
                 </div>
                 <div className="flex gap-1">
                   <button
+                    type="button"
                     onClick={() => openEditTag(tag)}
+                    aria-label={`${tag.name}を編集`}
+                    title="編集"
                     className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
                   <button
-                    onClick={() => {
-                      if (confirm(`「${tag.name}」を削除しますか？`)) {
-                        deleteTag.mutate(tag.id);
-                      }
-                    }}
+                    type="button"
+                    onClick={() => setDeletingTag(tag)}
+                    aria-label={`${tag.name}を削除`}
+                    title="削除"
                     className="rounded p-1 text-neutral-400 hover:bg-red-50 hover:text-red-600"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -410,8 +493,13 @@ export function ProjectsPage({
             className="space-y-4"
           >
             <div className="space-y-1">
-              <Label>名前</Label>
-              <Input value={clientName} onChange={(e) => setClientName(e.target.value)} autoFocus />
+              <Label htmlFor="client-name">名前</Label>
+              <Input
+                id="client-name"
+                value={clientName}
+                onChange={(e) => setClientName(e.target.value)}
+                autoFocus
+              />
             </div>
             <Button type="submit" className="w-full">
               {editingClient ? "更新" : "作成"}
@@ -434,13 +522,14 @@ export function ProjectsPage({
             className="space-y-4"
           >
             <div className="space-y-1">
-              <Label>クライアント</Label>
+              <Label htmlFor="project-client">クライアント</Label>
               <select
+                id="project-client"
                 className="w-full rounded-md border border-neutral-200 px-3 py-2 text-sm"
                 value={projectClientId}
                 onChange={(e) => setProjectClientId(e.target.value)}
               >
-                {clients.map((c) => (
+                {selectableClients.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
                   </option>
@@ -448,17 +537,27 @@ export function ProjectsPage({
               </select>
             </div>
             <div className="space-y-1">
-              <Label>名前</Label>
-              <Input value={projectName} onChange={(e) => setProjectName(e.target.value)} />
+              <Label htmlFor="project-name">名前</Label>
+              <Input
+                id="project-name"
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+              />
             </div>
             <div className="space-y-1">
-              <Label>カラー</Label>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="text-xs font-medium text-neutral-700">カラー</div>
+              <div
+                role="group"
+                aria-label="プロジェクトカラー"
+                className="flex flex-wrap gap-1.5"
+              >
                 {PROJECT_COLORS.map((c) => (
                   <button
                     key={c}
                     type="button"
                     onClick={() => setProjectColor(c)}
+                    aria-label={`プロジェクトカラー ${c}`}
+                    aria-pressed={projectColor === c}
                     className={`h-7 w-7 rounded-md border-2 ${
                       projectColor === c ? "border-neutral-900" : "border-transparent"
                     }`}
@@ -469,13 +568,18 @@ export function ProjectsPage({
             </div>
             {tags.length > 0 && (
               <div className="space-y-1">
-                <Label>タグ</Label>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="text-xs font-medium text-neutral-700">タグ</div>
+                <div
+                  role="group"
+                  aria-label="プロジェクトのタグ"
+                  className="flex flex-wrap gap-1.5"
+                >
                   {tags.map((tag) => (
                     <button
                       key={tag.id}
                       type="button"
                       onClick={() => toggleProjectTag(tag.id)}
+                      aria-pressed={projectTagIds.includes(tag.id)}
                       className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
                         projectTagIds.includes(tag.id)
                           ? "border-transparent text-white"
@@ -511,17 +615,28 @@ export function ProjectsPage({
             className="space-y-4"
           >
             <div className="space-y-1">
-              <Label>名前</Label>
-              <Input value={tagName} onChange={(e) => setTagName(e.target.value)} autoFocus />
+              <Label htmlFor="tag-name">名前</Label>
+              <Input
+                id="tag-name"
+                value={tagName}
+                onChange={(e) => setTagName(e.target.value)}
+                autoFocus
+              />
             </div>
             <div className="space-y-1">
-              <Label>カラー</Label>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="text-xs font-medium text-neutral-700">カラー</div>
+              <div
+                role="group"
+                aria-label="タグカラー"
+                className="flex flex-wrap gap-1.5"
+              >
                 {PROJECT_COLORS.map((c) => (
                   <button
                     key={c}
                     type="button"
                     onClick={() => setTagColor(c)}
+                    aria-label={`タグカラー ${c}`}
+                    aria-pressed={tagColor === c}
                     className={`h-7 w-7 rounded-full border-2 ${
                       tagColor === c ? "border-neutral-900" : "border-transparent"
                     }`}
@@ -535,6 +650,40 @@ export function ProjectsPage({
             </Button>
           </form>
         </div>
+      </Dialog>
+
+      <Dialog
+        open={!!deletingTag}
+        onOpenChange={(open) => {
+          if (!open && !deleteTag.isPending) setDeletingTag(null);
+        }}
+      >
+        {deletingTag && (
+          <div>
+            <DialogHeader>
+              <DialogTitle>タグを削除しますか？</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-neutral-600">
+              「{deletingTag.name}」を削除します。記録した時間は残りますが、エントリーとプロジェクトからこのタグが外れます。
+            </p>
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                onClick={() => setDeletingTag(null)}
+                disabled={deleteTag.isPending}
+              >
+                キャンセル
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => deleteTag.mutate(deletingTag.id)}
+                disabled={deleteTag.isPending}
+              >
+                {deleteTag.isPending ? "削除中…" : "タグを削除"}
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
       </Dialog>
     </div>
   );

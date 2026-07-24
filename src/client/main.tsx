@@ -15,6 +15,8 @@ import {
   AppUiProvider,
   useAppUi,
 } from "@client/components/AppUiContext";
+import { SettingsLayout } from "@client/components/SettingsLayout";
+import { SettingsPage } from "@client/pages/SettingsPage";
 import "./index.css";
 
 const CalendarPage = lazy(() =>
@@ -27,25 +29,13 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000 } },
 });
 
-function OpenSettingsRoute() {
-  const navigate = useNavigate();
-  const { openSettings } = useAppUi();
-
-  useEffect(() => {
-    openSettings();
-    navigate("/calendar", { replace: true });
-  }, [navigate, openSettings]);
-
-  return null;
-}
-
 function AppNavigationShortcuts() {
   const navigate = useNavigate();
-  const { closeSettings } = useAppUi();
+  const { closeSettings, openSettings } = useAppUi();
 
   useEffect(() => {
     function openView(path: "/calendar" | "/reports") {
-      closeSettings();
+      if (!closeSettings()) return;
       navigate(path);
     }
 
@@ -66,6 +56,9 @@ function AppNavigationShortcuts() {
       } else if (event.key === "2") {
         event.preventDefault();
         openView("/reports");
+      } else if (event.key === ",") {
+        event.preventDefault();
+        openSettings();
       }
     }
 
@@ -89,7 +82,7 @@ function AppNavigationShortcuts() {
       window.removeEventListener("keydown", onKeyDown);
       unlisten?.();
     };
-  }, [closeSettings, navigate]);
+  }, [closeSettings, navigate, openSettings]);
 
   return null;
 }
@@ -105,8 +98,25 @@ createRoot(document.getElementById("root")!).render(
               <Route element={<AppLayout />}>
                 <Route path="/calendar" element={<CalendarPage />} />
                 <Route path="/reports" element={<ReportsPage />} />
-                <Route path="/settings/projects" element={<OpenSettingsRoute />} />
-                <Route path="/settings" element={<OpenSettingsRoute />} />
+                <Route path="/settings" element={<SettingsLayout />}>
+                  <Route index element={<Navigate to="work-hours" replace />} />
+                  <Route
+                    path="work-hours"
+                    element={<SettingsPage category="work-hours" />}
+                  />
+                  <Route
+                    path="projects"
+                    element={<SettingsPage category="projects" />}
+                  />
+                  <Route
+                    path="backup"
+                    element={<SettingsPage category="backup" />}
+                  />
+                  <Route
+                    path="data-transfer"
+                    element={<SettingsPage category="data-transfer" />}
+                  />
+                </Route>
               </Route>
               <Route path="*" element={<Navigate to="/calendar" replace />} />
             </Routes>

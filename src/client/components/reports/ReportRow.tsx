@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { ja } from "date-fns/locale";
 import { apiFetch } from "@client/lib/fetcher";
 import type { ReportEntriesResponse, ReportEntry, Tag } from "@shared/types";
 
@@ -105,12 +106,22 @@ export function ReportRow({
 
   return (
     <>
-      <tr className="border-b border-neutral-100">
-        <td className="py-2" style={{ paddingLeft: 8 + depth * 20 }}>
+      <tr
+        onClick={() => expansion.toggle(path)}
+        className="cursor-pointer border-b border-neutral-100 transition-colors hover:bg-neutral-50"
+      >
+        <td
+          colSpan={3}
+          className="px-3 py-2"
+          style={{ paddingLeft: 12 + depth * 20 }}
+        >
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => expansion.toggle(path)}
+              onClick={(event) => {
+                event.stopPropagation();
+                expansion.toggle(path);
+              }}
               className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
               aria-label={open ? "折りたたむ" : "展開"}
             >
@@ -128,11 +139,11 @@ export function ReportRow({
               className="inline-block h-3 w-3 shrink-0 rounded-sm"
               style={{ background: displayColor }}
             />
-            <span className="truncate">{label}</span>
+            <span className="min-w-0 truncate">{label}</span>
           </div>
         </td>
-        <td className="py-2 text-right tabular-nums">{formatDuration(totalMinutes)}</td>
-        <td className="py-2 text-right tabular-nums text-neutral-500">{percent}%</td>
+        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{formatDuration(totalMinutes)}</td>
+        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-neutral-500">{percent}%</td>
       </tr>
       {open && (
         <ChildEntries
@@ -210,7 +221,7 @@ function ChildEntries({
   if (isLoading) {
     return (
       <tr>
-        <td colSpan={3} style={{ paddingLeft: 8 + depth * 20 }} className="py-2">
+        <td colSpan={5} style={{ paddingLeft: 12 + depth * 20 }} className="px-3 py-2">
           <span className="text-xs text-neutral-400">読み込み中…</span>
         </td>
       </tr>
@@ -221,7 +232,7 @@ function ChildEntries({
   if (entries.length === 0) {
     return (
       <tr>
-        <td colSpan={3} style={{ paddingLeft: 8 + depth * 20 }} className="py-2">
+        <td colSpan={5} style={{ paddingLeft: 12 + depth * 20 }} className="px-3 py-2">
           <span className="text-xs text-neutral-400">エントリがありません</span>
         </td>
       </tr>
@@ -236,7 +247,7 @@ function ChildEntries({
           const percent = parentTotal > 0 ? Math.round((g.minutes / parentTotal) * 100) : 0;
           return (
             <tr key={g.key} className="border-b border-neutral-100 text-neutral-700">
-              <td className="py-1.5" style={{ paddingLeft: 8 + depth * 20 }}>
+              <td className="px-3 py-1.5" style={{ paddingLeft: 12 + depth * 20 }}>
                 <div className="flex items-center gap-2">
                   <span className="h-4 w-4 shrink-0" />
                   {g.project ? (
@@ -247,27 +258,32 @@ function ChildEntries({
                   ) : (
                     <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-neutral-300" />
                   )}
-                  <span className="truncate">
+                  <span className="min-w-0 truncate">
                     {g.title || <span className="text-neutral-400">（タイトルなし）</span>}
                   </span>
                   <span className="text-[10px] text-neutral-400">×{g.count}</span>
-                  {g.tags.length > 0 && (
-                    <span className="flex gap-1">
-                      {g.tags.map((t) => (
-                        <span
-                          key={t.id}
-                          className="rounded-full px-1.5 py-px text-[10px] text-white"
-                          style={{ background: t.color }}
-                        >
-                          {t.name}
-                        </span>
-                      ))}
-                    </span>
-                  )}
                 </div>
               </td>
-              <td className="py-1.5 text-right tabular-nums">{formatDuration(g.minutes)}</td>
-              <td className="py-1.5 text-right tabular-nums text-neutral-400">{percent}%</td>
+              <td className="px-3 py-1.5 text-xs text-neutral-300">—</td>
+              <td className="px-3 py-1.5">
+                {g.tags.length > 0 ? (
+                  <span className="flex flex-wrap gap-1">
+                    {g.tags.map((t) => (
+                      <span
+                        key={t.id}
+                        className="whitespace-nowrap rounded-full px-1.5 py-px text-[10px] text-white"
+                        style={{ background: t.color }}
+                      >
+                        {t.name}
+                      </span>
+                    ))}
+                  </span>
+                ) : (
+                  <span className="text-neutral-300">—</span>
+                )}
+              </td>
+              <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">{formatDuration(g.minutes)}</td>
+              <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-neutral-400">{percent}%</td>
             </tr>
           );
         })}
@@ -280,43 +296,47 @@ function ChildEntries({
       {entries.map((entry) => {
         const start = new Date(entry.start);
         const end = new Date(entry.end);
-        const dateLabel = format(start, "M/d (E) HH:mm");
+        const dateLabel = format(start, "MM/dd (EEE) HH:mm", { locale: ja });
         const endLabel = format(end, "HH:mm");
         const percent = parentTotal > 0 ? Math.round((entry.minutes / parentTotal) * 100) : 0;
         return (
           <tr key={entry.id} className="border-b border-neutral-100 text-neutral-700">
-            <td className="py-1.5" style={{ paddingLeft: 8 + depth * 20 }}>
+            <td className="px-3 py-1.5" style={{ paddingLeft: 12 + depth * 20 }}>
               <div className="flex items-center gap-2">
                 <span className="h-4 w-4 shrink-0" />
                 <span
                   className="inline-block h-2 w-2 shrink-0 rounded-full"
                   style={{ background: entry.project?.color ?? "#d4d4d4" }}
                 />
-                <span className="text-xs text-neutral-500 tabular-nums">
-                  {dateLabel}–{endLabel}
-                </span>
-                <span className="truncate">
+                <span className="min-w-0 truncate">
                   {entry.title || (
                     <span className="text-neutral-400">（タイトルなし）</span>
                   )}
                 </span>
-                {entry.tags.length > 0 && (
-                  <span className="flex gap-1">
-                    {entry.tags.map((t) => (
-                      <span
-                        key={t.id}
-                        className="rounded-full px-1.5 py-px text-[10px] text-white"
-                        style={{ background: t.color }}
-                      >
-                        {t.name}
-                      </span>
-                    ))}
-                  </span>
-                )}
               </div>
             </td>
-            <td className="py-1.5 text-right tabular-nums">{formatDuration(entry.minutes)}</td>
-            <td className="py-1.5 text-right tabular-nums text-neutral-400">{percent}%</td>
+            <td className="whitespace-nowrap px-3 py-1.5 text-xs tabular-nums text-neutral-500">
+              {dateLabel}–{endLabel}
+            </td>
+            <td className="px-3 py-1.5">
+              {entry.tags.length > 0 ? (
+                <span className="flex flex-wrap gap-1">
+                  {entry.tags.map((t) => (
+                    <span
+                      key={t.id}
+                      className="whitespace-nowrap rounded-full px-1.5 py-px text-[10px] text-white"
+                      style={{ background: t.color }}
+                    >
+                      {t.name}
+                    </span>
+                  ))}
+                </span>
+              ) : (
+                <span className="text-neutral-300">—</span>
+              )}
+            </td>
+            <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">{formatDuration(entry.minutes)}</td>
+            <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-neutral-400">{percent}%</td>
           </tr>
         );
       })}

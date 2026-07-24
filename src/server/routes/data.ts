@@ -113,6 +113,7 @@ data.post("/export/file", async (c) => {
 
 const importSchema = z.object({
   version: z.literal(EXPORT_VERSION),
+  exportedAt: z.string().datetime().optional(),
   settings: z.object({
     workStart: z.number().int().min(0).max(1440),
     workEnd: z.number().int().min(0).max(1440),
@@ -162,6 +163,72 @@ const importSchema = z.object({
   ),
 });
 
+type ImportData = z.infer<typeof importSchema>;
+
+function getImportProblems(d: ImportData): string[] {
+  const clientIds = new Set(d.clients.map((x) => x.id));
+  const tagIds = new Set(d.tags.map((x) => x.id));
+  const projectIds = new Set(d.projects.map((x) => x.id));
+  const problems: string[] = [];
+
+  for (const p of d.projects) {
+    if (!clientIds.has(p.clientId)) {
+      problems.push(`project ${p.id}: 未知の clientId ${p.clientId}`);
+    }
+    for (const t of p.tagIds) {
+      if (!tagIds.has(t)) {
+        problems.push(`project ${p.id}: 未知の tagId ${t}`);
+      }
+    }
+  }
+
+  for (const e of d.entries) {
+    if (e.projectId && !projectIds.has(e.projectId)) {
+      problems.push(`entry ${e.id}: 未知の projectId ${e.projectId}`);
+    }
+    for (const t of e.tagIds) {
+      if (!tagIds.has(t)) {
+        problems.push(`entry ${e.id}: 未知の tagId ${t}`);
+      }
+    }
+    if (new Date(e.end) <= new Date(e.start)) {
+      problems.push(`entry ${e.id}: end が start 以前`);
+    }
+  }
+
+  return problems;
+}
+
+function getImportCounts(d: ImportData) {
+  return {
+    clients: d.clients.length,
+    tags: d.tags.length,
+    projects: d.projects.length,
+    entries: d.entries.length,
+  };
+}
+
+// POST /api/data/import/validate — 既存データを変更せず、形式と参照整合性を確認する。
+data.post("/import/validate", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = importSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "invalid_input", issues: parsed.error.flatten() }, 400);
+  }
+
+  const problems = getImportProblems(parsed.data);
+  if (problems.length > 0) {
+    return c.json({ error: "inconsistent_data", problems: problems.slice(0, 20) }, 400);
+  }
+
+  return c.json({
+    ok: true,
+    version: parsed.data.version,
+    exportedAt: parsed.data.exportedAt ?? null,
+    counts: getImportCounts(parsed.data),
+  });
+});
+
 // POST /api/data/import — 既存データを全消しして置き換える。
 // 部分マージはせず「まるごと差し替え」だけを提供する。ID は元のまま保つので
 // 同じファイルを二度入れても結果は変わらない。
@@ -175,27 +242,16 @@ data.post("/import", async (c) => {
 
   // 参照整合性を先に検証する。壊れたファイルで DB を空にしないため、
   // 削除より前に落とす。
-  const clientIds = new Set(d.clients.map((x) => x.id));
-  const tagIds = new Set(d.tags.map((x) => x.id));
-  const projectIds = new Set(d.projects.map((x) => x.id));
-  const problems: string[] = [];
-  for (const p of d.projects) {
-    if (!clientIds.has(p.clientId)) problems.push(`project ${p.id}: 未知の clientId ${p.clientId}`);
-    for (const t of p.tagIds) if (!tagIds.has(t)) problems.push(`project ${p.id}: 未知の tagId ${t}`);
-  }
-  for (const e of d.entries) {
-    if (e.projectId && !projectIds.has(e.projectId)) {
-      problems.push(`entry ${e.id}: 未知の projectId ${e.projectId}`);
-    }
-    for (const t of e.tagIds) if (!tagIds.has(t)) problems.push(`entry ${e.id}: 未知の tagId ${t}`);
-    if (new Date(e.end) <= new Date(e.start)) problems.push(`entry ${e.id}: end が start 以前`);
-  }
+  const problems = getImportProblems(d);
   if (problems.length > 0) {
     return c.json({ error: "inconsistent_data", problems: problems.slice(0, 20) }, 400);
   }
 
   const prisma = getPrisma(c.env.DB);
   const date = (v: string | undefined) => (v ? new Date(v) : new Date());
+
+  // 置き換え直前の状態を必ず退避する。ここで失敗した場合は削除を始めない。
+  const safety = await snapshot(prisma, c.env.EXPORT_DIR, false);
 
   await prisma.$transaction(async (tx) => {
     // 削除は FK の順序に従う
@@ -274,12 +330,8 @@ data.post("/import", async (c) => {
 
   return c.json({
     ok: true,
-    imported: {
-      clients: d.clients.length,
-      tags: d.tags.length,
-      projects: d.projects.length,
-      entries: d.entries.length,
-    },
+    imported: getImportCounts(d),
+    safetyBackup: safety.path,
   });
 });
 

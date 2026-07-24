@@ -15,6 +15,8 @@ const DEV_FRONTEND_URL: &str = "http://127.0.0.1:5173";
 #[cfg(desktop)]
 const SETTINGS_MENU_ID: &str = "open-settings";
 #[cfg(desktop)]
+const ABOUT_MENU_ID: &str = "open-about";
+#[cfg(desktop)]
 const CALENDAR_MENU_ID: &str = "open-calendar";
 #[cfg(desktop)]
 const REPORTS_MENU_ID: &str = "open-reports";
@@ -148,6 +150,17 @@ fn open_settings_overlay(app: &tauri::AppHandle) {
 }
 
 #[cfg(desktop)]
+fn open_about_dialog(app: &tauri::AppHandle) {
+    focus_main_window(app);
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    if let Err(error) = window.emit("track-open-about", ()) {
+        log::error!("Trackについてを開けません: {error}");
+    }
+}
+
+#[cfg(desktop)]
 fn open_app_view(app: &tauri::AppHandle, path: &str) {
     focus_main_window(app);
     let Some(window) = app.get_webview_window("main") else {
@@ -224,7 +237,7 @@ fn show_startup_error(app: &tauri::App, error: &dyn std::error::Error) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default();
+    let mut builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
     #[cfg(desktop)]
     {
         builder = builder
@@ -235,8 +248,7 @@ pub fn run() {
                 #[cfg(target_os = "macos")]
                 {
                     use tauri::menu::{
-                        AboutMetadata, MenuBuilder, MenuItem, SubmenuBuilder, HELP_SUBMENU_ID,
-                        WINDOW_SUBMENU_ID,
+                        MenuBuilder, MenuItem, SubmenuBuilder, HELP_SUBMENU_ID, WINDOW_SUBMENU_ID,
                     };
 
                     let app_name = app
@@ -244,14 +256,13 @@ pub fn run() {
                         .product_name
                         .clone()
                         .unwrap_or_else(|| app.package_info().name.clone());
-                    let package = app.package_info();
-                    let about_metadata = AboutMetadata {
-                        name: Some(app_name.clone()),
-                        version: Some(package.version.to_string()),
-                        copyright: app.config().bundle.copyright.clone(),
-                        authors: app.config().bundle.publisher.clone().map(|name| vec![name]),
-                        ..Default::default()
-                    };
+                    let about = MenuItem::with_id(
+                        app,
+                        ABOUT_MENU_ID,
+                        format!("{app_name}について"),
+                        true,
+                        None::<&str>,
+                    )?;
                     let settings = MenuItem::with_id(
                         app,
                         SETTINGS_MENU_ID,
@@ -305,7 +316,7 @@ pub fn run() {
                     )?;
 
                     let app_menu = SubmenuBuilder::new(app, &app_name)
-                        .about_with_text(format!("{app_name}について"), Some(about_metadata))
+                        .item(&about)
                         .separator()
                         .item(&settings)
                         .separator()
@@ -386,6 +397,7 @@ pub fn run() {
                 }
             })
             .on_menu_event(|app, event| match event.id().as_ref() {
+                ABOUT_MENU_ID => open_about_dialog(app),
                 SETTINGS_MENU_ID => open_settings_overlay(app),
                 CALENDAR_MENU_ID => open_app_view(app, "/calendar"),
                 REPORTS_MENU_ID => open_app_view(app, "/reports"),

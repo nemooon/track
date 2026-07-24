@@ -16,6 +16,14 @@
   "permissions": [
     "dialog:allow-open",
     "core:window:allow-start-dragging",
-    "core:event:allow-listen"
+    "core:event:allow-listen",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://github.com/nemooon/track"
+        }
+      ]
+    }
   ]
 }

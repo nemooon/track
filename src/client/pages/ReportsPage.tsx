@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
 import {
@@ -16,7 +23,13 @@ import {
   startOfMonth,
   startOfWeek,
 } from "date-fns";
-import { Check, Copy } from "lucide-react";
+import {
+  ChartPie,
+  Check,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  Copy,
+} from "lucide-react";
 import { apiFetch } from "@client/lib/fetcher";
 import { ToolbarDateNavigation } from "@client/components/ToolbarDateNavigation";
 import { ViewToolbar } from "@client/components/ViewToolbar";
@@ -50,6 +63,18 @@ function formatDuration(min: number) {
   const h = Math.floor(min / 60);
   const m = min % 60;
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+function ReportTableColumns() {
+  return (
+    <colgroup>
+      <col />
+      <col className="w-40" />
+      <col className="w-28" />
+      <col className="w-24" />
+      <col className="w-16" />
+    </colgroup>
+  );
 }
 
 // --- Slack 貼り付け用テキスト表の生成 -----------------------------------------
@@ -153,6 +178,7 @@ function parseIdList(s: string | null): string[] {
 // 折りたたみ状態・同名まとめは localStorage で永続化する
 const EXPANDED_KEY = "reports.expandedPaths";
 const SAME_TITLES_KEY = "reports.groupSameTitles";
+const SUMMARY_COLLAPSED_KEY = "reports.summaryCollapsed";
 
 // 折りたたみは groupBy ごとに path 体系が異なるため、グループ単位で保存する
 function readExpandedStore(): Record<string, string[]> {
@@ -277,6 +303,9 @@ export function ReportsPage() {
   const [groupSameTitles, setGroupSameTitles] = useState(
     () => localStorage.getItem(SAME_TITLES_KEY) === "1",
   );
+  const [summaryCollapsed, setSummaryCollapsed] = useState(
+    () => localStorage.getItem(SUMMARY_COLLAPSED_KEY) === "1",
+  );
   const [expandAllMode, setExpandAllMode] = useState(false);
 
   // groupBy が変わったら、その groupBy 用に保存済みの折りたたみ状態を読み込む
@@ -303,6 +332,10 @@ export function ReportsPage() {
   useEffect(() => {
     localStorage.setItem(SAME_TITLES_KEY, groupSameTitles ? "1" : "0");
   }, [groupSameTitles]);
+
+  useEffect(() => {
+    localStorage.setItem(SUMMARY_COLLAPSED_KEY, summaryCollapsed ? "1" : "0");
+  }, [summaryCollapsed]);
 
   // すべて展開モード中は、データ更新時に最上位の行をすべて展開する
   useEffect(() => {
@@ -354,6 +387,22 @@ export function ReportsPage() {
 
   const rows = data?.rows ?? [];
   const total = data?.totalMinutes ?? 0;
+  const reportScrollRef = useRef<HTMLDivElement>(null);
+  const [reportScrollbarInset, setReportScrollbarInset] = useState(0);
+
+  useLayoutEffect(() => {
+    const element = reportScrollRef.current;
+    if (!element) return;
+
+    const updateInset = () => {
+      setReportScrollbarInset(element.offsetWidth - element.clientWidth);
+    };
+    updateInset();
+
+    const observer = new ResizeObserver(updateInset);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [rows.length]);
 
   const queryClient = useQueryClient();
   const [copied, setCopied] = useState(false);
@@ -419,8 +468,8 @@ export function ReportsPage() {
   }
 
   return (
-    <div className="min-h-full">
-      <ViewToolbar>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <ViewToolbar className="sticky top-0 z-40">
         <ToolbarDateNavigation
           anchor={anchor}
           range={range === "week" ? { kind: "week" } : { kind: "month" }}
@@ -455,244 +504,340 @@ export function ReportsPage() {
         </ToolbarControlGroup>
       </ViewToolbar>
 
-      <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-neutral-500">絞り込み:</span>
-        <FilterMultiSelect
-          label="クライアント"
-          options={clientOptions}
-          selected={selectedClientIds}
-          onChange={(next) => {
-            setSelectedClientIds(next);
-            // Drop project selections that no longer match the client filter
-            if (next.length > 0) {
-              setSelectedProjectIds((prev) =>
-                prev.filter((pid) => {
-                  const proj = projects.find((p) => p.id === pid);
-                  return proj ? next.includes(proj.clientId) : false;
-                }),
-              );
-            }
-          }}
-        />
-        <FilterMultiSelect
-          label="プロジェクト"
-          options={projectOptions}
-          selected={selectedProjectIds}
-          onChange={setSelectedProjectIds}
-        />
-        <FilterMultiSelect
-          label="タグ"
-          options={tagOptions}
-          selected={selectedTagIds}
-          onChange={setSelectedTagIds}
-        />
-        {(selectedClientIds.length > 0 ||
-          selectedProjectIds.length > 0 ||
-          selectedTagIds.length > 0) && (
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedClientIds([]);
-              setSelectedProjectIds([]);
-              setSelectedTagIds([]);
-            }}
-            className="text-xs text-neutral-500 underline-offset-2 hover:text-neutral-900 hover:underline"
-          >
-            すべてクリア
-          </button>
-        )}
-      </div>
-
-      {/* Chart */}
-      {isLoading ? (
-        <div className="flex h-48 items-center justify-center">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-700" />
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="flex h-48 items-center justify-center text-neutral-400">
-          この期間にデータがありません
-        </div>
-      ) : (
-        <div className="rounded-xl border border-neutral-100 p-4 sm:p-6">
-          <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-stretch">
-            <div className="relative h-72 w-72 shrink-0 sm:h-80 sm:w-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <defs>
-                    {rows.map((row, i) => {
-                      const color = row.color || COLORS[i % COLORS.length];
-                      return (
-                        <linearGradient
-                          key={i}
-                          id={`donut-grad-${i}`}
-                          x1="0"
-                          y1="0"
-                          x2="1"
-                          y2="1"
-                        >
-                          <stop offset="0%" stopColor={color} stopOpacity={0.85} />
-                          <stop offset="100%" stopColor={color} stopOpacity={1} />
-                        </linearGradient>
-                      );
-                    })}
-                  </defs>
-                  <Pie
-                    data={rows}
-                    dataKey="totalMinutes"
-                    nameKey="label"
-                    innerRadius="62%"
-                    outerRadius="95%"
-                    paddingAngle={rows.length > 1 ? 2 : 0}
-                    cornerRadius={4}
-                    stroke="#ffffff"
-                    strokeWidth={2}
-                    isAnimationActive={false}
-                  >
-                    {rows.map((row, i) => (
-                      <Cell key={row.key} fill={`url(#donut-grad-${i})`} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    content={<ChartTooltip stripClient={groupBy === "project"} />}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                <div className="text-[10px] uppercase tracking-wider text-neutral-400">
-                  Total
-                </div>
-                <div className="mt-0.5 text-2xl font-semibold tabular-nums text-neutral-900">
-                  {formatDuration(total)}
-                </div>
-              </div>
-            </div>
-            <ul className="flex-1 self-center space-y-2.5 text-sm">
-              {rows.map((row, i) => {
-                const color = row.color || COLORS[i % COLORS.length];
-                const displayLabel =
-                  groupBy === "project"
-                    ? row.label.split(" · ").slice(-1)[0]
-                    : row.label;
-                const pct = total > 0 ? (row.totalMinutes / total) * 100 : 0;
-                return (
-                  <li key={row.key} className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
-                        style={{ background: color }}
-                      />
-                      <span className="truncate text-neutral-700">
-                        {displayLabel}
-                      </span>
-                    </div>
-                    <div className="ml-[18px] h-1.5 overflow-hidden rounded-full bg-neutral-100">
-                      <div
-                        className="h-full rounded-full"
-                        style={{
-                          width: `${pct}%`,
-                          background: `linear-gradient(90deg, ${color}b3, ${color})`,
-                        }}
-                      />
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        </div>
-      )}
-
-      {/* Table */}
-      {rows.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-end gap-4">
+      <div className="min-h-0 w-full flex-1">
+        <div className="flex h-full min-h-0 flex-col bg-white">
+          {/* Filters */}
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-neutral-200 bg-neutral-50/60 px-3 py-2">
             <button
               type="button"
-              onClick={copyTable}
-              disabled={copying}
-              className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 px-2.5 py-1 text-xs text-neutral-600 hover:bg-neutral-50 disabled:opacity-60"
+              onClick={() => setSummaryCollapsed((value) => !value)}
+              aria-pressed={!summaryCollapsed}
+              aria-label={summaryCollapsed ? "集計サマリーを展開" : "集計サマリーを折りたたむ"}
+              title={summaryCollapsed ? "集計サマリーを展開" : "集計サマリーを折りたたむ"}
+              className={`flex size-7 items-center justify-center rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 ${
+                summaryCollapsed
+                  ? "text-neutral-400 hover:bg-neutral-200/70 hover:text-neutral-700"
+                  : "text-neutral-700 hover:bg-neutral-200/70"
+              }`}
             >
-              {copied ? (
-                <>
-                  <Check className="size-3.5 text-emerald-600" />
-                  コピーしました
-                </>
+              <ChartPie className="size-4" />
+            </button>
+            <span className="mr-1 text-xs font-medium text-neutral-500">絞り込み</span>
+            <FilterMultiSelect
+              label="クライアント"
+              options={clientOptions}
+              selected={selectedClientIds}
+              onChange={(next) => {
+                setSelectedClientIds(next);
+                // Drop project selections that no longer match the client filter
+                if (next.length > 0) {
+                  setSelectedProjectIds((prev) =>
+                    prev.filter((pid) => {
+                      const proj = projects.find((p) => p.id === pid);
+                      return proj ? next.includes(proj.clientId) : false;
+                    }),
+                  );
+                }
+              }}
+            />
+            <FilterMultiSelect
+              label="プロジェクト"
+              options={projectOptions}
+              selected={selectedProjectIds}
+              onChange={setSelectedProjectIds}
+            />
+            <FilterMultiSelect
+              label="タグ"
+              options={tagOptions}
+              selected={selectedTagIds}
+              onChange={setSelectedTagIds}
+            />
+            {(selectedClientIds.length > 0 ||
+              selectedProjectIds.length > 0 ||
+              selectedTagIds.length > 0) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedClientIds([]);
+                  setSelectedProjectIds([]);
+                  setSelectedTagIds([]);
+                }}
+                className="ml-1 text-xs text-neutral-500 underline-offset-2 hover:text-neutral-900 hover:underline"
+              >
+                すべてクリア
+              </button>
+            )}
+          </div>
+
+          {isLoading ? (
+            <div className="flex min-h-0 flex-1 items-center justify-center">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-700" />
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="flex min-h-0 flex-1 items-center justify-center text-neutral-400">
+              この期間にデータがありません
+            </div>
+          ) : (
+          <div
+            className={`grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] items-stretch xl:grid-rows-1 ${
+              summaryCollapsed
+                ? "xl:grid-cols-[8px_minmax(0,1fr)]"
+                : "xl:grid-cols-[300px_minmax(0,1fr)]"
+            }`}
+          >
+            {/* Summary */}
+            <section
+              className={`min-w-0 border-b border-neutral-200 xl:border-b-0 xl:border-r ${
+                summaryCollapsed ? "h-2 xl:h-auto" : ""
+              }`}
+            >
+              {summaryCollapsed ? (
+                <div
+                  aria-hidden="true"
+                  className="flex h-full w-full flex-row gap-px bg-white xl:flex-col"
+                >
+                  {rows.map((row, i) => (
+                    <span
+                      key={row.key}
+                      className="min-h-px min-w-px"
+                      style={{
+                        background: row.color || COLORS[i % COLORS.length],
+                        flexBasis: 0,
+                        flexGrow: Math.max(row.totalMinutes, 1),
+                      }}
+                    />
+                  ))}
+                </div>
               ) : (
                 <>
-                  <Copy className="size-3.5" />
-                  {copying ? "取得中…" : "Slack用にコピー"}
+                  <div className="flex min-h-12 shrink-0 items-center justify-between border-b border-transparent px-3 sm:px-4">
+                    <h2 className="text-sm font-medium text-neutral-800">集計サマリー</h2>
+                    <span className="text-xs text-neutral-400">{rows.length}件</span>
+                  </div>
+                  <div className="flex flex-col items-center gap-4 px-3 pb-3 pt-2 sm:px-4 sm:pb-4 md:flex-row md:items-stretch xl:flex-col xl:items-center">
+                <div className="relative h-56 w-full max-w-56 shrink-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <defs>
+                        {rows.map((row, i) => {
+                          const color = row.color || COLORS[i % COLORS.length];
+                          return (
+                            <linearGradient
+                              key={i}
+                              id={`donut-grad-${i}`}
+                              x1="0"
+                              y1="0"
+                              x2="1"
+                              y2="1"
+                            >
+                              <stop offset="0%" stopColor={color} stopOpacity={0.85} />
+                              <stop offset="100%" stopColor={color} stopOpacity={1} />
+                            </linearGradient>
+                          );
+                        })}
+                      </defs>
+                      <Pie
+                        data={rows}
+                        dataKey="totalMinutes"
+                        nameKey="label"
+                        innerRadius="62%"
+                        outerRadius="95%"
+                        paddingAngle={rows.length > 1 ? 2 : 0}
+                        cornerRadius={4}
+                        stroke="#ffffff"
+                        strokeWidth={2}
+                        isAnimationActive={false}
+                      >
+                        {rows.map((row, i) => (
+                          <Cell key={row.key} fill={`url(#donut-grad-${i})`} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        content={<ChartTooltip stripClient={groupBy === "project"} />}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                    <div className="text-[10px] uppercase tracking-wider text-neutral-400">
+                      Total
+                    </div>
+                    <div className="mt-0.5 text-2xl font-semibold tabular-nums text-neutral-900">
+                      {formatDuration(total)}
+                    </div>
+                  </div>
+                </div>
+                <ul className="w-full min-w-0 flex-1 space-y-2.5 self-center text-sm">
+                  {rows.map((row, i) => {
+                    const color = row.color || COLORS[i % COLORS.length];
+                    const displayLabel =
+                      groupBy === "project"
+                        ? row.label.split(" · ").slice(-1)[0]
+                        : row.label;
+                    const pct = total > 0 ? (row.totalMinutes / total) * 100 : 0;
+                    return (
+                      <li key={row.key} className="space-y-1">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span
+                            className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                            style={{ background: color }}
+                          />
+                          <span className="min-w-0 flex-1 truncate text-neutral-700">
+                            {displayLabel}
+                          </span>
+                          <span className="shrink-0 text-xs tabular-nums text-neutral-700">
+                            {formatDuration(row.totalMinutes)}
+                          </span>
+                          <span className="w-9 shrink-0 text-right text-xs tabular-nums text-neutral-400">
+                            {Math.round(pct)}%
+                          </span>
+                        </div>
+                        <div className="ml-[18px] h-1.5 overflow-hidden rounded-full bg-neutral-100">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${pct}%`,
+                              background: `linear-gradient(90deg, ${color}b3, ${color})`,
+                            }}
+                          />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
                 </>
               )}
-            </button>
-            <label className="flex cursor-pointer items-center gap-2 text-xs text-neutral-600">
-              <span>同名エントリをまとめる</span>
-              <span
-                role="switch"
-                aria-checked={groupSameTitles}
-                tabIndex={0}
-                onClick={() => setGroupSameTitles((v) => !v)}
-                onKeyDown={(e) => {
-                  if (e.key === " " || e.key === "Enter") {
-                    e.preventDefault();
-                    setGroupSameTitles((v) => !v);
-                  }
-                }}
-                className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${
-                  groupSameTitles ? "bg-neutral-900" : "bg-neutral-300"
-                }`}
+            </section>
+
+            {/* Details */}
+            <section className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+              <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-neutral-200 px-3 py-2.5">
+                <h2 className="text-sm font-medium text-neutral-800">明細</h2>
+                <div className="flex flex-wrap items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={copyTable}
+                    disabled={copying}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 px-2.5 py-1 text-xs text-neutral-600 hover:bg-neutral-50 disabled:opacity-60"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="size-3.5 text-emerald-600" />
+                        コピーしました
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="size-3.5" />
+                        {copying ? "取得中…" : "Slack用にコピー"}
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={groupSameTitles}
+                    onClick={() => setGroupSameTitles((v) => !v)}
+                    className="inline-flex items-center gap-2 text-xs text-neutral-600"
+                  >
+                    <span>同名エントリをまとめる</span>
+                    <span
+                      className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${
+                        groupSameTitles ? "bg-neutral-900" : "bg-neutral-300"
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
+                          groupSameTitles ? "translate-x-3.5" : "translate-x-0.5"
+                        }`}
+                      />
+                    </span>
+                  </button>
+                </div>
+              </div>
+              <div
+                className="shrink-0 overflow-hidden border-b border-neutral-200 bg-neutral-50/80"
+                style={{ paddingRight: reportScrollbarInset }}
               >
-                <span
-                  className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
-                    groupSameTitles ? "translate-x-3.5" : "translate-x-0.5"
-                  }`}
-                />
-              </span>
-            </label>
-            <button
-              type="button"
-              onClick={toggleAll}
-              className="text-xs text-neutral-500 underline-offset-2 hover:text-neutral-900 hover:underline"
-            >
-              {anyExpanded ? "すべて折りたたむ" : "すべて展開"}
-            </button>
+                <table className="w-full min-w-[760px] table-fixed text-sm">
+                  <ReportTableColumns />
+                  <thead>
+                    <tr className="text-left text-neutral-500">
+                      <th className="px-3 py-2 font-medium">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={toggleAll}
+                            aria-label={
+                              anyExpanded ? "すべて折りたたむ" : "すべて展開"
+                            }
+                            title={
+                              anyExpanded ? "すべて折りたたむ" : "すべて展開"
+                            }
+                            className="inline-flex size-4 shrink-0 items-center justify-center rounded text-neutral-400 hover:bg-neutral-200/70 hover:text-neutral-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400"
+                          >
+                            {anyExpanded ? (
+                              <ChevronsDownUp className="size-3" />
+                            ) : (
+                              <ChevronsUpDown className="size-3" />
+                            )}
+                          </button>
+                          <span>内容</span>
+                        </div>
+                      </th>
+                      <th className="whitespace-nowrap px-3 py-2 font-medium">日時</th>
+                      <th className="whitespace-nowrap px-3 py-2 font-medium">タグ</th>
+                      <th className="whitespace-nowrap px-3 py-2 text-right font-medium">時間</th>
+                      <th className="whitespace-nowrap px-3 py-2 text-right font-medium">割合</th>
+                    </tr>
+                  </thead>
+                </table>
+              </div>
+              <div
+                ref={reportScrollRef}
+                className="report-scroll-area min-h-0 flex-1 overflow-auto"
+              >
+                <table className="w-full min-w-[760px] table-fixed text-sm">
+                  <ReportTableColumns />
+                  <tbody>
+                    {rows.map((row, i) => (
+                      <ReportRow
+                        key={row.key}
+                        rowKey={row.key}
+                        parentPath=""
+                        label={row.label}
+                        color={row.color}
+                        totalMinutes={row.totalMinutes}
+                        parentTotal={total}
+                        kind={groupBy}
+                        base={baseFilters}
+                        ancestor={{}}
+                        depth={0}
+                        fallbackColorIndex={i}
+                        expansion={expansion}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div
+                className="shrink-0 overflow-hidden border-t border-neutral-200 bg-neutral-50/50"
+                style={{ paddingRight: reportScrollbarInset }}
+              >
+                <table className="w-full min-w-[760px] table-fixed text-sm">
+                  <ReportTableColumns />
+                  <tbody>
+                    <tr className="font-medium">
+                      <td colSpan={3} className="px-3 py-2">合計</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{formatDuration(total)}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">100%</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
           </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-neutral-200 text-left text-neutral-500">
-                <th className="py-2 font-medium">ラベル</th>
-                <th className="py-2 w-18 text-right font-medium">時間</th>
-                <th className="py-2 w-18 text-right font-medium">割合</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, i) => (
-                <ReportRow
-                  key={row.key}
-                  rowKey={row.key}
-                  parentPath=""
-                  label={row.label}
-                  color={row.color}
-                  totalMinutes={row.totalMinutes}
-                  parentTotal={total}
-                  kind={groupBy}
-                  base={baseFilters}
-                  ancestor={{}}
-                  depth={0}
-                  fallbackColorIndex={i}
-                  expansion={expansion}
-                />
-              ))}
-              <tr className="font-medium">
-                <td className="py-2 pl-2">合計</td>
-                <td className="py-2 text-right tabular-nums">{formatDuration(total)}</td>
-                <td className="py-2 text-right tabular-nums">100%</td>
-              </tr>
-            </tbody>
-          </table>
+          )}
         </div>
-      )}
       </div>
     </div>
   );

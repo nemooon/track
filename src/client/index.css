@@ -5,6 +5,38 @@
   --color-outlook: #0072c6;
 }
 
+.report-scroll-area,
+.calendar-scroll-area {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #a3a3a3 transparent;
+}
+
+.report-scroll-area::-webkit-scrollbar,
+.calendar-scroll-area::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.report-scroll-area::-webkit-scrollbar-track,
+.calendar-scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.report-scroll-area::-webkit-scrollbar-thumb,
+.calendar-scroll-area::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  background: #a3a3a3;
+  background-clip: padding-box;
+}
+
+.report-scroll-area::-webkit-scrollbar-thumb:hover,
+.calendar-scroll-area::-webkit-scrollbar-thumb:hover {
+  background: #737373;
+  background-clip: padding-box;
+}
+
 @property --entry-angle {
   syntax: "<angle>";
   initial-value: 0deg;

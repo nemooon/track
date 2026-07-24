@@ -968,7 +968,10 @@ export function WeekCalendar({
       </div>
 
       {/* Grid */}
-      <div ref={scrollRef} className="flex flex-1 overflow-auto">
+      <div
+        ref={scrollRef}
+        className="calendar-scroll-area flex flex-1 overflow-auto"
+      >
         <TimeGutter hourPx={hourPx} />
         <div className="flex flex-1 items-start">
           {days.map((day, dayIndex) => {

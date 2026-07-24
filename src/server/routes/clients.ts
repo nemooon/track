@@ -36,10 +36,24 @@ clients.patch("/:id", async (c) => {
   const prisma = getPrisma(c.env.DB);
   const existing = await prisma.client.findUnique({ where: { id } });
   if (!existing) return c.json({ error: "not_found" }, 404);
-  const updated = await prisma.client.update({
-    where: { id },
-    data: parsed.data,
-  });
+  const updated =
+    parsed.data.archived === true
+      ? (
+          await prisma.$transaction([
+            prisma.client.update({
+              where: { id },
+              data: parsed.data,
+            }),
+            prisma.project.updateMany({
+              where: { clientId: id },
+              data: { archived: true },
+            }),
+          ])
+        )[0]
+      : await prisma.client.update({
+          where: { id },
+          data: parsed.data,
+        });
   return c.json(updated);
 });
 

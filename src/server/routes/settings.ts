@@ -29,12 +29,26 @@ settings.patch("/", async (c) => {
   const parsed = settingsUpdateSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid_input", issues: parsed.error.flatten() }, 400);
 
+  const prisma = getPrisma(c.env.DB);
+  const current = await prisma.settings.findFirst({
+    select: { workStart: true, workEnd: true, workDays: true },
+  });
+  if (!current) return c.json({ error: "not_found" }, 404);
+
+  const nextStart = parsed.data.workStart ?? current.workStart;
+  const nextEnd = parsed.data.workEnd ?? current.workEnd;
+  const nextDays =
+    parsed.data.workDays ??
+    current.workDays.split(",").map(Number).filter((n) => !isNaN(n));
+  if (nextEnd <= nextStart || nextDays.length === 0) {
+    return c.json({ error: "invalid_schedule" }, 400);
+  }
+
   const data: Record<string, unknown> = {};
   if (parsed.data.workStart !== undefined) data.workStart = parsed.data.workStart;
   if (parsed.data.workEnd !== undefined) data.workEnd = parsed.data.workEnd;
   if (parsed.data.workDays !== undefined) data.workDays = parsed.data.workDays.join(",");
 
-  const prisma = getPrisma(c.env.DB);
   // 1行しかないので id を知らずに更新できる
   await prisma.settings.updateMany({ data });
 
