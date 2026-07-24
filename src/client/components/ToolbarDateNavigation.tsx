@@ -5,7 +5,7 @@ import {
   type DateRange,
 } from "@client/components/ui/DateRangeNavigator";
 
-export function HeaderDateNavigation({
+export function ToolbarDateNavigation({
   anchor,
   range,
   onPrev,
@@ -80,15 +80,13 @@ export function HeaderDateNavigation({
   }, [onNext, onPrev, onToday]);
 
   return (
-    <>
-      <DateRangeNavigator
-        anchor={anchor}
-        range={range}
-        onPrev={onPrev}
-        onNext={onNext}
-        onAnchorChange={onAnchorChange}
-        onToday={onToday}
-      />
-    </>
+    <DateRangeNavigator
+      anchor={anchor}
+      range={range}
+      onPrev={onPrev}
+      onNext={onNext}
+      onAnchorChange={onAnchorChange}
+      onToday={onToday}
+    />
   );
 }

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:desktop": "node scripts/dev-desktop.mjs",
     "local": "bun src/server/index.ts",
     "build": "vite build",
     "build:sidecar": "bun src-tauri/scripts/build-sidecar.ts",

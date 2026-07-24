@@ -27,12 +27,12 @@ import { EntryEditDialog } from "./EntryEditDialog";
 import { cn } from "@client/lib/utils";
 import { useMediaQuery } from "@client/lib/useMediaQuery";
 import type { DateRange } from "@client/components/ui/DateRangeNavigator";
-import { HeaderDateNavigation } from "@client/components/HeaderDateNavigation";
-import { PageHeaderPortal } from "@client/components/PageHeaderPortal";
+import { ToolbarDateNavigation } from "@client/components/ToolbarDateNavigation";
+import { ViewToolbar } from "@client/components/ViewToolbar";
 import {
-  HeaderControlButton,
-  HeaderControlGroup,
-} from "@client/components/HeaderControls";
+  ToolbarControlButton,
+  ToolbarControlGroup,
+} from "@client/components/ToolbarControls";
 
 type Interaction =
   | { kind: "idle" }
@@ -74,6 +74,8 @@ type Interaction =
     };
 
 type KotMeaning = "directwork" | "paidleave" | "halfday-am" | "halfday-pm" | "other";
+
+const MOCK_INTEGRATIONS_VISIBLE = false;
 
 function kotMeaning(e: ExternalEvent): KotMeaning {
   if (e.kind === "schedule-allday") {
@@ -151,10 +153,12 @@ export function WeekCalendar({
 
   const entries = entriesQ.data ?? [];
 
-  const showKot = useCalendarStore((s) => s.showKot);
+  const storedShowKot = useCalendarStore((s) => s.showKot);
   const toggleShowKot = useCalendarStore((s) => s.toggleShowKot);
-  const showOutlook = useCalendarStore((s) => s.showOutlook);
+  const storedShowOutlook = useCalendarStore((s) => s.showOutlook);
   const toggleShowOutlook = useCalendarStore((s) => s.toggleShowOutlook);
+  const showKot = MOCK_INTEGRATIONS_VISIBLE && storedShowKot;
+  const showOutlook = MOCK_INTEGRATIONS_VISIBLE && storedShowOutlook;
   const kotEventsQ = useQuery<ExternalEvent[]>({
     queryKey: ["external", "kot", weekKey, to.toISOString()],
     queryFn: () =>
@@ -791,7 +795,7 @@ export function WeekCalendar({
         }
       }}
     >
-      <PageHeaderPortal slot="right">
+      <ViewToolbar>
         {(() => {
           const isMulti = effectiveDayCount !== 1 && effectiveDayCount !== 3;
           const step = isMulti ? 7 : (effectiveDayCount as number);
@@ -802,7 +806,7 @@ export function WeekCalendar({
                 ? { kind: "days", count: 3 }
                 : { kind: "week" };
           return (
-            <HeaderDateNavigation
+            <ToolbarDateNavigation
               anchor={anchor}
               range={navRange}
               onPrev={() => onNavigate(addDays(anchor, -step))}
@@ -812,12 +816,9 @@ export function WeekCalendar({
             />
           );
         })()}
-      </PageHeaderPortal>
-
-      <PageHeaderPortal slot="center">
-        {!isMobile && (
-          <HeaderControlGroup>
-            <HeaderControlButton
+        {MOCK_INTEGRATIONS_VISIBLE && !isMobile && (
+          <ToolbarControlGroup>
+            <ToolbarControlButton
               onClick={toggleShowKot}
               title="KING OF TIME の打刻・スケジュール（モックデータ）を表示"
               active={showKot}
@@ -830,8 +831,8 @@ export function WeekCalendar({
                 )}
               />
               KING OF TIME 連携（モック）
-            </HeaderControlButton>
-            <HeaderControlButton
+            </ToolbarControlButton>
+            <ToolbarControlButton
               onClick={toggleShowOutlook}
               title="Outlook の予定（モックデータ）を表示"
               active={showOutlook}
@@ -844,10 +845,10 @@ export function WeekCalendar({
                 )}
               />
               Outlook 連携（モック）
-            </HeaderControlButton>
-          </HeaderControlGroup>
+            </ToolbarControlButton>
+          </ToolbarControlGroup>
         )}
-        <HeaderControlGroup>
+        <ToolbarControlGroup>
           {(
             [
               { key: 1, label: "1日", minWidth: 0 },
@@ -862,17 +863,17 @@ export function WeekCalendar({
               return !isMobile && !isTablet;
             })
             .map(({ key, label }) => (
-              <HeaderControlButton
+              <ToolbarControlButton
                 key={key}
                 onClick={() => onDayCountChange(key)}
                 active={effectiveDayCount === key}
                 aria-pressed={effectiveDayCount === key}
               >
                 {label}
-              </HeaderControlButton>
+              </ToolbarControlButton>
             ))}
-        </HeaderControlGroup>
-      </PageHeaderPortal>
+        </ToolbarControlGroup>
+      </ViewToolbar>
 
       {/* Day header */}
       <div className="flex border-b border-neutral-200" style={{ paddingRight: scrollbarWidth }}>

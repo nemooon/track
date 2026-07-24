@@ -5,8 +5,8 @@
   "identifier": "com.nemooon.track",
   "build": {
     "frontendDist": "http://127.0.0.1:8787",
-    "devUrl": "http://127.0.0.1:8787",
-    "beforeDevCommand": "npm run build && npm run local",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeDevCommand": "npm run dev:desktop",
     "beforeBuildCommand": "npm run build:desktop"
   },
   "app": {
@@ -23,7 +23,7 @@
         "hiddenTitle": true,
         "trafficLightPosition": {
           "x": 16,
-          "y": 30
+          "y": 24.5
         },
         "visible": false
       }

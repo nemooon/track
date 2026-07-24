@@ -11,7 +11,7 @@ use tauri::Emitter;
 use tauri::{Manager, RunEvent, Url};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
-const DEV_SERVER_URL: &str = "http://127.0.0.1:8787";
+const DEV_FRONTEND_URL: &str = "http://127.0.0.1:5173";
 #[cfg(desktop)]
 const SETTINGS_MENU_ID: &str = "open-settings";
 #[cfg(desktop)]
@@ -197,7 +197,7 @@ fn setup_app(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(SidecarState::default());
 
     let server_url = if cfg!(debug_assertions) {
-        Url::parse(DEV_SERVER_URL)?
+        Url::parse(DEV_FRONTEND_URL)?
     } else {
         let StartedSidecar { child, url } = start_sidecar(app)?;
         app.state::<SidecarState>()

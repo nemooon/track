@@ -18,12 +18,12 @@ import {
 } from "date-fns";
 import { Check, Copy } from "lucide-react";
 import { apiFetch } from "@client/lib/fetcher";
-import { HeaderDateNavigation } from "@client/components/HeaderDateNavigation";
-import { PageHeaderPortal } from "@client/components/PageHeaderPortal";
+import { ToolbarDateNavigation } from "@client/components/ToolbarDateNavigation";
+import { ViewToolbar } from "@client/components/ViewToolbar";
 import {
-  HeaderControlButton,
-  HeaderControlGroup,
-} from "@client/components/HeaderControls";
+  ToolbarControlButton,
+  ToolbarControlGroup,
+} from "@client/components/ToolbarControls";
 import { FilterMultiSelect, type FilterOption } from "@client/components/reports/FilterMultiSelect";
 import {
   ReportRow,
@@ -419,9 +419,9 @@ export function ReportsPage() {
   }
 
   return (
-    <>
-      <PageHeaderPortal slot="right">
-        <HeaderDateNavigation
+    <div className="min-h-full">
+      <ViewToolbar>
+        <ToolbarDateNavigation
           anchor={anchor}
           range={range === "week" ? { kind: "week" } : { kind: "month" }}
           onPrev={prev}
@@ -429,34 +429,31 @@ export function ReportsPage() {
           onAnchorChange={setAnchor}
           onToday={() => setAnchor(new Date())}
         />
-      </PageHeaderPortal>
-
-      <PageHeaderPortal slot="center">
-        <HeaderControlGroup>
+        <ToolbarControlGroup>
           {(["week", "month"] as const).map((r) => (
-            <HeaderControlButton
+            <ToolbarControlButton
               key={r}
               onClick={() => setRange(r)}
               active={range === r}
               aria-pressed={range === r}
             >
               {r === "week" ? "週" : "月"}
-            </HeaderControlButton>
+            </ToolbarControlButton>
           ))}
-        </HeaderControlGroup>
-        <HeaderControlGroup>
+        </ToolbarControlGroup>
+        <ToolbarControlGroup>
           {(["client", "project", "tag"] as const).map((g) => (
-            <HeaderControlButton
+            <ToolbarControlButton
               key={g}
               onClick={() => setGroupBy(g)}
               active={groupBy === g}
               aria-pressed={groupBy === g}
             >
               {g === "client" ? "クライアント" : g === "project" ? "プロジェクト" : "タグ"}
-            </HeaderControlButton>
+            </ToolbarControlButton>
           ))}
-        </HeaderControlGroup>
-      </PageHeaderPortal>
+        </ToolbarControlGroup>
+      </ViewToolbar>
 
       <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
       {/* Filters */}
@@ -697,6 +694,6 @@ export function ReportsPage() {
         </div>
       )}
       </div>
-    </>
+    </div>
   );
 }

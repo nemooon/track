@@ -11,9 +11,9 @@ import {
 } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
-  HeaderControlButton,
-  HeaderControlGroup,
-} from "@client/components/HeaderControls";
+  ToolbarControlButton,
+  ToolbarControlGroup,
+} from "@client/components/ToolbarControls";
 import { DatePickerPopover } from "./DatePickerPopover";
 
 export type DateRange =
@@ -80,8 +80,8 @@ export function DateRangeNavigator({
   const [pickerOpen, setPickerOpen] = useState(false);
 
   return (
-    <HeaderControlGroup className={`relative ${className ?? ""}`}>
-      <HeaderControlButton
+    <ToolbarControlGroup className={`relative ${className ?? ""}`}>
+      <ToolbarControlButton
         onClick={onPrev}
         title="前の期間（⌘[）"
         aria-label="前の期間"
@@ -89,8 +89,8 @@ export function DateRangeNavigator({
         iconOnly
       >
         <ChevronLeft className="size-4" strokeWidth={2.5} />
-      </HeaderControlButton>
-      <HeaderControlButton
+      </ToolbarControlButton>
+      <ToolbarControlButton
         onClick={() => setPickerOpen((o) => !o)}
         title="日付を選択"
         aria-expanded={pickerOpen}
@@ -98,8 +98,8 @@ export function DateRangeNavigator({
         className="w-36 font-semibold tabular-nums sm:w-44"
       >
         {label}
-      </HeaderControlButton>
-      <HeaderControlButton
+      </ToolbarControlButton>
+      <ToolbarControlButton
         onClick={onNext}
         title="次の期間（⌘]）"
         aria-label="次の期間"
@@ -107,9 +107,9 @@ export function DateRangeNavigator({
         iconOnly
       >
         <ChevronRight className="size-4" strokeWidth={2.5} />
-      </HeaderControlButton>
+      </ToolbarControlButton>
       {onToday && (
-        <HeaderControlButton
+        <ToolbarControlButton
           onClick={onToday}
           title="今日（⌘T）"
           aria-keyshortcuts="Meta+T"
@@ -117,7 +117,7 @@ export function DateRangeNavigator({
           active={includesToday}
         >
           今日
-        </HeaderControlButton>
+        </ToolbarControlButton>
       )}
       {pickerOpen && (
         <DatePickerPopover
@@ -133,6 +133,6 @@ export function DateRangeNavigator({
           }
         />
       )}
-    </HeaderControlGroup>
+    </ToolbarControlGroup>
   );
 }
