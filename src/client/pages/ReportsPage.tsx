@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import { apiFetch } from "@client/lib/fetcher";
 import { Button } from "@client/components/ui/button";
+import { MarkdownEditor } from "@client/components/MarkdownEditor";
 import {
   Dialog,
   DialogFooter,
@@ -1109,13 +1110,12 @@ export function ReportsPage() {
             {weeklyReportError}
           </div>
         ) : (
-          <textarea
-            aria-label="生成した週報"
+          <MarkdownEditor
             value={weeklyReport}
-            onChange={(event) => setWeeklyReport(event.target.value)}
-            rows={18}
-            spellCheck
-            className="w-full resize-y rounded-md border border-neutral-300 bg-white px-3 py-2 font-mono text-sm leading-6 outline-none focus:border-neutral-500 focus:ring-2 focus:ring-neutral-200"
+            onChange={setWeeklyReport}
+            showToolbar={false}
+            ariaLabel="生成した週報"
+            className="weekly-report-markdown-editor h-[min(56vh,520px)] rounded-md border border-neutral-300 bg-white"
           />
         )}
 

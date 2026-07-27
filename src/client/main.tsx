@@ -25,6 +25,9 @@ const CalendarPage = lazy(() =>
 const ReportsPage = lazy(() =>
   import("@client/pages/ReportsPage").then((m) => ({ default: m.ReportsPage })),
 );
+const NotesPage = lazy(() =>
+  import("@client/pages/NotesPage").then((m) => ({ default: m.NotesPage })),
+);
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000 } },
 });
@@ -34,7 +37,7 @@ function AppNavigationShortcuts() {
   const { closeSettings, openSettings } = useAppUi();
 
   useEffect(() => {
-    function openView(path: "/calendar" | "/reports") {
+    function openView(path: "/calendar" | "/reports" | "/notes") {
       if (!closeSettings()) return;
       navigate(path);
     }
@@ -56,6 +59,9 @@ function AppNavigationShortcuts() {
       } else if (event.key === "2") {
         event.preventDefault();
         openView("/reports");
+      } else if (event.key === "3") {
+        event.preventDefault();
+        openView("/notes");
       } else if (event.key === ",") {
         event.preventDefault();
         openSettings();
@@ -68,7 +74,11 @@ function AppNavigationShortcuts() {
     let unlisten: UnlistenFn | undefined;
     if ("__TAURI_INTERNALS__" in window) {
       void listen<string>("track-open-view", ({ payload }) => {
-        if (payload === "/calendar" || payload === "/reports") {
+        if (
+          payload === "/calendar" ||
+          payload === "/reports" ||
+          payload === "/notes"
+        ) {
           openView(payload);
         }
       }).then((dispose) => {
@@ -98,6 +108,7 @@ createRoot(document.getElementById("root")!).render(
               <Route element={<AppLayout />}>
                 <Route path="/calendar" element={<CalendarPage />} />
                 <Route path="/reports" element={<ReportsPage />} />
+                <Route path="/notes" element={<NotesPage />} />
                 <Route path="/settings" element={<SettingsLayout />}>
                   <Route index element={<Navigate to="work-hours" replace />} />
                   <Route

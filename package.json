@@ -1,6 +1,6 @@
 {
   "name": "track",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -26,6 +26,7 @@
   "dependencies": {
     "@holiday-jp/holiday_jp": "^2.5.1",
     "@libsql/client": "^0.17.4",
+    "@milkdown/crepe": "^7.21.3",
     "@prisma/adapter-libsql": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@tanstack/react-query": "^5.97.0",
@@ -35,12 +36,12 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
-    "hono": "^4.12.12",
+    "hono": "^4.12.31",
     "lucide-react": "^1.8.0",
     "prisma": "^7.8.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "react-router": "^7.14.0",
+    "react-router": "^7.18.1",
     "recharts": "^3.8.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",
@@ -58,6 +59,6 @@
     "dotenv": "^17.4.1",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vite": "^8.0.8"
+    "vite": "^8.1.5"
   }
 }

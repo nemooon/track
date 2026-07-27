@@ -28,7 +28,11 @@ export function AppUiProvider({ children }: { children: ReactNode }) {
   const [settingsDirty, setSettingsDirty] = useState(false);
 
   useEffect(() => {
-    if (pathname === "/calendar" || pathname === "/reports") {
+    if (
+      pathname === "/calendar" ||
+      pathname === "/reports" ||
+      pathname === "/notes"
+    ) {
       lastViewRef.current = pathname;
     }
   }, [pathname]);

@@ -30,6 +30,16 @@ export type TagOnProject = {
   tag: Tag;
 };
 
+export type Note = {
+  id: string;
+  projectId: string | null;
+  project: Project | null;
+  title: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type TimeEntry = {
   id: string;
   projectId: string | null;

@@ -7,6 +7,7 @@ import {
   ExternalLink,
   Info,
   Keyboard,
+  NotebookPen,
   Settings,
 } from "lucide-react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -28,8 +29,9 @@ import appIconUrl from "../../../src-tauri/icons/128x128.png";
 const REPOSITORY_URL = "https://github.com/nemooon/track";
 
 const views = [
-  { href: "/calendar", label: "カレンダー", icon: CalendarDays },
-  { href: "/reports", label: "レポート", icon: BarChart3 },
+  { href: "/calendar", label: "カレンダー", icon: CalendarDays, shortcut: "1" },
+  { href: "/reports", label: "レポート", icon: BarChart3, shortcut: "2" },
+  { href: "/notes", label: "メモ", icon: NotebookPen, shortcut: "3" },
 ];
 
 const shortcutGroups = [
@@ -38,6 +40,7 @@ const shortcutGroups = [
     items: [
       ["カレンダーを開く", "⌘1"],
       ["レポートを開く", "⌘2"],
+      ["メモを開く", "⌘3"],
       ["設定を開く", "⌘,"],
     ],
   },
@@ -125,14 +128,14 @@ export function AppHeader() {
       className="relative flex h-11 shrink-0 items-center border-b border-[#1d2824] bg-[#2e3a35] pl-[92px] pr-3"
     >
       <nav className="inline-flex h-full items-center gap-1">
-        {views.map(({ href, label, icon: Icon }) => {
+        {views.map(({ href, label, icon: Icon, shortcut }) => {
           const active = pathname === href;
           return (
             <Link
               key={href}
               to={href}
-              title={`${label}（⌘${href === "/calendar" ? "1" : "2"}）`}
-              aria-keyshortcuts={`Meta+${href === "/calendar" ? "1" : "2"}`}
+              title={`${label}（⌘${shortcut}）`}
+              aria-keyshortcuts={`Meta+${shortcut}`}
               className={cn(
                 "relative inline-flex h-full shrink-0 items-center justify-center gap-1.5 px-3 text-xs font-medium transition-colors after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60",
                 active

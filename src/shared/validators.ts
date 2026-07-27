@@ -35,6 +35,18 @@ export const projectUpdateSchema = z.object({
   tagIds: z.array(z.string().min(1)).optional(),
 });
 
+export const noteCreateSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  content: z.string().max(100_000).optional(),
+  projectId: z.string().min(1).nullable().optional(),
+});
+
+export const noteUpdateSchema = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  content: z.string().max(100_000).optional(),
+  projectId: z.string().min(1).nullable().optional(),
+});
+
 export const entryCreateSchema = z
   .object({
     projectId: z.string().min(1).nullable().optional(),

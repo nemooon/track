@@ -510,6 +510,8 @@ const CALENDAR_MENU_ID: &str = "open-calendar";
 #[cfg(desktop)]
 const REPORTS_MENU_ID: &str = "open-reports";
 #[cfg(desktop)]
+const NOTES_MENU_ID: &str = "open-notes";
+#[cfg(desktop)]
 const PREVIOUS_PERIOD_MENU_ID: &str = "previous-period";
 #[cfg(desktop)]
 const NEXT_PERIOD_MENU_ID: &str = "next-period";
@@ -829,6 +831,13 @@ pub fn run() {
                         true,
                         Some("CmdOrCtrl+2"),
                     )?;
+                    let notes = MenuItem::with_id(
+                        app,
+                        NOTES_MENU_ID,
+                        "メモ",
+                        true,
+                        Some("CmdOrCtrl+3"),
+                    )?;
                     let previous_period = MenuItem::with_id(
                         app,
                         PREVIOUS_PERIOD_MENU_ID,
@@ -889,6 +898,7 @@ pub fn run() {
                     let view_menu = SubmenuBuilder::new(app, "表示")
                         .item(&calendar)
                         .item(&reports)
+                        .item(&notes)
                         .separator()
                         .item(&previous_period)
                         .item(&next_period)
@@ -949,6 +959,7 @@ pub fn run() {
                 SETTINGS_MENU_ID => open_settings_overlay(app),
                 CALENDAR_MENU_ID => open_app_view(app, "/calendar"),
                 REPORTS_MENU_ID => open_app_view(app, "/reports"),
+                NOTES_MENU_ID => open_app_view(app, "/notes"),
                 PREVIOUS_PERIOD_MENU_ID => navigate_date(app, "previous"),
                 NEXT_PERIOD_MENU_ID => navigate_date(app, "next"),
                 TODAY_MENU_ID => navigate_date(app, "today"),
