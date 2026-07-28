@@ -3,7 +3,6 @@ import {
   BarChart3,
   Bot,
   CalendarDays,
-  CircleArrowDown,
   Ellipsis,
   ExternalLink,
   Info,
@@ -271,15 +270,26 @@ export function AppHeader() {
         })}
       </nav>
 
-      <div ref={menuRef} className="relative ml-auto shrink-0">
+      <div
+        ref={menuRef}
+        className="relative ml-auto flex shrink-0 items-center gap-2"
+      >
+        {availableVersion && (
+          <button
+            type="button"
+            onClick={() => {
+              setUpdateError(null);
+              setOpenDialog("update");
+            }}
+            className="whitespace-nowrap text-[11px] font-medium text-white/75 transition-colors hover:text-white focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+          >
+            新しいバージョンがあります
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setMenuOpen((current) => !current)}
-          aria-label={
-            availableVersion
-              ? `アプリメニュー、新しいバージョン${availableVersion}があります`
-              : "アプリメニュー"
-          }
+          aria-label="アプリメニュー"
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           className={cn(
@@ -288,12 +298,6 @@ export function AppHeader() {
           )}
         >
           <Ellipsis className="size-5" />
-          {availableVersion && (
-            <span
-              className="absolute right-0.5 top-0.5 size-2 rounded-full bg-emerald-400 ring-2 ring-[#2e3a35]"
-              aria-hidden
-            />
-          )}
         </button>
 
         {menuOpen && (
@@ -301,29 +305,6 @@ export function AppHeader() {
             role="menu"
             className="absolute right-0 top-full z-50 mt-1 min-w-56 rounded-lg border border-neutral-200 bg-white p-1 shadow-lg"
           >
-            {availableVersion && (
-              <>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setUpdateError(null);
-                    setOpenDialog("update");
-                  }}
-                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
-                >
-                  <CircleArrowDown className="size-4 shrink-0 text-emerald-600" />
-                  <span className="whitespace-nowrap">
-                    新しいバージョンがあります
-                  </span>
-                </button>
-                <div
-                  role="separator"
-                  className="mx-2 my-1 h-px bg-neutral-200"
-                />
-              </>
-            )}
             <button
               type="button"
               role="menuitem"
