@@ -45,6 +45,7 @@ export const noteUpdateSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   content: z.string().max(100_000).optional(),
   projectId: z.string().min(1).nullable().optional(),
+  archived: z.boolean().optional(),
 });
 
 export const entryCreateSchema = z

@@ -13,7 +13,7 @@ export const EXPORT_VERSION = 1;
 
 // エクスポート形式は import 側と対で維持すること。
 export async function buildExport(prisma: PrismaClient) {
-  const [current, clients, tags, projects, entries] = await Promise.all([
+  const [current, clients, tags, projects, notes, entries] = await Promise.all([
     prisma.settings.findFirst({
       select: {
         workStart: true,
@@ -28,6 +28,7 @@ export async function buildExport(prisma: PrismaClient) {
       orderBy: { createdAt: "asc" },
       include: { tags: { select: { tagId: true } } },
     }),
+    prisma.note.findMany({ orderBy: { createdAt: "asc" } }),
     prisma.timeEntry.findMany({
       orderBy: { start: "asc" },
       include: { tags: { select: { tagId: true } } },
@@ -64,6 +65,15 @@ export async function buildExport(prisma: PrismaClient) {
       archived: x.archived,
       createdAt: x.createdAt.toISOString(),
       tagIds: x.tags.map((t) => t.tagId),
+    })),
+    notes: notes.map((x) => ({
+      id: x.id,
+      projectId: x.projectId,
+      title: x.title,
+      content: x.content,
+      archived: x.archived,
+      createdAt: x.createdAt.toISOString(),
+      updatedAt: x.updatedAt.toISOString(),
     })),
     entries: entries.map((x) => ({
       id: x.id,
@@ -112,6 +122,7 @@ data.post("/export/file", async (c) => {
       clients: dump.clients.length,
       tags: dump.tags.length,
       projects: dump.projects.length,
+      notes: dump.notes.length,
       entries: dump.entries.length,
     },
   });
@@ -153,6 +164,19 @@ const importSchema = z.object({
       tagIds: z.array(z.string()).default([]),
     }),
   ),
+  notes: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        projectId: z.string().nullable().default(null),
+        title: z.string().min(1).max(200),
+        content: z.string().max(100_000).default(""),
+        archived: z.boolean().default(false),
+        createdAt: z.string().datetime().optional(),
+        updatedAt: z.string().datetime().optional(),
+      }),
+    )
+    .default([]),
   entries: z.array(
     z.object({
       id: z.string().min(1),
@@ -203,6 +227,12 @@ function getImportProblems(d: ImportData): string[] {
     }
   }
 
+  for (const n of d.notes) {
+    if (n.projectId && !projectIds.has(n.projectId)) {
+      problems.push(`note ${n.id}: 未知の projectId ${n.projectId}`);
+    }
+  }
+
   return problems;
 }
 
@@ -211,6 +241,7 @@ function getImportCounts(d: ImportData) {
     clients: d.clients.length,
     tags: d.tags.length,
     projects: d.projects.length,
+    notes: d.notes.length,
     entries: d.entries.length,
   };
 }
@@ -264,6 +295,7 @@ data.post("/import", async (c) => {
     // 削除は FK の順序に従う
     await tx.tagOnEntry.deleteMany();
     await tx.tagOnProject.deleteMany();
+    await tx.note.deleteMany();
     await tx.timeEntry.deleteMany();
     await tx.project.deleteMany();
     await tx.client.deleteMany();
@@ -315,6 +347,19 @@ data.post("/import", async (c) => {
         p.tagIds.map((tagId) => ({ projectId: p.id, tagId })),
       );
       if (links.length > 0) await tx.tagOnProject.createMany({ data: links });
+    }
+    if (d.notes.length > 0) {
+      await tx.note.createMany({
+        data: d.notes.map((x) => ({
+          id: x.id,
+          projectId: x.projectId,
+          title: x.title,
+          content: x.content,
+          archived: x.archived,
+          createdAt: date(x.createdAt),
+          updatedAt: date(x.updatedAt),
+        })),
+      });
     }
     if (d.entries.length > 0) {
       await tx.timeEntry.createMany({

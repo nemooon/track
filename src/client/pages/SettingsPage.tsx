@@ -265,7 +265,13 @@ export function SettingsPage({ category }: { category: SettingsCategory }) {
     name: string;
     json: unknown;
     exportedAt: string | null;
-    counts: { clients: number; tags: number; projects: number; entries: number };
+    counts: {
+      clients: number;
+      tags: number;
+      projects: number;
+      notes: number;
+      entries: number;
+    };
   } | null>(null);
 
   const runExport = useMutation({
@@ -310,6 +316,7 @@ export function SettingsPage({ category }: { category: SettingsCategory }) {
           clients: number;
           tags: number;
           projects: number;
+          notes: number;
           entries: number;
         };
       }>("/api/data/import/validate", {
@@ -340,7 +347,7 @@ export function SettingsPage({ category }: { category: SettingsCategory }) {
       qc.invalidateQueries();
       const n = res.imported;
       toast.success(
-        `安全バックアップを作成してインポートしました (クライアント ${n.clients} / タグ ${n.tags} / プロジェクト ${n.projects} / エントリ ${n.entries})`,
+        `安全バックアップを作成してインポートしました (クライアント ${n.clients} / タグ ${n.tags} / プロジェクト ${n.projects} / メモ ${n.notes} / エントリ ${n.entries})`,
       );
     },
     onError: showImportError,
@@ -760,6 +767,7 @@ export function SettingsPage({ category }: { category: SettingsCategory }) {
                     </Button>
                     <Button
                       variant="destructive"
+                      data-dialog-autofocus
                       onClick={() => runRestore.mutate(restoring)}
                       disabled={runRestore.isPending}
                     >
@@ -857,7 +865,8 @@ export function SettingsPage({ category }: { category: SettingsCategory }) {
                   <p>
                     クライアント {pending.counts.clients} / タグ{" "}
                     {pending.counts.tags} / プロジェクト{" "}
-                    {pending.counts.projects} / エントリ{" "}
+                    {pending.counts.projects} / メモ{" "}
+                    {pending.counts.notes} / エントリ{" "}
                     {pending.counts.entries}
                   </p>
                   <p>
@@ -874,6 +883,7 @@ export function SettingsPage({ category }: { category: SettingsCategory }) {
                   </Button>
                   <Button
                     variant="destructive"
+                    data-dialog-autofocus
                     onClick={() => runImport.mutate(pending.json)}
                     disabled={runImport.isPending}
                   >

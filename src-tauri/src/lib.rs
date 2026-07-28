@@ -12,7 +12,7 @@ use tauri::{Manager, RunEvent, Url};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 #[cfg(target_os = "macos")]
-mod weekly_report {
+mod apple_intelligence {
     use std::{
         fs::{self, OpenOptions},
         io::Write,
@@ -48,9 +48,9 @@ mod weekly_report {
             .create_new(true)
             .mode(0o600)
             .open(path)
-            .map_err(|error| format!("週報生成の一時ファイルを作成できません: {error}"))?;
+            .map_err(|error| format!("AI生成の一時ファイルを作成できません: {error}"))?;
         file.write_all(content)
-            .map_err(|error| format!("週報生成の一時ファイルへ書き込めません: {error}"))
+            .map_err(|error| format!("AI生成の一時ファイルへ書き込めません: {error}"))
     }
 
     fn macos_major_version() -> Result<u32, String> {
@@ -67,15 +67,15 @@ mod weekly_report {
             .ok_or_else(|| format!("macOSのバージョンを判定できません: {version}"))
     }
 
-    pub fn generate(app: &tauri::AppHandle, prompt: &str) -> Result<String, String> {
+    pub fn generate(app: &tauri::AppHandle, prompt: &str, mode: &str) -> Result<String, String> {
         if prompt.trim().is_empty() {
-            return Err("週報生成の入力が空です。".into());
+            return Err("AI生成の入力が空です。".into());
         }
         if prompt.len() > 200_000 {
-            return Err("週報生成の入力が大きすぎます。絞り込みを指定してください。".into());
+            return Err("AI生成の入力が大きすぎます。内容を短くしてください。".into());
         }
         if macos_major_version()? < 26 {
-            return Err("週報のAI生成にはmacOS 26以降が必要です。".into());
+            return Err("Apple Intelligenceによる生成にはmacOS 26以降が必要です。".into());
         }
 
         let helper = helper_path(app)?;
@@ -83,12 +83,10 @@ mod weekly_report {
             .duration_since(UNIX_EPOCH)
             .map_err(|error| error.to_string())?
             .as_nanos();
-        let temp_dir = std::env::temp_dir().join(format!(
-            "track-weekly-report-{}-{stamp}",
-            std::process::id()
-        ));
+        let temp_dir =
+            std::env::temp_dir().join(format!("track-ai-{}-{stamp}", std::process::id()));
         fs::create_dir(&temp_dir)
-            .map_err(|error| format!("週報生成の一時フォルダを作成できません: {error}"))?;
+            .map_err(|error| format!("AI生成の一時フォルダを作成できません: {error}"))?;
 
         let result = (|| {
             let input = temp_dir.join("prompt.txt");
@@ -108,11 +106,12 @@ mod weekly_report {
                 .arg(&helper)
                 .arg("--args")
                 .arg(&input)
+                .arg(mode)
                 .status()
                 .map_err(|error| format!("Apple Intelligenceを起動できません: {error}"))?;
 
             let response = fs::read_to_string(&stdout)
-                .map_err(|error| format!("生成した週報を読み込めません: {error}"))?;
+                .map_err(|error| format!("AIの生成結果を読み込めません: {error}"))?;
             let helper_error = fs::read_to_string(&stderr).unwrap_or_default();
             if !status.success() || response.trim().is_empty() {
                 let detail = helper_error.trim();
@@ -126,7 +125,7 @@ mod weekly_report {
         })();
 
         if let Err(error) = fs::remove_dir_all(&temp_dir) {
-            log::warn!("週報生成の一時ファイルを削除できません: {error}");
+            log::warn!("AI生成の一時ファイルを削除できません: {error}");
         }
         result
     }
@@ -478,7 +477,7 @@ async fn generate_weekly_report(app: tauri::AppHandle, prompt: String) -> Result
     #[cfg(target_os = "macos")]
     {
         return tauri::async_runtime::spawn_blocking(move || {
-            weekly_report::generate(&app, &prompt)
+            apple_intelligence::generate(&app, &prompt, "weekly-report")
         })
         .await
         .map_err(|error| format!("週報生成処理を完了できません: {error}"))?;
@@ -487,6 +486,23 @@ async fn generate_weekly_report(app: tauri::AppHandle, prompt: String) -> Result
     {
         let _ = (app, prompt);
         Err("週報のAI生成はmacOSでのみ利用できます。".into())
+    }
+}
+
+#[tauri::command]
+async fn generate_note_title(app: tauri::AppHandle, content: String) -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        return tauri::async_runtime::spawn_blocking(move || {
+            apple_intelligence::generate(&app, &content, "note-title")
+        })
+        .await
+        .map_err(|error| format!("タイトル生成処理を完了できません: {error}"))?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, content);
+        Err("タイトルのAI生成はmacOSでのみ利用できます。".into())
     }
 }
 
@@ -978,6 +994,7 @@ pub fn run() {
         )
         .invoke_handler(tauri::generate_handler![
             generate_weekly_report,
+            generate_note_title,
             show_ai_integration_installer
         ])
         .setup(|app| {

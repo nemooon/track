@@ -119,7 +119,7 @@ export function MarkdownEditor({
   return (
     <div
       className={cn(
-        "milkdown-markdown-editor relative min-h-0 overflow-auto",
+        "milkdown-markdown-editor subtle-scrollbar relative min-h-0 overflow-auto",
         className,
       )}
     >

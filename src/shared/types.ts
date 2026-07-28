@@ -36,6 +36,7 @@ export type Note = {
   project: Project | null;
   title: string;
   content: string;
+  archived: boolean;
   createdAt: string;
   updatedAt: string;
 };

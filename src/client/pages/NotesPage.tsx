@@ -6,12 +6,21 @@ import {
   useState,
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { invoke } from "@tauri-apps/api/core";
 import {
+  Archive,
+  ArchiveRestore,
+  Check,
+  ChevronDown,
   ChevronLeft,
+  Ellipsis,
   FileText,
-  Plus,
+  LoaderCircle,
   Search,
+  Sparkles,
+  SquarePen,
   Trash2,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -26,6 +35,8 @@ import { cn } from "@client/lib/utils";
 import type { Note, Project } from "@shared/types";
 
 type NoteDraft = Pick<Note, "title" | "content" | "projectId">;
+type NoteGrouping = "recent" | "project";
+type NoteSort = "updated" | "created" | "title";
 type SaveStatus = "saved" | "unsaved" | "saving" | "error";
 
 const AUTOSAVE_DELAY_MS = 700;
@@ -41,51 +52,86 @@ function normalizedDraft(draft: NoteDraft): NoteDraft {
   };
 }
 
-function formatUpdatedAt(value: string) {
-  const date = new Date(value);
-  const today = new Date();
-  if (date.toDateString() === today.toDateString()) {
-    return new Intl.DateTimeFormat("ja-JP", {
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date);
-  }
-  return new Intl.DateTimeFormat("ja-JP", {
-    month: "numeric",
-    day: "numeric",
-  }).format(date);
+function isUntouchedNewNoteDraft(draft: NoteDraft) {
+  const meaningfulContent = draft.content
+    .replace(/<br\s*\/?>/gi, "")
+    .replace(/&nbsp;/gi, "")
+    .trim();
+  return (
+    draft.title.trim() === "無題のメモ" &&
+    !meaningfulContent &&
+    !draft.projectId
+  );
 }
 
-function noteExcerpt(content: string) {
+function fallbackTitleFromContent(content: string) {
   const line = content
     .split("\n")
-    .map((value) => value.trim())
+    .map((value) =>
+      value
+        .trim()
+        .replace(/^#{1,6}\s+/, "")
+        .replace(/^[-*+]\s+(?:\[[ xX]\]\s*)?/, "")
+        .replace(/^>\s*/, "")
+        .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+        .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+        .replace(/[*_~`]/g, "")
+        .trim(),
+    )
     .find(Boolean);
-  if (!line) return "本文はまだありません";
-  return line
-    .replace(/^#{1,6}\s+|^[-*]\s+(?:\[[ xX]\]\s*)?/, "")
+  if (!line) throw new Error("タイトルを生成できる本文がありません。");
+  const characters = Array.from(line);
+  return characters.length > 40
+    ? `${characters.slice(0, 39).join("")}…`
+    : line;
+}
+
+function normalizeGeneratedTitle(value: string) {
+  const line =
+    value
+      .split("\n")
+      .map((part) => part.trim())
+      .find(Boolean) ?? "";
+  const normalized = line
+    .replace(/^#{1,6}\s+/, "")
+    .replace(/^[-*+]\s+(?:\[[ xX]\]\s*)?/, "")
+    .replace(/^\d+[.)、]\s*/, "")
+    .replace(/^(?:タイトル|件名)\s*[:：]\s*/, "")
+    .replace(/^[「『"'“”]+|[」』"'“”]+$/g, "")
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-    .replace(/[*_~`]/g, "");
+    .replace(/[*_~`]/g, "")
+    .replace(/[。．]$/, "")
+    .trim();
+  return Array.from(normalized).slice(0, 200).join("");
 }
 
 function NoteEditor({
   note,
   projects,
   onBack,
+  onArchive,
   onDelete,
   onSaved,
+  onDraftChange,
 }: {
   note: Note;
   projects: Project[];
   onBack: () => void;
+  onArchive: () => void;
   onDelete: () => void;
   onSaved: (note: Note) => void;
+  onDraftChange: (id: string, draft: NoteDraft) => void;
 }) {
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const [projectId, setProjectId] = useState(note.projectId ?? "");
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [titleGenerating, setTitleGenerating] = useState(false);
+  const projectMenuRef = useRef<HTMLDivElement>(null);
+  const selectedProject =
+    projects.find((project) => project.id === projectId) ?? null;
 
   const draft: NoteDraft = {
     title,
@@ -132,6 +178,10 @@ function NoteEditor({
   enqueueSaveRef.current = enqueueSave;
 
   useEffect(() => {
+    onDraftChange(note.id, draft);
+  }, [content, note.id, onDraftChange, projectId, title]);
+
+  useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     const serialized = serializeDraft(normalizedDraft(draft));
     if (serialized === savedRef.current) {
@@ -162,6 +212,27 @@ function NoteEditor({
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, []);
 
+  useEffect(() => {
+    if (!projectMenuOpen) return;
+
+    function onPointerDown(event: MouseEvent) {
+      if (!projectMenuRef.current?.contains(event.target as Node)) {
+        setProjectMenuOpen(false);
+      }
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setProjectMenuOpen(false);
+    }
+
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [projectMenuOpen]);
+
   useEffect(
     () => () => {
       mountedRef.current = false;
@@ -180,6 +251,35 @@ function NoteEditor({
           ? "保存できませんでした"
           : "保存済み";
 
+  async function generateTitle() {
+    if (!content.trim() || titleGenerating) return;
+
+    setTitleGenerating(true);
+    try {
+      const generated =
+        "__TAURI_INTERNALS__" in window
+          ? await invoke<string>("generate_note_title", { content })
+          : fallbackTitleFromContent(content);
+      const normalized = normalizeGeneratedTitle(generated);
+      if (!normalized) throw new Error("タイトルを生成できませんでした。");
+      onDraftChange(note.id, {
+        ...draftRef.current,
+        title: normalized,
+      });
+      setTitle(normalized);
+    } catch (error) {
+      toast.error(
+        typeof error === "string"
+          ? error
+          : error instanceof Error
+            ? error.message
+            : "タイトルを生成できませんでした。",
+      );
+    } finally {
+      setTitleGenerating(false);
+    }
+  }
+
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-white">
       <div className="flex min-h-14 shrink-0 items-center gap-2 border-b border-neutral-200 px-3 sm:px-4">
@@ -191,17 +291,134 @@ function NoteEditor({
         >
           <ChevronLeft className="size-5" />
         </button>
+        <div
+          ref={projectMenuRef}
+          className="relative min-w-0 max-w-[40%] shrink-0"
+        >
+          <button
+            type="button"
+            onClick={() => setProjectMenuOpen((open) => !open)}
+            aria-label={`プロジェクト: ${selectedProject?.name ?? "プロジェクトなし"}`}
+            aria-haspopup="listbox"
+            aria-expanded={projectMenuOpen}
+            title="プロジェクトを変更"
+            className="block max-w-full cursor-pointer truncate rounded px-1 py-1 text-left text-base text-neutral-500 outline-none hover:bg-neutral-100 hover:text-neutral-700 focus-visible:bg-neutral-100 focus-visible:ring-2 focus-visible:ring-neutral-300"
+          >
+            {selectedProject?.name ?? "プロジェクトなし"}
+          </button>
+          {projectMenuOpen && (
+            <div
+              role="listbox"
+              aria-label="プロジェクトを選択"
+              className="absolute left-0 top-full z-30 mt-1 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-lg"
+            >
+              <div className="subtle-scrollbar max-h-72 overflow-y-auto p-1">
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={!projectId}
+                  onClick={() => {
+                    onDraftChange(note.id, {
+                      ...draftRef.current,
+                      projectId: null,
+                    });
+                    setProjectId("");
+                    setProjectMenuOpen(false);
+                  }}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left hover:bg-neutral-100",
+                    !projectId && "bg-neutral-100",
+                  )}
+                >
+                  <span className="size-3 shrink-0 rounded-full border border-neutral-300 bg-white" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium text-neutral-800">
+                      プロジェクトなし
+                    </span>
+                    <span className="block truncate text-[11px] text-neutral-400">
+                      メモをプロジェクトに紐付けない
+                    </span>
+                  </span>
+                </button>
+                {projects.map((project) => (
+                  <button
+                    key={project.id}
+                    type="button"
+                    role="option"
+                    aria-selected={project.id === projectId}
+                    onClick={() => {
+                      onDraftChange(note.id, {
+                        ...draftRef.current,
+                        projectId: project.id,
+                      });
+                      setProjectId(project.id);
+                      setProjectMenuOpen(false);
+                    }}
+                    className={cn(
+                      "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left hover:bg-neutral-100",
+                      project.id === projectId && "bg-neutral-100",
+                    )}
+                  >
+                    <span
+                      className="size-3 shrink-0 rounded-full"
+                      style={{ backgroundColor: project.color }}
+                    />
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-neutral-800">
+                        {project.name}
+                      </span>
+                      <span className="block truncate text-[11px] text-neutral-400">
+                        {project.client.name}
+                        {project.archived ? " · アーカイブ済み" : ""}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        <span
+          aria-hidden="true"
+          className="shrink-0 text-base text-neutral-300"
+        >
+          /
+        </span>
         <input
           value={title}
-          onChange={(event) => setTitle(event.target.value)}
+          onChange={(event) => {
+            onDraftChange(note.id, {
+              ...draftRef.current,
+              title: event.target.value,
+            });
+            setTitle(event.target.value);
+          }}
           onBlur={() => {
             if (!title.trim()) setTitle("無題のメモ");
           }}
           maxLength={200}
           aria-label="メモのタイトル"
-          className="min-w-0 flex-1 bg-transparent text-base font-semibold text-neutral-900 outline-none placeholder:text-neutral-400"
+          className="min-w-0 flex-1 bg-transparent text-base font-medium text-neutral-900 outline-none placeholder:text-neutral-400"
           placeholder="無題のメモ"
         />
+        <button
+          type="button"
+          onClick={generateTitle}
+          disabled={!content.trim() || titleGenerating}
+          aria-label="本文からタイトルを生成"
+          title={
+            content.trim()
+              ? "本文からタイトルを生成"
+              : "本文を入力するとタイトルを生成できます"
+          }
+          className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:cursor-not-allowed disabled:opacity-35"
+        >
+          {titleGenerating ? (
+            <LoaderCircle className="size-4 animate-spin" />
+          ) : (
+            <Sparkles className="size-4" />
+          )}
+        </button>
         <span
           className={cn(
             "shrink-0 text-[11px]",
@@ -210,6 +427,19 @@ function NoteEditor({
         >
           {statusText}
         </span>
+        <button
+          type="button"
+          onClick={onArchive}
+          aria-label={note.archived ? "メモを復元" : "メモをアーカイブ"}
+          title={note.archived ? "復元" : "アーカイブ"}
+          className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+        >
+          {note.archived ? (
+            <ArchiveRestore className="size-4" />
+          ) : (
+            <Archive className="size-4" />
+          )}
+        </button>
         <button
           type="button"
           onClick={onDelete}
@@ -221,32 +451,15 @@ function NoteEditor({
         </button>
       </div>
 
-      <div className="flex min-h-11 shrink-0 items-center gap-3 border-b border-neutral-200 bg-neutral-50/60 px-3 sm:px-4">
-        <label
-          htmlFor={`note-project-${note.id}`}
-          className="shrink-0 text-xs font-medium text-neutral-500"
-        >
-          プロジェクト
-        </label>
-        <select
-          id={`note-project-${note.id}`}
-          value={projectId}
-          onChange={(event) => setProjectId(event.target.value)}
-          className="min-w-0 max-w-sm flex-1 rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-700 outline-none focus:ring-2 focus:ring-neutral-300"
-        >
-          <option value="">プロジェクトなし</option>
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.client.name} · {project.name}
-              {project.archived ? "（アーカイブ済み）" : ""}
-            </option>
-          ))}
-        </select>
-      </div>
-
       <MarkdownEditor
         value={content}
-        onChange={setContent}
+        onChange={(value) => {
+          onDraftChange(note.id, {
+            ...draftRef.current,
+            content: value,
+          });
+          setContent(value);
+        }}
         ariaLabel="メモ本文"
         className="note-markdown-editor flex-1"
       />
@@ -258,13 +471,22 @@ export function NotesPage() {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mobileListOpen, setMobileListOpen] = useState(true);
+  const [noteGrouping, setNoteGrouping] = useState<NoteGrouping>("recent");
+  const [noteSort, setNoteSort] = useState<NoteSort>("updated");
   const [search, setSearch] = useState("");
-  const [projectFilter, setProjectFilter] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [listMenuOpen, setListMenuOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const listMenuRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const discardableNoteIdsRef = useRef(new Set<string>());
+  const selectedNoteRef = useRef<Note | null>(null);
+  const pageMountedRef = useRef(true);
 
   const { data: notes = [], isLoading } = useQuery({
     queryKey: ["notes"],
-    queryFn: () => apiFetch<Note[]>("/api/notes"),
+    queryFn: () => apiFetch<Note[]>("/api/notes?includeArchived=1"),
   });
   const { data: projects = [] } = useQuery({
     queryKey: ["projects", "all"],
@@ -272,30 +494,168 @@ export function NotesPage() {
       apiFetch<Project[]>("/api/projects?includeArchived=1"),
   });
 
+  const discardUntouchedNewNote = useCallback(
+    (note: Note | null) => {
+      if (!note || !discardableNoteIdsRef.current.has(note.id)) return false;
+      if (
+        !isUntouchedNewNoteDraft({
+          title: note.title,
+          content: note.content,
+          projectId: note.projectId,
+        })
+      ) {
+        discardableNoteIdsRef.current.delete(note.id);
+        return false;
+      }
+
+      discardableNoteIdsRef.current.delete(note.id);
+      queryClient.setQueryData<Note[]>(["notes"], (current = []) =>
+        current.filter((currentNote) => currentNote.id !== note.id),
+      );
+      void apiFetch<{ ok: true }>(`/api/notes/${note.id}`, {
+        method: "DELETE",
+        keepalive: true,
+      }).catch(() => {
+        void queryClient.invalidateQueries({ queryKey: ["notes"] });
+        toast.error("空の新規メモを削除できませんでした");
+      });
+      return true;
+    },
+    [queryClient],
+  );
+
+  const handleDraftChange = useCallback(
+    (id: string, draft: NoteDraft) => {
+      if (!isUntouchedNewNoteDraft(draft)) {
+        discardableNoteIdsRef.current.delete(id);
+      }
+    },
+    [],
+  );
+
   const visibleNotes = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase("ja");
-    return notes.filter((note) => {
-      if (projectFilter && note.projectId !== projectFilter) return false;
-      if (!normalizedSearch) return true;
-      return `${note.title}\n${note.content}`
-        .toLocaleLowerCase("ja")
-        .includes(normalizedSearch);
-    });
-  }, [notes, projectFilter, search]);
+    return notes
+      .filter((note) => {
+        if (note.archived !== showArchived) return false;
+        if (!normalizedSearch) return true;
+        return `${note.title}\n${note.content}`
+          .toLocaleLowerCase("ja")
+          .includes(normalizedSearch);
+      })
+      .sort((a, b) => {
+        if (noteSort === "title") {
+          return a.title.localeCompare(b.title, "ja");
+        }
+        const field = noteSort === "created" ? "createdAt" : "updatedAt";
+        return (
+          new Date(b[field]).getTime() - new Date(a[field]).getTime()
+        );
+      });
+  }, [noteSort, notes, search, showArchived]);
+
+  const noteGroups = useMemo(() => {
+    if (noteGrouping === "recent") {
+      return [
+        {
+          key: "recent",
+          label: null,
+          color: null,
+          notes: visibleNotes,
+        },
+      ];
+    }
+
+    const groups = new Map<
+      string,
+      {
+        key: string;
+        label: string;
+        color: string | null;
+        notes: Note[];
+      }
+    >();
+
+    for (const note of visibleNotes) {
+      const key = note.projectId ?? "without-project";
+      const current = groups.get(key);
+      if (current) {
+        current.notes.push(note);
+        continue;
+      }
+      groups.set(key, {
+        key,
+        label: note.project?.name ?? "プロジェクトなし",
+        color: note.project?.color ?? null,
+        notes: [note],
+      });
+    }
+
+    return Array.from(groups.values());
+  }, [noteGrouping, visibleNotes]);
+
+  useEffect(() => {
+    if (!listMenuOpen) return;
+
+    function onPointerDown(event: MouseEvent) {
+      if (!listMenuRef.current?.contains(event.target as Node)) {
+        setListMenuOpen(false);
+      }
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setListMenuOpen(false);
+    }
+
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [listMenuOpen]);
+
+  useEffect(() => {
+    if (searchOpen) searchInputRef.current?.focus();
+  }, [searchOpen]);
 
   useEffect(() => {
     if (visibleNotes.length === 0) {
+      if (selectedId) {
+        discardUntouchedNewNote(
+          notes.find((note) => note.id === selectedId) ?? null,
+        );
+      }
       setSelectedId(null);
     } else if (
       !selectedId ||
       !visibleNotes.some((note) => note.id === selectedId)
     ) {
+      if (selectedId) {
+        discardUntouchedNewNote(
+          notes.find((note) => note.id === selectedId) ?? null,
+        );
+      }
       setSelectedId(visibleNotes[0].id);
     }
-  }, [selectedId, visibleNotes]);
+  }, [
+    discardUntouchedNewNote,
+    notes,
+    selectedId,
+    visibleNotes,
+  ]);
 
   const selectedNote =
-    notes.find((note) => note.id === selectedId) ?? null;
+    visibleNotes.find((note) => note.id === selectedId) ?? null;
+  selectedNoteRef.current = selectedNote;
+
+  useEffect(() => {
+    pageMountedRef.current = true;
+    return () => {
+      pageMountedRef.current = false;
+      discardUntouchedNewNote(selectedNoteRef.current);
+    };
+  }, [discardUntouchedNewNote]);
 
   const createNote = useMutation({
     mutationFn: () =>
@@ -304,15 +664,27 @@ export function NotesPage() {
         body: JSON.stringify({
           title: "無題のメモ",
           content: "",
-          projectId: projectFilter || null,
+          projectId: null,
         }),
       }),
     onSuccess: (created) => {
+      if (!pageMountedRef.current) {
+        void apiFetch<{ ok: true }>(`/api/notes/${created.id}`, {
+          method: "DELETE",
+          keepalive: true,
+        }).catch(() => {
+          void queryClient.invalidateQueries({ queryKey: ["notes"] });
+        });
+        return;
+      }
+      discardableNoteIdsRef.current.add(created.id);
       queryClient.setQueryData<Note[]>(["notes"], (current = []) => [
         created,
         ...current,
       ]);
       setSearch("");
+      setSearchOpen(false);
+      setShowArchived(false);
       setSelectedId(created.id);
       setMobileListOpen(false);
     },
@@ -323,6 +695,7 @@ export function NotesPage() {
     mutationFn: (id: string) =>
       apiFetch<{ ok: true }>(`/api/notes/${id}`, { method: "DELETE" }),
     onSuccess: (_result, id) => {
+      discardableNoteIdsRef.current.delete(id);
       queryClient.setQueryData<Note[]>(["notes"], (current = []) =>
         current.filter((note) => note.id !== id),
       );
@@ -332,8 +705,39 @@ export function NotesPage() {
     onError: () => toast.error("メモを削除できませんでした"),
   });
 
+  const setNoteArchived = useMutation({
+    mutationFn: ({
+      id,
+      archived,
+    }: {
+      id: string;
+      archived: boolean;
+    }) =>
+      apiFetch<Note>(`/api/notes/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ archived }),
+      }),
+    onSuccess: (updated) => {
+      discardableNoteIdsRef.current.delete(updated.id);
+      queryClient.setQueryData<Note[]>(["notes"], (current = []) =>
+        current
+          .map((note) => (note.id === updated.id ? updated : note))
+          .sort(
+            (a, b) =>
+              new Date(b.updatedAt).getTime() -
+              new Date(a.updatedAt).getTime(),
+          ),
+      );
+      toast.success(
+        updated.archived ? "メモをアーカイブしました" : "メモを復元しました",
+      );
+    },
+    onError: () => toast.error("メモの状態を変更できませんでした"),
+  });
+
   const handleSaved = useCallback(
     (updated: Note) => {
+      discardableNoteIdsRef.current.delete(updated.id);
       queryClient.setQueryData<Note[]>(["notes"], (current = []) =>
         current
           .map((note) => (note.id === updated.id ? updated : note))
@@ -355,50 +759,192 @@ export function NotesPage() {
           mobileListOpen ? "flex" : "hidden",
         )}
       >
-        <div className="flex min-h-14 shrink-0 items-center justify-between border-b border-neutral-200 px-3">
-          <div>
-            <h1 className="text-sm font-semibold text-neutral-900">メモ</h1>
-            <p className="text-[11px] text-neutral-400">{notes.length}件</p>
+        <div className="flex min-h-14 shrink-0 items-center justify-between gap-2 px-3">
+          {searchOpen ? (
+            <div className="flex min-w-0 flex-1 items-center">
+              <input
+                ref={searchInputRef}
+                type="text"
+                role="searchbox"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    setSearch("");
+                    setSearchOpen(false);
+                  }
+                }}
+                placeholder="メモを検索"
+                aria-label="メモを検索"
+                className="h-8 min-w-0 flex-1 bg-transparent px-1.5 text-sm text-neutral-800 outline-none placeholder:text-neutral-400"
+              />
+            </div>
+          ) : (
+            <span className="min-w-0 truncate px-1.5 text-sm font-medium text-neutral-500">
+              {showArchived ? "アーカイブ済み" : "すべてのメモ"}
+            </span>
+          )}
+
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => {
+                if (searchOpen) {
+                  setSearch("");
+                  setSearchOpen(false);
+                } else {
+                  setSearchOpen(true);
+                }
+              }}
+              aria-label={searchOpen ? "検索を閉じる" : "メモを検索"}
+              title={searchOpen ? "検索を閉じる" : "メモを検索"}
+              className="inline-flex size-8 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-200/70 hover:text-neutral-800"
+            >
+              {searchOpen ? (
+                <X className="size-4" />
+              ) : (
+                <Search className="size-[18px]" />
+              )}
+            </button>
+            <div ref={listMenuRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setListMenuOpen((open) => !open)}
+                aria-label="メモ一覧メニュー"
+                aria-haspopup="menu"
+                aria-expanded={listMenuOpen}
+                className="inline-flex size-8 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-200/70 hover:text-neutral-800"
+              >
+                <Ellipsis className="size-5" />
+              </button>
+              {listMenuOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-full z-20 mt-1 w-60 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-lg"
+                >
+                  <p className="px-2.5 pb-1 pt-1 text-[11px] font-medium text-neutral-400">
+                    整理
+                  </p>
+                  {(
+                    [
+                      ["project", "プロジェクト別"],
+                      ["recent", "1つのリストで表示"],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={noteGrouping === value}
+                      onClick={() => {
+                        setNoteGrouping(value);
+                        setListMenuOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+                    >
+                      <Check
+                        className={cn(
+                          "size-4 shrink-0",
+                          noteGrouping === value
+                            ? "text-neutral-700"
+                            : "text-transparent",
+                        )}
+                      />
+                      {label}
+                    </button>
+                  ))}
+
+                  <p className="px-2.5 pb-1 pt-3 text-[11px] font-medium text-neutral-400">
+                    並べ替え
+                  </p>
+                  {(
+                    [
+                      ["updated", "最終更新日時"],
+                      ["created", "作成日時"],
+                      ["title", "タイトル順"],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={noteSort === value}
+                      onClick={() => {
+                        setNoteSort(value);
+                        setListMenuOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+                    >
+                      <Check
+                        className={cn(
+                          "size-4 shrink-0",
+                          noteSort === value
+                            ? "text-neutral-700"
+                            : "text-transparent",
+                        )}
+                      />
+                      {label}
+                    </button>
+                  ))}
+
+                  <p className="px-2.5 pb-1 pt-3 text-[11px] font-medium text-neutral-400">
+                    ステータス
+                  </p>
+                  {(
+                    [
+                      ["active", "通常のメモ"],
+                      ["archived", "アーカイブ済み"],
+                    ] as const
+                  ).map(([value, label]) => {
+                    const selected =
+                      showArchived === (value === "archived");
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={selected}
+                        onClick={() => {
+                          setShowArchived(value === "archived");
+                          setListMenuOpen(false);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+                      >
+                        <Check
+                          className={cn(
+                            "size-4 shrink-0",
+                            selected
+                              ? "text-neutral-700"
+                              : "text-transparent",
+                          )}
+                        />
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                discardUntouchedNewNote(selectedNoteRef.current);
+                setSearch("");
+                setSearchOpen(false);
+                setShowArchived(false);
+                createNote.mutate();
+              }}
+              disabled={createNote.isPending}
+              aria-label="新規メモ"
+              title="新規メモ"
+              className="inline-flex size-8 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-200/70 hover:text-neutral-800 disabled:opacity-50"
+            >
+              <SquarePen className="size-[18px]" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => createNote.mutate()}
-            disabled={createNote.isPending}
-            className="inline-flex h-8 items-center gap-1 rounded-md bg-[#2e3a35] px-2.5 text-xs font-medium text-white hover:bg-[#24302b] disabled:opacity-50"
-          >
-            <Plus className="size-4" />
-            新規
-          </button>
         </div>
 
-        <div className="shrink-0 space-y-2 border-b border-neutral-200 p-3">
-          <label className="relative block">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-neutral-400" />
-            <input
-              type="search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="メモを検索"
-              aria-label="メモを検索"
-              className="h-8 w-full rounded-md border border-neutral-300 bg-white pl-8 pr-2 text-xs outline-none placeholder:text-neutral-400 focus:ring-2 focus:ring-neutral-300"
-            />
-          </label>
-          <select
-            value={projectFilter}
-            onChange={(event) => setProjectFilter(event.target.value)}
-            aria-label="プロジェクトで絞り込み"
-            className="h-8 w-full rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-700 outline-none focus:ring-2 focus:ring-neutral-300"
-          >
-            <option value="">すべてのプロジェクト</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.client.name} · {project.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="subtle-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-3">
           {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <div className="size-5 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-700" />
@@ -407,51 +953,93 @@ export function NotesPage() {
             <div className="flex h-40 flex-col items-center justify-center px-6 text-center text-neutral-400">
               <FileText className="mb-2 size-6" />
               <p className="text-xs">
-                {notes.length === 0
-                  ? "メモはまだありません"
-                  : "条件に一致するメモがありません"}
+                {search.trim()
+                  ? "一致するメモがありません"
+                  : showArchived
+                    ? "アーカイブ済みのメモはありません"
+                    : "メモはまだありません"}
               </p>
             </div>
           ) : (
-            <ul className="divide-y divide-neutral-200">
-              {visibleNotes.map((note) => {
-                const active = note.id === selectedId;
-                return (
-                  <li key={note.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedId(note.id);
-                        setMobileListOpen(false);
-                      }}
-                      className={cn(
-                        "w-full border-l-2 px-3 py-3 text-left transition-colors",
-                        active
-                          ? "border-[#2e3a35] bg-white"
-                          : "border-transparent hover:bg-white/80",
-                      )}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="truncate text-sm font-medium text-neutral-800">
-                          {note.title}
-                        </span>
-                        <time className="shrink-0 text-[10px] text-neutral-400">
-                          {formatUpdatedAt(note.updatedAt)}
-                        </time>
-                      </div>
-                      <p className="mt-1 truncate text-xs text-neutral-500">
-                        {noteExcerpt(note.content)}
-                      </p>
-                      <p className="mt-1.5 truncate text-[10px] text-neutral-400">
-                        {note.project
-                          ? `${note.project.client.name} · ${note.project.name}`
-                          : "プロジェクトなし"}
-                      </p>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+            <div className="space-y-4">
+              {noteGroups.map((group) => (
+                <section key={group.key}>
+                  {group.label && (
+                    <div className="flex h-7 items-center gap-2 px-2 text-[11px] font-medium text-neutral-400">
+                      <span
+                        className={cn(
+                          "size-2 shrink-0 rounded-full",
+                          !group.color && "border border-neutral-300",
+                        )}
+                        style={
+                          group.color
+                            ? { backgroundColor: group.color }
+                            : undefined
+                        }
+                      />
+                      <span className="truncate">{group.label}</span>
+                    </div>
+                  )}
+                  <ul className="space-y-0.5">
+                    {group.notes.map((note) => {
+                      const active = note.id === selectedId;
+                      return (
+                        <li
+                          key={note.id}
+                          className={cn(
+                            "group relative rounded-lg transition-colors",
+                            active
+                              ? "bg-neutral-200/80"
+                              : "hover:bg-neutral-200/50 focus-within:bg-neutral-200/50",
+                          )}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (note.id !== selectedId) {
+                                discardUntouchedNewNote(
+                                  selectedNoteRef.current,
+                                );
+                              }
+                              setSelectedId(note.id);
+                              setMobileListOpen(false);
+                            }}
+                            className={cn(
+                              "flex h-9 w-full cursor-pointer items-center rounded-lg py-0 pl-3 pr-10 text-left text-sm",
+                              active
+                                ? "text-neutral-900"
+                                : "text-neutral-700 group-hover:text-neutral-900",
+                            )}
+                          >
+                            <span className="truncate">{note.title}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              discardableNoteIdsRef.current.delete(note.id);
+                              setNoteArchived.mutate({
+                                id: note.id,
+                                archived: !note.archived,
+                              });
+                            }}
+                            disabled={setNoteArchived.isPending}
+                            aria-label={`${note.title}を${note.archived ? "復元" : "アーカイブ"}`}
+                            title={note.archived ? "復元" : "アーカイブ"}
+                            className="pointer-events-none absolute right-1 top-1/2 inline-flex size-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-neutral-400 opacity-0 transition-opacity hover:bg-neutral-300/60 hover:text-neutral-700 focus:pointer-events-auto focus:opacity-100 focus-visible:ring-2 focus-visible:ring-neutral-400 group-hover:pointer-events-auto group-hover:opacity-100 disabled:opacity-40"
+                          >
+                            {note.archived ? (
+                              <ArchiveRestore className="size-4" />
+                            ) : (
+                              <Archive className="size-4" />
+                            )}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              ))}
+            </div>
           )}
         </div>
       </aside>
@@ -467,17 +1055,32 @@ export function NotesPage() {
             key={selectedNote.id}
             note={selectedNote}
             projects={projects}
-            onBack={() => setMobileListOpen(true)}
+            onBack={() => {
+              discardUntouchedNewNote(selectedNoteRef.current);
+              setMobileListOpen(true);
+            }}
+            onArchive={() => {
+              discardableNoteIdsRef.current.delete(selectedNote.id);
+              setNoteArchived.mutate({
+                id: selectedNote.id,
+                archived: !selectedNote.archived,
+              });
+            }}
             onDelete={() => setDeleteDialogOpen(true)}
             onSaved={handleSaved}
+            onDraftChange={handleDraftChange}
           />
         </div>
       ) : (
         <section className="hidden min-h-0 min-w-0 flex-1 flex-col items-center justify-center bg-white text-neutral-400 md:flex">
           <FileText className="mb-3 size-8" />
           <p className="text-sm">
-            {notes.length === 0
-              ? "新しいメモを作成してください"
+            {search.trim()
+              ? "一致するメモがありません"
+              : visibleNotes.length === 0
+                ? showArchived
+                  ? "アーカイブ済みのメモはありません"
+                  : "新しいメモを作成してください"
               : "メモを選択してください"}
           </p>
         </section>
@@ -503,6 +1106,7 @@ export function NotesPage() {
           </button>
           <button
             type="button"
+            data-dialog-autofocus
             onClick={() => {
               if (selectedNote) deleteNote.mutate(selectedNote.id);
             }}

@@ -676,6 +676,7 @@ export function ProjectsPage({
               </Button>
               <Button
                 variant="destructive"
+                data-dialog-autofocus
                 onClick={() => deleteTag.mutate(deletingTag.id)}
                 disabled={deleteTag.isPending}
               >

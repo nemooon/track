@@ -13,9 +13,11 @@ notes.get("/", async (c) => {
   const prisma = getPrisma(c.env.DB);
   const query = c.req.query("q")?.trim();
   const projectId = c.req.query("projectId");
+  const includeArchived = c.req.query("includeArchived") === "1";
 
   const list = await prisma.note.findMany({
     where: {
+      ...(!includeArchived ? { archived: false } : {}),
       ...(query
         ? {
             OR: [

@@ -47,7 +47,10 @@ export function Dialog({
     const focusFrame = requestAnimationFrame(() => {
       const content = contentRef.current;
       if (!content || content.contains(document.activeElement)) return;
-      (getFocusableElements(content)[0] ?? content).focus();
+      const preferredFocus = content.querySelector<HTMLElement>(
+        "[data-dialog-autofocus]:not([disabled])",
+      );
+      (preferredFocus ?? getFocusableElements(content)[0] ?? content).focus();
     });
 
     const isTopmost = () => {
