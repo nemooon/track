@@ -1,6 +1,7 @@
 use std::{
     io::{BufRead, BufReader, Read},
     net::{SocketAddr, TcpListener, TcpStream},
+    path::PathBuf,
     process::{Child, Command, Stdio},
     sync::Mutex,
     thread,
@@ -506,6 +507,196 @@ async fn generate_note_title(app: tauri::AppHandle, content: String) -> Result<S
     }
 }
 
+const HOMEBREW_TRACK_CASK: &str = "nemooon/tap/track";
+
+fn homebrew_executable() -> Option<PathBuf> {
+    ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
+        .into_iter()
+        .map(PathBuf::from)
+        .find(|path| path.is_file())
+}
+
+fn command_error(output: &std::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let detail = if stderr.trim().is_empty() {
+        stdout.trim()
+    } else {
+        stderr.trim()
+    };
+    if detail.is_empty() {
+        format!("終了コード: {}", output.status)
+    } else {
+        detail.to_string()
+    }
+}
+
+fn parse_brew_cask_version(output: &[u8]) -> Option<String> {
+    String::from_utf8_lossy(output)
+        .split_whitespace()
+        .nth(1)
+        .map(str::to_string)
+}
+
+fn installed_track_version(brew: &std::path::Path) -> Result<Option<String>, String> {
+    let output = Command::new(brew)
+        .args(["list", "--cask", "--versions", "track"])
+        .output()
+        .map_err(|error| format!("Homebrewを実行できません: {error}"))?;
+    Ok(output
+        .status
+        .success()
+        .then(|| parse_brew_cask_version(&output.stdout))
+        .flatten())
+}
+
+fn run_homebrew_update(brew: &std::path::Path, expected_version: &str) -> Result<(), String> {
+    if installed_track_version(brew)?.is_none() {
+        return Err(
+            "TrackはHomebrewでインストールされていません。ターミナルからアップデートしてください。"
+                .into(),
+        );
+    }
+
+    let output = Command::new(brew)
+        .args([
+            "upgrade",
+            "--cask",
+            "--no-quit",
+            "--no-ask",
+            HOMEBREW_TRACK_CASK,
+        ])
+        .env("HOMEBREW_NO_ENV_HINTS", "1")
+        .output()
+        .map_err(|error| format!("Homebrewを実行できません: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "アップデートに失敗しました。\n\n{}",
+            command_error(&output)
+        ));
+    }
+
+    match installed_track_version(brew)? {
+        Some(version) if version == expected_version => Ok(()),
+        Some(version) => Err(format!(
+            "Homebrewにはまだバージョン{expected_version}が反映されていません（現在: {version}）。少し待ってからもう一度お試しください。"
+        )),
+        None => Err(
+            "アップデート後のバージョンを確認できませんでした。ターミナルから状態を確認してください。"
+                .into(),
+        ),
+    }
+}
+
+#[tauri::command]
+async fn install_update(expected_version: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let brew = homebrew_executable()
+            .ok_or("Homebrewが見つかりません。ターミナルからアップデートしてください。")?;
+        run_homebrew_update(&brew, &expected_version)
+    })
+    .await
+    .map_err(|error| format!("アップデート処理を完了できません: {error}"))?
+}
+
+#[tauri::command]
+fn restart_track(app: tauri::AppHandle) {
+    app.restart();
+}
+
+#[cfg(test)]
+mod update_tests {
+    use super::{parse_brew_cask_version, run_homebrew_update};
+    #[cfg(unix)]
+    use std::{
+        fs,
+        os::unix::fs::PermissionsExt,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    #[test]
+    fn parses_homebrew_cask_version() {
+        assert_eq!(
+            parse_brew_cask_version(b"track 0.4.0\n"),
+            Some("0.4.0".into())
+        );
+        assert_eq!(parse_brew_cask_version(b""), None);
+    }
+
+    #[cfg(unix)]
+    fn fake_brew(name: &str, body: &str) -> (PathBuf, PathBuf) {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "track-update-{name}-{}-{stamp}",
+            std::process::id()
+        ));
+        fs::create_dir(&directory).unwrap();
+        let brew = directory.join("brew");
+        fs::write(&brew, format!("#!/bin/sh\nset -eu\n{body}\n")).unwrap();
+        let mut permissions = fs::metadata(&brew).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&brew, permissions).unwrap();
+        (brew, directory)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn runs_expected_homebrew_upgrade_and_verifies_version() {
+        let (brew, directory) = fake_brew(
+            "success",
+            r#"
+directory=$(dirname "$0")
+if [ "$1" = "list" ]; then
+  if [ -f "$directory/updated" ]; then
+    echo "track 0.4.0"
+  else
+    echo "track 0.3.0"
+  fi
+elif [ "$1" = "upgrade" ]; then
+  printf '%s\n' "$*" > "$directory/arguments"
+  touch "$directory/updated"
+else
+  exit 1
+fi
+"#,
+        );
+
+        run_homebrew_update(&brew, "0.4.0").unwrap();
+        assert_eq!(
+            fs::read_to_string(directory.join("arguments"))
+                .unwrap()
+                .trim(),
+            "upgrade --cask --no-quit --no-ask nemooon/tap/track"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reports_when_homebrew_tap_has_not_caught_up() {
+        let (brew, directory) = fake_brew(
+            "tap-lag",
+            r#"
+if [ "$1" = "list" ]; then
+  echo "track 0.3.0"
+elif [ "$1" = "upgrade" ]; then
+  exit 0
+else
+  exit 1
+fi
+"#,
+        );
+
+        let error = run_homebrew_update(&brew, "0.4.0").unwrap_err();
+        assert!(error.contains("まだバージョン0.4.0が反映されていません"));
+        fs::remove_dir_all(directory).unwrap();
+    }
+}
+
 #[tauri::command]
 fn show_ai_integration_installer(app: tauri::AppHandle) {
     #[cfg(target_os = "macos")]
@@ -519,6 +710,8 @@ const DEV_FRONTEND_URL: &str = "http://127.0.0.1:5173";
 const SETTINGS_MENU_ID: &str = "open-settings";
 #[cfg(desktop)]
 const ABOUT_MENU_ID: &str = "open-about";
+#[cfg(desktop)]
+const CHECK_FOR_UPDATES_MENU_ID: &str = "check-for-updates";
 #[cfg(target_os = "macos")]
 const INSTALL_AI_INTEGRATION_MENU_ID: &str = "install-ai-integration";
 #[cfg(desktop)]
@@ -819,6 +1012,13 @@ pub fn run() {
                         true,
                         None::<&str>,
                     )?;
+                    let check_for_updates = MenuItem::with_id(
+                        app,
+                        CHECK_FOR_UPDATES_MENU_ID,
+                        "アップデートを確認…",
+                        true,
+                        None::<&str>,
+                    )?;
                     let settings = MenuItem::with_id(
                         app,
                         SETTINGS_MENU_ID,
@@ -887,6 +1087,7 @@ pub fn run() {
 
                     let app_menu = SubmenuBuilder::new(app, &app_name)
                         .item(&about)
+                        .item(&check_for_updates)
                         .separator()
                         .item(&settings)
                         .item(&install_ai_integration)
@@ -970,6 +1171,14 @@ pub fn run() {
             })
             .on_menu_event(|app, event| match event.id().as_ref() {
                 ABOUT_MENU_ID => open_about_dialog(app),
+                CHECK_FOR_UPDATES_MENU_ID => {
+                    focus_main_window(app);
+                    if let Some(window) = app.get_webview_window("main") {
+                        if let Err(error) = window.emit("track-check-for-updates", ()) {
+                            log::error!("アップデート確認を開始できません: {error}");
+                        }
+                    }
+                }
                 #[cfg(target_os = "macos")]
                 INSTALL_AI_INTEGRATION_MENU_ID => prompt_install_ai_integration(app),
                 SETTINGS_MENU_ID => open_settings_overlay(app),
@@ -995,6 +1204,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             generate_weekly_report,
             generate_note_title,
+            install_update,
+            restart_track,
             show_ai_integration_installer
         ])
         .setup(|app| {

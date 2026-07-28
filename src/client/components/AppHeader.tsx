@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BarChart3,
   Bot,
   CalendarDays,
+  CircleArrowDown,
   Ellipsis,
   ExternalLink,
   Info,
   Keyboard,
   NotebookPen,
+  RefreshCw,
   Settings,
 } from "lucide-react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -15,6 +17,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Link, useLocation } from "react-router";
+import { toast } from "sonner";
 import { useAppUi } from "@client/components/AppUiContext";
 import {
   Dialog,
@@ -23,10 +26,14 @@ import {
   DialogTitle,
 } from "@client/components/ui/dialog";
 import { cn } from "@client/lib/utils";
+import { findAvailableUpdate } from "@client/lib/appUpdate";
 import packageJson from "../../../package.json";
 import appIconUrl from "../../../src-tauri/icons/128x128.png";
 
 const REPOSITORY_URL = "https://github.com/nemooon/track";
+const UPDATE_CHECK_INTERVAL = 24 * 60 * 60 * 1000;
+const UPDATE_COMMAND =
+  "brew upgrade --cask --no-quit --no-ask nemooon/tap/track";
 
 const views = [
   { href: "/calendar", label: "カレンダー", icon: CalendarDays, shortcut: "1" },
@@ -62,13 +69,60 @@ const shortcutGroups = [
 ] as const;
 
 export function AppHeader() {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const { openSettings } = useAppUi();
+  const updatePreviewVersion = import.meta.env.DEV
+    ? new URLSearchParams(search).get("trackUpdateVersion")
+    : null;
   const [menuOpen, setMenuOpen] = useState(false);
-  const [openDialog, setOpenDialog] = useState<"shortcuts" | "about" | null>(
-    null,
+  const [openDialog, setOpenDialog] = useState<
+    "shortcuts" | "about" | "update" | null
+  >(null);
+  const [availableVersion, setAvailableVersion] = useState<string | null>(null);
+  const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateInstalled, setUpdateInstalled] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [reserveTrafficLightSpace, setReserveTrafficLightSpace] = useState(
+    "__TAURI_INTERNALS__" in window,
   );
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const checkForUpdates = useCallback(async (announceResult = false) => {
+    setIsCheckingForUpdates(true);
+    try {
+      const version =
+        updatePreviewVersion ??
+        (await findAvailableUpdate(packageJson.version));
+      setAvailableVersion(version);
+      if (announceResult) {
+        if (version) {
+          toast.info(`Trackの新しいバージョン ${version} があります`);
+        } else {
+          toast.success(`Track ${packageJson.version} は最新版です`);
+        }
+      }
+    } catch (error) {
+      console.info("アップデートを確認できませんでした", error);
+      if (announceResult) {
+        toast.error("アップデートを確認できませんでした");
+      }
+    } finally {
+      setIsCheckingForUpdates(false);
+    }
+  }, [updatePreviewVersion]);
+
+  useEffect(() => {
+    if (updatePreviewVersion) {
+      void checkForUpdates();
+      return;
+    }
+    if (!("__TAURI_INTERNALS__" in window)) return;
+
+    void checkForUpdates();
+    const timer = window.setInterval(checkForUpdates, UPDATE_CHECK_INTERVAL);
+    return () => window.clearInterval(timer);
+  }, [checkForUpdates, updatePreviewVersion]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -92,9 +146,17 @@ export function AppHeader() {
   useEffect(() => {
     if (!("__TAURI_INTERNALS__" in window)) return;
 
+    const appWindow = getCurrentWindow();
     let active = true;
     let unlisten: UnlistenFn | undefined;
-    void listen("track-open-about", () => setOpenDialog("about")).then(
+
+    const syncTrafficLightSpace = async () => {
+      const fullscreen = await appWindow.isFullscreen();
+      if (active) setReserveTrafficLightSpace(!fullscreen);
+    };
+
+    void syncTrafficLightSpace();
+    void appWindow.onResized(() => void syncTrafficLightSpace()).then(
       (dispose) => {
         if (active) unlisten = dispose;
         else dispose();
@@ -107,25 +169,84 @@ export function AppHeader() {
     };
   }, []);
 
-  function startWindowDrag(event: React.MouseEvent<HTMLElement>) {
-    if (
-      event.button !== 0 ||
-      !("__TAURI_INTERNALS__" in window) ||
-      (event.target as HTMLElement).closest(
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+
+    let active = true;
+    const unlisteners: UnlistenFn[] = [];
+    void Promise.all([
+      listen("track-open-about", () => setOpenDialog("about")),
+      listen("track-check-for-updates", () => void checkForUpdates(true)),
+    ]).then((disposers) => {
+      if (active) unlisteners.push(...disposers);
+      else disposers.forEach((dispose) => dispose());
+    });
+
+    return () => {
+      active = false;
+      unlisteners.forEach((dispose) => dispose());
+    };
+  }, [checkForUpdates]);
+
+  function isWindowControlTarget(event: React.MouseEvent<HTMLElement>) {
+    return (
+      event.button === 0 &&
+      "__TAURI_INTERNALS__" in window &&
+      !(event.target as HTMLElement).closest(
         "a, button, input, select, textarea, [role='menu'], [role='dialog']",
       )
-    ) {
-      return;
-    }
+    );
+  }
+
+  function startWindowDrag(event: React.MouseEvent<HTMLElement>) {
+    if (!isWindowControlTarget(event) || event.detail > 1) return;
 
     event.preventDefault();
     void getCurrentWindow().startDragging();
   }
 
+  function toggleWindowMaximize(event: React.MouseEvent<HTMLElement>) {
+    if (!isWindowControlTarget(event)) return;
+
+    event.preventDefault();
+    void getCurrentWindow().toggleMaximize();
+  }
+
+  async function installUpdate() {
+    if (!availableVersion) return;
+    setIsUpdating(true);
+    setUpdateError(null);
+    try {
+      if (updatePreviewVersion) {
+        await new Promise((resolve) => window.setTimeout(resolve, 800));
+      } else {
+        await invoke("install_update", { expectedVersion: availableVersion });
+      }
+      setUpdateInstalled(true);
+    } catch (error) {
+      setUpdateError(String(error));
+    } finally {
+      setIsUpdating(false);
+    }
+  }
+
+  function restartTrack() {
+    if (updatePreviewVersion) {
+      setOpenDialog(null);
+      toast.success("再起動処理を確認しました");
+      return;
+    }
+    void invoke("restart_track");
+  }
+
   return (
     <header
       onMouseDown={startWindowDrag}
-      className="relative flex h-11 shrink-0 items-center border-b border-[#1d2824] bg-[#2e3a35] pl-[92px] pr-3"
+      onDoubleClick={toggleWindowMaximize}
+      className={cn(
+        "relative flex h-11 shrink-0 items-center border-b border-[#1d2824] bg-[#2e3a35] pr-3",
+        reserveTrafficLightSpace ? "pl-[92px]" : "pl-3",
+      )}
     >
       <nav className="inline-flex h-full items-center gap-1">
         {views.map(({ href, label, icon: Icon, shortcut }) => {
@@ -154,7 +275,11 @@ export function AppHeader() {
         <button
           type="button"
           onClick={() => setMenuOpen((current) => !current)}
-          aria-label="アプリメニュー"
+          aria-label={
+            availableVersion
+              ? `アプリメニュー、新しいバージョン${availableVersion}があります`
+              : "アプリメニュー"
+          }
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           className={cn(
@@ -163,6 +288,12 @@ export function AppHeader() {
           )}
         >
           <Ellipsis className="size-5" />
+          {availableVersion && (
+            <span
+              className="absolute right-0.5 top-0.5 size-2 rounded-full bg-emerald-400 ring-2 ring-[#2e3a35]"
+              aria-hidden
+            />
+          )}
         </button>
 
         {menuOpen && (
@@ -170,6 +301,29 @@ export function AppHeader() {
             role="menu"
             className="absolute right-0 top-full z-50 mt-1 min-w-56 rounded-lg border border-neutral-200 bg-white p-1 shadow-lg"
           >
+            {availableVersion && (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setUpdateError(null);
+                    setOpenDialog("update");
+                  }}
+                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+                >
+                  <CircleArrowDown className="size-4 shrink-0 text-emerald-600" />
+                  <span className="whitespace-nowrap">
+                    新しいバージョンがあります
+                  </span>
+                </button>
+                <div
+                  role="separator"
+                  className="mx-2 my-1 h-px bg-neutral-200"
+                />
+              </>
+            )}
             <button
               type="button"
               role="menuitem"
@@ -181,6 +335,28 @@ export function AppHeader() {
             >
               <Keyboard className="size-4 text-neutral-500" />
               <span>キーボードショートカット</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false);
+                void checkForUpdates(true);
+              }}
+              disabled={isCheckingForUpdates}
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 disabled:cursor-wait disabled:text-neutral-400"
+            >
+              <RefreshCw
+                className={cn(
+                  "size-4 text-neutral-500",
+                  isCheckingForUpdates && "animate-spin",
+                )}
+              />
+              <span>
+                {isCheckingForUpdates
+                  ? "アップデートを確認中…"
+                  : "アップデートを確認…"}
+              </span>
             </button>
             <button
               type="button"
@@ -270,6 +446,81 @@ export function AppHeader() {
           >
             閉じる
           </button>
+        </DialogFooter>
+      </Dialog>
+
+      <Dialog
+        open={openDialog === "update"}
+        onOpenChange={(open) => {
+          if (!open && !isUpdating) setOpenDialog(null);
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>Trackをアップデート</DialogTitle>
+        </DialogHeader>
+        {updateInstalled ? (
+          <div className="space-y-2 text-sm text-neutral-600">
+            <p>
+              バージョン {availableVersion} のインストールが完了しました。
+            </p>
+            <p>再起動すると新しいバージョンへ切り替わります。</p>
+          </div>
+        ) : (
+          <div className="space-y-4 text-sm text-neutral-600">
+            <p>
+              バージョン {packageJson.version} から {availableVersion}{" "}
+              へアップデートします。
+            </p>
+            <div>
+              <p className="mb-1.5 text-xs text-neutral-400">
+                実行するコマンド
+              </p>
+              <code className="block overflow-x-auto rounded-md bg-neutral-100 px-3 py-2 text-xs text-neutral-700">
+                {UPDATE_COMMAND}
+              </code>
+            </div>
+            <p className="text-xs leading-5 text-neutral-400">
+              Homebrewからダウンロードしている間もTrackはそのまま利用できます。
+            </p>
+            {updateError && (
+              <div
+                role="alert"
+                className="whitespace-pre-wrap rounded-md bg-red-50 px-3 py-2 text-xs leading-5 text-red-700"
+              >
+                {updateError}
+              </div>
+            )}
+          </div>
+        )}
+        <DialogFooter>
+          <button
+            type="button"
+            onClick={() => setOpenDialog(null)}
+            disabled={isUpdating}
+            className="rounded-md border border-neutral-200 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {updateInstalled ? "あとで" : "キャンセル"}
+          </button>
+          {updateInstalled ? (
+            <button
+              type="button"
+              data-dialog-autofocus
+              onClick={restartTrack}
+              className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white hover:bg-neutral-700"
+            >
+              再起動
+            </button>
+          ) : (
+            <button
+              type="button"
+              data-dialog-autofocus
+              onClick={() => void installUpdate()}
+              disabled={isUpdating}
+              className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white hover:bg-neutral-700 disabled:cursor-wait disabled:opacity-60"
+            >
+              {isUpdating ? "アップデート中…" : "アップデート"}
+            </button>
+          )}
         </DialogFooter>
       </Dialog>
 

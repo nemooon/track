@@ -50,6 +50,14 @@ npm run dev
 
 Vite は `/api` を Bun API にプロキシします。ローカル実行時のデータは既定で `~/.track/track.db` に保存されます。
 
+アップデート画面は、開発サーバーで次のURLを開くと実際の更新を行わずに確認できます。
+アップデート中・完了・再起動の各状態も画面上で再現されます。この指定は本番ビルドでは
+無視されます。
+
+```text
+http://127.0.0.1:5173/calendar?trackUpdateVersion=0.4.0
+```
+
 デスクトップアプリとして開発する場合は次を使います。
 
 ```bash
@@ -121,6 +129,13 @@ xattr -dr com.apple.quarantine /Applications/Track.app
 - GitHub Actionsを有効にする
 
 Homebrew Caskの原型は`packaging/homebrew/track.rb.template`に置いてあります。release workflowは実際のバージョンとsha256を埋め、tap側のCaskを新規作成または更新します。
+
+デスクトップアプリは起動時と24時間ごとにGitHub Releasesを確認します。新しい
+バージョンがある場合はヘッダー右側のアプリメニューに表示され、案内画面から
+Homebrewによるアップデートを実行できます。更新中は起動中のTrackを終了せず、
+インストール完了後に「再起動」を選ぶと新しいバージョンへ切り替わります。
+手動確認はmacOSの「Track」メニューとヘッダー右側のアプリメニューにある
+「アップデートを確認…」から実行できます。
 
 ## コマンド
 
