@@ -48,10 +48,12 @@ model Note {
   title     String
   content   String   @default("")
   archived  Boolean  @default(false)
+  pinned    Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([projectId])
+  @@index([pinned, updatedAt])
   @@index([archived, updatedAt])
   @@index([updatedAt])
 }

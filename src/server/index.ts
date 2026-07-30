@@ -26,6 +26,7 @@ import { maybeAutoBackup } from "./db/backup";
 import { initDb, db } from "./db/client";
 import { runMigrations, MIGRATIONS_PATH } from "./db/migrate";
 import { external } from "./routes/external";
+import { events } from "./routes/events";
 import { clearRuntimeInfo, writeRuntimeInfo } from "./runtime";
 import type { Env } from "./types";
 
@@ -107,6 +108,7 @@ app.route("/api/settings", settings);
 app.route("/api/data", data);
 app.route("/api/config", configRoute);
 app.route("/api/external", external);
+app.route("/api/events", events);
 
 app.get("/health", (c) => c.json({ ok: true, db: DB_PATH }));
 

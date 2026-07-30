@@ -72,9 +72,17 @@ notes.patch("/:id", async (c) => {
   const existing = await prisma.note.findUnique({ where: { id } });
   if (!existing) return c.json({ error: "not_found" }, 404);
 
+  const willBeArchived = parsed.data.archived ?? existing.archived;
+  if (willBeArchived && parsed.data.pinned === true) {
+    return c.json({ error: "archived_note_cannot_be_pinned" }, 409);
+  }
+
   const updated = await prisma.note.update({
     where: { id },
-    data: parsed.data,
+    data: {
+      ...parsed.data,
+      ...(parsed.data.archived === true ? { pinned: false } : {}),
+    },
     include: noteInclude,
   });
   return c.json(updated);

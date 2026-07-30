@@ -89,13 +89,18 @@ export function MarkdownEditor({
         root
           .querySelector<HTMLElement>(".top-bar-heading-button")
           ?.setAttribute("aria-label", "段落スタイル");
+        const headingButton = root.querySelector<HTMLElement>(
+          ".top-bar-heading-button",
+        );
+        if (headingButton) headingButton.dataset.tooltip = "段落スタイル";
         root
           .querySelectorAll<HTMLElement>(".top-bar-item")
           .forEach((button, index) => {
             const label = topBarLabels[index];
             if (!label) return;
             button.setAttribute("aria-label", label);
-            button.setAttribute("title", label);
+            button.dataset.tooltip = label;
+            button.removeAttribute("title");
           });
         setLoading(false);
       })

@@ -321,7 +321,9 @@ export function WeekCalendar({
       }),
     onSuccess: (entry) => {
       qc.setQueryData<TimeEntry[]>(["entries", weekKey], (prev) =>
-        prev ? [...prev, entry].sort((a, b) => a.start.localeCompare(b.start)) : [entry],
+        [...(prev ?? []).filter((item) => item.id !== entry.id), entry].sort((a, b) =>
+          a.start.localeCompare(b.start),
+        ),
       );
     },
     onError: () => toast.error("記録の作成に失敗しました"),

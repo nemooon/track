@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { getPrisma } from "../db/prisma";
 import { entryCreateSchema, entryUpdateSchema } from "@shared/validators";
 import { snapToQuarter, sameDay } from "@shared/time";
+import { publishEntryChange } from "../changeEvents";
 import type { Env } from "../types";
 
 const entries = new Hono<{ Bindings: Env }>();
@@ -77,6 +78,7 @@ entries.post("/", async (c) => {
     },
     include: { project: { include: { client: true } }, tags: { include: { tag: true } } },
   });
+  publishEntryChange({ action: "created", entryId: created.id });
   return c.json(created, 201);
 });
 
@@ -117,6 +119,7 @@ entries.patch("/:id", async (c) => {
     data,
     include: { project: { include: { client: true } }, tags: { include: { tag: true } } },
   });
+  publishEntryChange({ action: "updated", entryId: updated.id });
   return c.json(updated);
 });
 
@@ -126,6 +129,7 @@ entries.delete("/:id", async (c) => {
   const existing = await prisma.timeEntry.findUnique({ where: { id } });
   if (!existing) return c.json({ error: "not_found" }, 404);
   await prisma.timeEntry.delete({ where: { id } });
+  publishEntryChange({ action: "deleted", entryId: id });
   return c.json({ ok: true });
 });
 

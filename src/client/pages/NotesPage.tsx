@@ -13,9 +13,13 @@ import {
   Check,
   ChevronDown,
   ChevronLeft,
+  Copy,
   Ellipsis,
+  FileCode2,
   FileText,
   LoaderCircle,
+  Pin,
+  PinOff,
   Search,
   Sparkles,
   SquarePen,
@@ -29,17 +33,34 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@client/components/ui/dialog";
+import { Tooltip } from "@client/components/ui/tooltip";
 import { MarkdownEditor } from "@client/components/MarkdownEditor";
+import { noteToBacklog } from "@client/lib/backlog";
 import { apiFetch } from "@client/lib/fetcher";
 import { cn } from "@client/lib/utils";
 import type { Note, Project } from "@shared/types";
 
 type NoteDraft = Pick<Note, "title" | "content" | "projectId">;
-type NoteGrouping = "recent" | "project";
+type NoteGrouping = "recent" | "date" | "project";
 type NoteSort = "updated" | "created" | "title";
 type SaveStatus = "saved" | "unsaved" | "saving" | "error";
+type NoteGroup = {
+  key: string;
+  label: string | null;
+  color?: string | null;
+  notes: Note[];
+};
 
 const AUTOSAVE_DELAY_MS = 700;
+const JAPANESE_WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+const NOTE_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("ja-JP", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
 
 function serializeDraft(draft: NoteDraft) {
   return JSON.stringify(draft);
@@ -62,6 +83,53 @@ function isUntouchedNewNoteDraft(draft: NoteDraft) {
     !meaningfulContent &&
     !draft.projectId
   );
+}
+
+function localDateGroup(dateValue: string) {
+  const date = new Date(dateValue);
+  return {
+    key: [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, "0"),
+      String(date.getDate()).padStart(2, "0"),
+    ].join("-"),
+    label: `${date.getMonth() + 1}月${date.getDate()}日（${JAPANESE_WEEKDAYS[date.getDay()]}）`,
+    timestamp: new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+    ).getTime(),
+  };
+}
+
+function formatNoteDateTime(dateValue: string) {
+  return NOTE_DATE_TIME_FORMATTER.format(new Date(dateValue));
+}
+
+function noteToMarkdown(title: string, content: string) {
+  const normalizedTitle = title.trim() || "無題のメモ";
+  const normalizedContent = content.trimEnd();
+  return normalizedContent
+    ? `# ${normalizedTitle}\n\n${normalizedContent}`
+    : `# ${normalizedTitle}`;
+}
+
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    try {
+      textarea.select();
+      if (!document.execCommand("copy")) throw new Error("copy_failed");
+    } finally {
+      document.body.removeChild(textarea);
+    }
+  }
 }
 
 function fallbackTitleFromContent(content: string) {
@@ -110,6 +178,7 @@ function NoteEditor({
   note,
   projects,
   onBack,
+  onPin,
   onArchive,
   onDelete,
   onSaved,
@@ -118,6 +187,7 @@ function NoteEditor({
   note: Note;
   projects: Project[];
   onBack: () => void;
+  onPin: () => void;
   onArchive: () => void;
   onDelete: () => void;
   onSaved: (note: Note) => void;
@@ -129,6 +199,9 @@ function NoteEditor({
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [titleGenerating, setTitleGenerating] = useState(false);
+  const [copyingFormat, setCopyingFormat] = useState<
+    "markdown" | "backlog" | null
+  >(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const selectedProject =
     projects.find((project) => project.id === projectId) ?? null;
@@ -280,32 +353,61 @@ function NoteEditor({
     }
   }
 
+  async function copyNote(format: "markdown" | "backlog") {
+    if (copyingFormat) return;
+    setCopyingFormat(format);
+    const text =
+      format === "markdown"
+        ? noteToMarkdown(title, content)
+        : noteToBacklog(title, content);
+
+    try {
+      await copyText(text);
+      toast.success(
+        format === "markdown"
+          ? "Markdown形式でコピーしました"
+          : "Backlog形式でコピーしました",
+      );
+    } catch {
+      toast.error(
+        format === "markdown"
+          ? "Markdown形式でコピーできませんでした"
+          : "Backlog形式でエクスポートできませんでした",
+      );
+    } finally {
+      setCopyingFormat(null);
+    }
+  }
+
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-white">
       <div className="flex min-h-14 shrink-0 items-center gap-2 border-b border-neutral-200 px-3 sm:px-4">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="メモ一覧へ戻る"
-          className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 md:hidden"
-        >
-          <ChevronLeft className="size-5" />
-        </button>
+        <Tooltip content="メモ一覧へ戻る">
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="メモ一覧へ戻る"
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 md:hidden"
+          >
+            <ChevronLeft className="size-5" />
+          </button>
+        </Tooltip>
         <div
           ref={projectMenuRef}
           className="relative min-w-0 max-w-[40%] shrink-0"
         >
-          <button
-            type="button"
-            onClick={() => setProjectMenuOpen((open) => !open)}
-            aria-label={`プロジェクト: ${selectedProject?.name ?? "プロジェクトなし"}`}
-            aria-haspopup="listbox"
-            aria-expanded={projectMenuOpen}
-            title="プロジェクトを変更"
-            className="block max-w-full cursor-pointer truncate rounded px-1 py-1 text-left text-base text-neutral-500 outline-none hover:bg-neutral-100 hover:text-neutral-700 focus-visible:bg-neutral-100 focus-visible:ring-2 focus-visible:ring-neutral-300"
-          >
-            {selectedProject?.name ?? "プロジェクトなし"}
-          </button>
+          <Tooltip content="プロジェクトを変更">
+            <button
+              type="button"
+              onClick={() => setProjectMenuOpen((open) => !open)}
+              aria-label={`プロジェクト: ${selectedProject?.name ?? "プロジェクトなし"}`}
+              aria-haspopup="listbox"
+              aria-expanded={projectMenuOpen}
+              className="block max-w-full cursor-pointer truncate rounded py-1 text-left text-sm text-neutral-500 decoration-neutral-300 underline-offset-4 outline-none transition-colors hover:text-neutral-800 hover:underline focus-visible:ring-2 focus-visible:ring-neutral-300"
+            >
+              {selectedProject?.name ?? "プロジェクトなし"}
+            </button>
+          </Tooltip>
           {projectMenuOpen && (
             <div
               role="listbox"
@@ -380,7 +482,7 @@ function NoteEditor({
         </div>
         <span
           aria-hidden="true"
-          className="shrink-0 text-base text-neutral-300"
+          className="shrink-0 text-sm text-neutral-300"
         >
           /
         </span>
@@ -398,57 +500,103 @@ function NoteEditor({
           }}
           maxLength={200}
           aria-label="メモのタイトル"
-          className="min-w-0 flex-1 bg-transparent text-base font-medium text-neutral-900 outline-none placeholder:text-neutral-400"
+          className="min-w-0 flex-1 bg-transparent text-sm font-medium text-neutral-900 outline-none placeholder:text-neutral-400"
           placeholder="無題のメモ"
         />
-        <button
-          type="button"
-          onClick={generateTitle}
-          disabled={!content.trim() || titleGenerating}
-          aria-label="本文からタイトルを生成"
-          title={
+        <Tooltip
+          content={
             content.trim()
               ? "本文からタイトルを生成"
               : "本文を入力するとタイトルを生成できます"
           }
-          className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:cursor-not-allowed disabled:opacity-35"
         >
-          {titleGenerating ? (
-            <LoaderCircle className="size-4 animate-spin" />
-          ) : (
-            <Sparkles className="size-4" />
-          )}
-        </button>
-        <span
-          className={cn(
-            "shrink-0 text-[11px]",
-            saveStatus === "error" ? "text-red-600" : "text-neutral-400",
-          )}
-        >
-          {statusText}
-        </span>
-        <button
-          type="button"
-          onClick={onArchive}
-          aria-label={note.archived ? "メモを復元" : "メモをアーカイブ"}
-          title={note.archived ? "復元" : "アーカイブ"}
-          className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
-        >
-          {note.archived ? (
-            <ArchiveRestore className="size-4" />
-          ) : (
-            <Archive className="size-4" />
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          aria-label="メモを削除"
-          title="メモを削除"
-          className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-neutral-400 hover:bg-red-50 hover:text-red-600"
-        >
-          <Trash2 className="size-4" />
-        </button>
+          <button
+            type="button"
+            onClick={generateTitle}
+            aria-disabled={!content.trim() || titleGenerating}
+            aria-label="本文からタイトルを生成"
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 aria-disabled:cursor-not-allowed aria-disabled:opacity-35"
+          >
+            {titleGenerating ? (
+              <LoaderCircle className="size-4 animate-spin" />
+            ) : (
+              <Sparkles className="size-4" />
+            )}
+          </button>
+        </Tooltip>
+        <Tooltip content="Markdown形式でコピー">
+          <button
+            type="button"
+            onClick={() => copyNote("markdown")}
+            disabled={copyingFormat !== null}
+            aria-label="Markdown形式でコピー"
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {copyingFormat === "markdown" ? (
+              <LoaderCircle className="size-4 animate-spin" />
+            ) : (
+              <FileCode2 className="size-4" />
+            )}
+          </button>
+        </Tooltip>
+        <Tooltip content="Backlog形式でコピー">
+          <button
+            type="button"
+            onClick={() => copyNote("backlog")}
+            disabled={copyingFormat !== null}
+            aria-label="Backlog形式でコピー"
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {copyingFormat === "backlog" ? (
+              <LoaderCircle className="size-4 animate-spin" />
+            ) : (
+              <Copy className="size-4" />
+            )}
+          </button>
+        </Tooltip>
+        {!note.archived && (
+          <Tooltip content={note.pinned ? "ピン留めを外す" : "ピン留め"}>
+            <button
+              type="button"
+              onClick={onPin}
+              aria-label={
+                note.pinned ? "メモのピン留めを外す" : "メモをピン留め"
+              }
+              aria-pressed={note.pinned}
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+            >
+              {note.pinned ? (
+                <PinOff className="size-4" />
+              ) : (
+                <Pin className="size-4" />
+              )}
+            </button>
+          </Tooltip>
+        )}
+        <Tooltip content={note.archived ? "復元" : "アーカイブ"}>
+          <button
+            type="button"
+            onClick={onArchive}
+            aria-label={note.archived ? "メモを復元" : "メモをアーカイブ"}
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+          >
+            {note.archived ? (
+              <ArchiveRestore className="size-4" />
+            ) : (
+              <Archive className="size-4" />
+            )}
+          </button>
+        </Tooltip>
+        <Tooltip content="メモを削除">
+          <button
+            type="button"
+            onClick={onDelete}
+            aria-label="メモを削除"
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-neutral-400 hover:bg-red-50 hover:text-red-600"
+          >
+            <Trash2 className="size-4" />
+          </button>
+        </Tooltip>
       </div>
 
       <MarkdownEditor
@@ -463,6 +611,26 @@ function NoteEditor({
         ariaLabel="メモ本文"
         className="note-markdown-editor flex-1"
       />
+      <div className="subtle-scrollbar flex h-8 shrink-0 items-center justify-between gap-4 overflow-x-auto whitespace-nowrap border-t border-neutral-200 bg-neutral-50/70 px-3 text-[11px] text-neutral-400 sm:px-4">
+        <div className="flex items-center gap-2">
+          <span>作成 {formatNoteDateTime(note.createdAt)}</span>
+          <span aria-hidden="true">·</span>
+          <span>更新 {formatNoteDateTime(note.updatedAt)}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span>本文 {Array.from(content).length.toLocaleString("ja-JP")}文字</span>
+          {note.archived && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>アーカイブ済み</span>
+            </>
+          )}
+          <span aria-hidden="true">·</span>
+          <span className={saveStatus === "error" ? "text-red-600" : undefined}>
+            {statusText}
+          </span>
+        </div>
+      </div>
     </section>
   );
 }
@@ -554,29 +722,58 @@ export function NotesPage() {
       });
   }, [noteSort, notes, search, showArchived]);
 
+  const pinnedNotes = useMemo(
+    () => visibleNotes.filter((note) => note.pinned && !note.archived),
+    [visibleNotes],
+  );
+  const regularNotes = useMemo(
+    () => visibleNotes.filter((note) => !note.pinned || note.archived),
+    [visibleNotes],
+  );
+
   const noteGroups = useMemo(() => {
     if (noteGrouping === "recent") {
       return [
         {
           key: "recent",
-          label: null,
-          color: null,
-          notes: visibleNotes,
+          label:
+            pinnedNotes.length > 0 && regularNotes.length > 0
+              ? "その他のメモ"
+              : null,
+          notes: regularNotes,
         },
       ];
     }
 
-    const groups = new Map<
-      string,
-      {
-        key: string;
-        label: string;
-        color: string | null;
-        notes: Note[];
-      }
-    >();
+    if (noteGrouping === "date") {
+      const groups = new Map<
+        string,
+        NoteGroup & { timestamp: number }
+      >();
 
-    for (const note of visibleNotes) {
+      for (const note of regularNotes) {
+        const dateGroup = localDateGroup(note.createdAt);
+        const current = groups.get(dateGroup.key);
+        if (current) {
+          current.notes.push(note);
+          continue;
+        }
+        groups.set(dateGroup.key, {
+          key: dateGroup.key,
+          label: dateGroup.label,
+          timestamp: dateGroup.timestamp,
+          notes: [note],
+        });
+      }
+
+      return Array.from(groups.values()).sort(
+        (a, b) => b.timestamp - a.timestamp,
+      );
+    }
+
+    const groups = new Map<string, NoteGroup>();
+
+    for (const note of regularNotes) {
       const key = note.projectId ?? "without-project";
       const current = groups.get(key);
       if (current) {
@@ -592,7 +789,7 @@ export function NotesPage() {
     }
 
     return Array.from(groups.values());
-  }, [noteGrouping, visibleNotes]);
+  }, [noteGrouping, pinnedNotes.length, regularNotes]);
 
   useEffect(() => {
     if (!listMenuOpen) return;
@@ -735,6 +932,32 @@ export function NotesPage() {
     onError: () => toast.error("メモの状態を変更できませんでした"),
   });
 
+  const setNotePinned = useMutation({
+    mutationFn: ({ id, pinned }: { id: string; pinned: boolean }) =>
+      apiFetch<Note>(`/api/notes/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ pinned }),
+      }),
+    onSuccess: (updated) => {
+      discardableNoteIdsRef.current.delete(updated.id);
+      queryClient.setQueryData<Note[]>(["notes"], (current = []) =>
+        current
+          .map((note) => (note.id === updated.id ? updated : note))
+          .sort(
+            (a, b) =>
+              new Date(b.updatedAt).getTime() -
+              new Date(a.updatedAt).getTime(),
+          ),
+      );
+      toast.success(
+        updated.pinned
+          ? "メモをピン留めしました"
+          : "メモのピン留めを外しました",
+      );
+    },
+    onError: () => toast.error("メモのピン留めを変更できませんでした"),
+  });
+
   const handleSaved = useCallback(
     (updated: Note) => {
       discardableNoteIdsRef.current.delete(updated.id);
@@ -750,6 +973,86 @@ export function NotesPage() {
     },
     [queryClient],
   );
+
+  function renderNoteItem(note: Note) {
+    const active = note.id === selectedId;
+    return (
+      <li
+        key={note.id}
+        className={cn(
+          "group relative rounded-lg transition-colors",
+          active
+            ? "bg-neutral-200/80"
+            : "hover:bg-neutral-200/50 focus-within:bg-neutral-200/50",
+        )}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            if (note.id !== selectedId) {
+              discardUntouchedNewNote(selectedNoteRef.current);
+            }
+            setSelectedId(note.id);
+            setMobileListOpen(false);
+          }}
+          className={cn(
+            "flex h-9 w-full cursor-pointer items-center rounded-lg py-0 pl-3 text-left text-sm",
+            note.archived ? "pr-10" : "pr-[4.5rem]",
+            active
+              ? "text-neutral-900"
+              : "text-neutral-700 group-hover:text-neutral-900",
+          )}
+        >
+          <span className="truncate">{note.title}</span>
+        </button>
+        {!note.archived && (
+          <Tooltip content={note.pinned ? "ピン留めを外す" : "ピン留め"}>
+            <button
+              type="button"
+              onClick={() => {
+                discardableNoteIdsRef.current.delete(note.id);
+                setNotePinned.mutate({
+                  id: note.id,
+                  pinned: !note.pinned,
+                });
+              }}
+              disabled={setNotePinned.isPending}
+              aria-label={`${note.title}を${note.pinned ? "ピン留めから外す" : "ピン留めする"}`}
+              aria-pressed={note.pinned}
+              className="pointer-events-none absolute right-8 top-1/2 inline-flex size-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-neutral-400 opacity-0 transition-opacity hover:bg-neutral-300/60 hover:text-neutral-700 focus:pointer-events-auto focus:opacity-100 focus-visible:ring-2 focus-visible:ring-neutral-400 group-hover:pointer-events-auto group-hover:opacity-100 disabled:opacity-40"
+            >
+              {note.pinned ? (
+                <PinOff className="size-4" />
+              ) : (
+                <Pin className="size-4" />
+              )}
+            </button>
+          </Tooltip>
+        )}
+        <Tooltip content={note.archived ? "復元" : "アーカイブ"}>
+          <button
+            type="button"
+            onClick={() => {
+              discardableNoteIdsRef.current.delete(note.id);
+              setNoteArchived.mutate({
+                id: note.id,
+                archived: !note.archived,
+              });
+            }}
+            disabled={setNoteArchived.isPending}
+            aria-label={`${note.title}を${note.archived ? "復元" : "アーカイブ"}`}
+            className="pointer-events-none absolute right-1 top-1/2 inline-flex size-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-neutral-400 opacity-0 transition-opacity hover:bg-neutral-300/60 hover:text-neutral-700 focus:pointer-events-auto focus:opacity-100 focus-visible:ring-2 focus-visible:ring-neutral-400 group-hover:pointer-events-auto group-hover:opacity-100 disabled:opacity-40"
+          >
+            {note.archived ? (
+              <ArchiveRestore className="size-4" />
+            ) : (
+              <Archive className="size-4" />
+            )}
+          </button>
+        </Tooltip>
+      </li>
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0 overflow-hidden bg-white">
@@ -786,37 +1089,40 @@ export function NotesPage() {
           )}
 
           <div className="flex items-center gap-0.5">
-            <button
-              type="button"
-              onClick={() => {
-                if (searchOpen) {
-                  setSearch("");
-                  setSearchOpen(false);
-                } else {
-                  setSearchOpen(true);
-                }
-              }}
-              aria-label={searchOpen ? "検索を閉じる" : "メモを検索"}
-              title={searchOpen ? "検索を閉じる" : "メモを検索"}
-              className="inline-flex size-8 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-200/70 hover:text-neutral-800"
-            >
-              {searchOpen ? (
-                <X className="size-4" />
-              ) : (
-                <Search className="size-[18px]" />
-              )}
-            </button>
-            <div ref={listMenuRef} className="relative">
+            <Tooltip content={searchOpen ? "検索を閉じる" : "メモを検索"}>
               <button
                 type="button"
-                onClick={() => setListMenuOpen((open) => !open)}
-                aria-label="メモ一覧メニュー"
-                aria-haspopup="menu"
-                aria-expanded={listMenuOpen}
+                onClick={() => {
+                  if (searchOpen) {
+                    setSearch("");
+                    setSearchOpen(false);
+                  } else {
+                    setSearchOpen(true);
+                  }
+                }}
+                aria-label={searchOpen ? "検索を閉じる" : "メモを検索"}
                 className="inline-flex size-8 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-200/70 hover:text-neutral-800"
               >
-                <Ellipsis className="size-5" />
+                {searchOpen ? (
+                  <X className="size-4" />
+                ) : (
+                  <Search className="size-[18px]" />
+                )}
               </button>
+            </Tooltip>
+            <div ref={listMenuRef} className="relative">
+              <Tooltip content="メモ一覧メニュー">
+                <button
+                  type="button"
+                  onClick={() => setListMenuOpen((open) => !open)}
+                  aria-label="メモ一覧メニュー"
+                  aria-haspopup="menu"
+                  aria-expanded={listMenuOpen}
+                  className="inline-flex size-8 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-200/70 hover:text-neutral-800"
+                >
+                  <Ellipsis className="size-5" />
+                </button>
+              </Tooltip>
               {listMenuOpen && (
                 <div
                   role="menu"
@@ -827,6 +1133,7 @@ export function NotesPage() {
                   </p>
                   {(
                     [
+                      ["date", "日付別"],
                       ["project", "プロジェクト別"],
                       ["recent", "1つのリストで表示"],
                     ] as const
@@ -925,22 +1232,23 @@ export function NotesPage() {
                 </div>
               )}
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                discardUntouchedNewNote(selectedNoteRef.current);
-                setSearch("");
-                setSearchOpen(false);
-                setShowArchived(false);
-                createNote.mutate();
-              }}
-              disabled={createNote.isPending}
-              aria-label="新規メモ"
-              title="新規メモ"
-              className="inline-flex size-8 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-200/70 hover:text-neutral-800 disabled:opacity-50"
-            >
-              <SquarePen className="size-[18px]" />
-            </button>
+            <Tooltip content="新規メモ">
+              <button
+                type="button"
+                onClick={() => {
+                  discardUntouchedNewNote(selectedNoteRef.current);
+                  setSearch("");
+                  setSearchOpen(false);
+                  setShowArchived(false);
+                  createNote.mutate();
+                }}
+                disabled={createNote.isPending}
+                aria-label="新規メモ"
+                className="inline-flex size-8 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-200/70 hover:text-neutral-800 disabled:opacity-50"
+              >
+                <SquarePen className="size-[18px]" />
+              </button>
+            </Tooltip>
           </div>
         </div>
 
@@ -962,80 +1270,38 @@ export function NotesPage() {
             </div>
           ) : (
             <div className="space-y-4">
+              {pinnedNotes.length > 0 && (
+                <section>
+                  <div className="flex h-7 items-center px-2 text-[11px] font-medium text-neutral-400">
+                    <span>ピン留め</span>
+                  </div>
+                  <ul className="space-y-0.5">
+                    {pinnedNotes.map(renderNoteItem)}
+                  </ul>
+                </section>
+              )}
               {noteGroups.map((group) => (
                 <section key={group.key}>
                   {group.label && (
                     <div className="flex h-7 items-center gap-2 px-2 text-[11px] font-medium text-neutral-400">
-                      <span
-                        className={cn(
-                          "size-2 shrink-0 rounded-full",
-                          !group.color && "border border-neutral-300",
-                        )}
-                        style={
-                          group.color
-                            ? { backgroundColor: group.color }
-                            : undefined
-                        }
-                      />
+                      {group.color !== undefined && (
+                        <span
+                          className={cn(
+                            "size-2 shrink-0 rounded-full",
+                            !group.color && "border border-neutral-300",
+                          )}
+                          style={
+                            group.color
+                              ? { backgroundColor: group.color }
+                              : undefined
+                          }
+                        />
+                      )}
                       <span className="truncate">{group.label}</span>
                     </div>
                   )}
                   <ul className="space-y-0.5">
-                    {group.notes.map((note) => {
-                      const active = note.id === selectedId;
-                      return (
-                        <li
-                          key={note.id}
-                          className={cn(
-                            "group relative rounded-lg transition-colors",
-                            active
-                              ? "bg-neutral-200/80"
-                              : "hover:bg-neutral-200/50 focus-within:bg-neutral-200/50",
-                          )}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (note.id !== selectedId) {
-                                discardUntouchedNewNote(
-                                  selectedNoteRef.current,
-                                );
-                              }
-                              setSelectedId(note.id);
-                              setMobileListOpen(false);
-                            }}
-                            className={cn(
-                              "flex h-9 w-full cursor-pointer items-center rounded-lg py-0 pl-3 pr-10 text-left text-sm",
-                              active
-                                ? "text-neutral-900"
-                                : "text-neutral-700 group-hover:text-neutral-900",
-                            )}
-                          >
-                            <span className="truncate">{note.title}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              discardableNoteIdsRef.current.delete(note.id);
-                              setNoteArchived.mutate({
-                                id: note.id,
-                                archived: !note.archived,
-                              });
-                            }}
-                            disabled={setNoteArchived.isPending}
-                            aria-label={`${note.title}を${note.archived ? "復元" : "アーカイブ"}`}
-                            title={note.archived ? "復元" : "アーカイブ"}
-                            className="pointer-events-none absolute right-1 top-1/2 inline-flex size-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-neutral-400 opacity-0 transition-opacity hover:bg-neutral-300/60 hover:text-neutral-700 focus:pointer-events-auto focus:opacity-100 focus-visible:ring-2 focus-visible:ring-neutral-400 group-hover:pointer-events-auto group-hover:opacity-100 disabled:opacity-40"
-                          >
-                            {note.archived ? (
-                              <ArchiveRestore className="size-4" />
-                            ) : (
-                              <Archive className="size-4" />
-                            )}
-                          </button>
-                        </li>
-                      );
-                    })}
+                    {group.notes.map(renderNoteItem)}
                   </ul>
                 </section>
               ))}
@@ -1058,6 +1324,13 @@ export function NotesPage() {
             onBack={() => {
               discardUntouchedNewNote(selectedNoteRef.current);
               setMobileListOpen(true);
+            }}
+            onPin={() => {
+              discardableNoteIdsRef.current.delete(selectedNote.id);
+              setNotePinned.mutate({
+                id: selectedNote.id,
+                pinned: !selectedNote.pinned,
+              });
             }}
             onArchive={() => {
               discardableNoteIdsRef.current.delete(selectedNote.id);

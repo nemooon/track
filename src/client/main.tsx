@@ -17,6 +17,7 @@ import {
 } from "@client/components/AppUiContext";
 import { SettingsLayout } from "@client/components/SettingsLayout";
 import { SettingsPage } from "@client/pages/SettingsPage";
+import { ServerChangeListener } from "@client/components/ServerChangeListener";
 import "./index.css";
 
 const CalendarPage = lazy(() =>
@@ -100,6 +101,7 @@ function AppNavigationShortcuts() {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
+      <ServerChangeListener />
       <BrowserRouter>
         <AppUiProvider>
           <AppNavigationShortcuts />

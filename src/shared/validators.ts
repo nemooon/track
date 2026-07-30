@@ -46,6 +46,7 @@ export const noteUpdateSchema = z.object({
   content: z.string().max(100_000).optional(),
   projectId: z.string().min(1).nullable().optional(),
   archived: z.boolean().optional(),
+  pinned: z.boolean().optional(),
 });
 
 export const entryCreateSchema = z

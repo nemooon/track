@@ -37,6 +37,7 @@ export type Note = {
   title: string;
   content: string;
   archived: boolean;
+  pinned: boolean;
   createdAt: string;
   updatedAt: string;
 };
