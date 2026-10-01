@@ -3,6 +3,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import type { Project } from "@shared/types";
+import { usePopoverPosition } from "./usePopoverPosition";
 
 const WIDTH = 280;
 
@@ -20,6 +21,7 @@ export function ProjectSelectPopover({
   const [mounted, setMounted] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const ref = React.useRef<HTMLDivElement>(null);
+  const position = usePopoverPosition(ref, anchor, mounted);
 
   React.useEffect(() => setMounted(true), []);
 
@@ -62,14 +64,11 @@ export function ProjectSelectPopover({
 
   if (!mounted) return null;
 
-  const left = Math.min(anchor.left, window.innerWidth - WIDTH - 8);
-  const top = Math.min(anchor.top, window.innerHeight - 320);
-
   return createPortal(
     <div
       ref={ref}
-      className="fixed z-[60] overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg"
-      style={{ left, top, width: WIDTH }}
+      className="fixed z-[60] overflow-x-hidden overflow-y-auto overscroll-contain rounded-md border border-neutral-200 bg-white shadow-lg"
+      style={{ ...position, width: WIDTH }}
     >
       <input
         autoFocus

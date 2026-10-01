@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@client/lib/fetcher";
 import type { Project, Tag } from "@shared/types";
+import { usePopoverPosition } from "./usePopoverPosition";
 
 type Picked = {
   id: string | null;
@@ -46,6 +47,11 @@ export function ProjectPickerPopover({
   const [activeIndex, setActiveIndex] = React.useState(-1);
   const ref = React.useRef<HTMLDivElement>(null);
   const suggestionListRef = React.useRef<HTMLDivElement>(null);
+  const scrollActiveSuggestionRef = React.useRef(false);
+  const focusInput = React.useCallback((input: HTMLInputElement | null) => {
+    input?.focus({ preventScroll: true });
+  }, []);
+  const position = usePopoverPosition(ref, anchor, mounted);
 
   React.useEffect(() => setMounted(true), []);
 
@@ -93,11 +99,14 @@ export function ProjectPickerPopover({
   }, [matches.length, activeIndex]);
 
   React.useEffect(() => {
-    if (!visibleSuggestions || activeIndex < 0) return;
+    if (!visibleSuggestions || activeIndex < 0 || !scrollActiveSuggestionRef.current) return;
     const list = suggestionListRef.current;
     const el = list?.children[activeIndex] as HTMLElement | undefined;
     if (el && list) {
-      const top = el.offsetTop;
+      const top = el.getBoundingClientRect().top
+        - list.getBoundingClientRect().top
+        - list.clientTop
+        + list.scrollTop;
       const bottom = top + el.offsetHeight;
       if (top < list.scrollTop) list.scrollTop = top;
       else if (bottom > list.scrollTop + list.clientHeight) {
@@ -125,11 +134,13 @@ export function ProjectPickerPopover({
     if (e.key === "ArrowDown") {
       e.preventDefault();
       if (matches.length === 0) return;
+      scrollActiveSuggestionRef.current = true;
       setShowSuggestions(true);
       setActiveIndex((i) => (i < matches.length - 1 ? i + 1 : 0));
     } else if (e.key === "ArrowUp") {
       if (!visibleSuggestions) return;
       e.preventDefault();
+      scrollActiveSuggestionRef.current = true;
       setActiveIndex((i) => (i > 0 ? i - 1 : matches.length - 1));
     } else if (e.key === "Enter") {
       if (e.metaKey || e.ctrlKey) {
@@ -178,25 +189,18 @@ export function ProjectPickerPopover({
     grouped.set(p.client.name, list);
   }
 
-  // Lock position on mount. Re-clamping on every render makes the popover jump
-  // when the soft keyboard opens/closes (changing window.innerHeight).
-  const [position] = React.useState(() => ({
-    left: Math.min(anchor.left, window.innerWidth - WIDTH),
-    top: Math.min(anchor.top, window.innerHeight - 320),
-  }));
-
   if (!mounted) return null;
 
   return createPortal(
     <div
       ref={ref}
-      className="fixed z-50 overflow-hidden rounded-md border border-neutral-200 bg-white shadow-lg"
-      style={{ left: position.left, top: position.top, width: WIDTH }}
+      className="fixed z-50 overflow-x-hidden overflow-y-auto overscroll-contain rounded-md border border-neutral-200 bg-white shadow-lg"
+      style={{ ...position, width: WIDTH }}
     >
       {step === "project" ? (
         <>
           <input
-            autoFocus
+            ref={focusInput}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="プロジェクトを検索"
@@ -277,7 +281,7 @@ export function ProjectPickerPopover({
             <span className="truncate text-sm text-neutral-700">{picked.name}</span>
           </div>
           <input
-            autoFocus
+            ref={focusInput}
             value={title}
             onChange={(e) => {
               setTitle(e.target.value);
@@ -300,7 +304,10 @@ export function ProjectPickerPopover({
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => commitTitle(t)}
-                  onMouseEnter={() => setActiveIndex(i)}
+                  onMouseEnter={() => {
+                    scrollActiveSuggestionRef.current = false;
+                    setActiveIndex(i);
+                  }}
                   className={`block w-full truncate px-3 py-1 text-left text-sm ${
                     i === activeIndex ? "bg-neutral-200" : "hover:bg-neutral-100"
                   }`}
