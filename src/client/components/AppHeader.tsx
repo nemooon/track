@@ -6,6 +6,7 @@ import {
   CalendarDays,
   Ellipsis,
   ExternalLink,
+  FileText,
   Info,
   Keyboard,
   NotebookPen,
@@ -20,6 +21,7 @@ import { Link, useLocation } from "react-router";
 import { toast } from "sonner";
 import { useAppUi } from "@client/components/AppUiContext";
 import { DataTransferDialog } from "@client/components/DataTransferDialog";
+import { ReleaseNotes } from "@client/components/ReleaseNotes";
 import {
   Dialog,
   DialogFooter,
@@ -81,7 +83,7 @@ export function AppHeader() {
     : null;
   const [menuOpen, setMenuOpen] = useState(false);
   const [openDialog, setOpenDialog] = useState<
-    "shortcuts" | "data-transfer" | "about" | "update" | null
+    "shortcuts" | "data-transfer" | "about" | "update" | "release-notes" | null
   >(null);
   const [availableVersion, setAvailableVersion] = useState<string | null>(null);
   const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false);
@@ -358,6 +360,18 @@ export function AppHeader() {
               role="menuitem"
               onClick={() => {
                 setMenuOpen(false);
+                setOpenDialog("release-notes");
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+            >
+              <FileText className="size-4 text-neutral-500" />
+              <span>リリースノート</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false);
                 openSettings();
               }}
               className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
@@ -464,10 +478,35 @@ export function AppHeader() {
       </Dialog>
 
       <Dialog
+        open={openDialog === "release-notes"}
+        onOpenChange={(open) => {
+          if (!open) setOpenDialog(null);
+        }}
+        contentClassName="w-[min(640px,90vw)] max-h-[90vh] overflow-y-auto"
+      >
+        <DialogHeader>
+          <DialogTitle>リリースノート</DialogTitle>
+          <p className="text-sm text-neutral-500">Track {packageJson.version}</p>
+        </DialogHeader>
+        {openDialog === "release-notes" && <ReleaseNotes version={packageJson.version} />}
+        <DialogFooter>
+          <button
+            type="button"
+            data-dialog-autofocus
+            onClick={() => setOpenDialog(null)}
+            className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white hover:bg-neutral-700"
+          >
+            閉じる
+          </button>
+        </DialogFooter>
+      </Dialog>
+
+      <Dialog
         open={openDialog === "update"}
         onOpenChange={(open) => {
           if (!open && !isUpdating) setOpenDialog(null);
         }}
+        contentClassName="w-[min(640px,90vw)] max-h-[90vh] overflow-y-auto"
       >
         <DialogHeader>
           <DialogTitle>Trackをアップデート</DialogTitle>
@@ -485,6 +524,12 @@ export function AppHeader() {
               バージョン {packageJson.version} から {availableVersion}{" "}
               へアップデートします。
             </p>
+            {openDialog === "update" && availableVersion && (
+              <div>
+                <h3 className="mb-2 text-sm font-medium text-neutral-700">変更内容</h3>
+                <ReleaseNotes version={availableVersion} preview={!!updatePreviewVersion} />
+              </div>
+            )}
             <div>
               <p className="mb-1.5 text-xs text-neutral-400">
                 実行するコマンド

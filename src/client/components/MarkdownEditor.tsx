@@ -8,12 +8,14 @@ export function MarkdownEditor({
   value,
   onChange,
   showToolbar = true,
+  readOnly = false,
   ariaLabel = "Markdown本文",
   className,
 }: {
   value: string;
   onChange: (value: string) => void;
   showToolbar?: boolean;
+  readOnly?: boolean;
   ariaLabel?: string;
   className?: string;
 }) {
@@ -33,8 +35,14 @@ export function MarkdownEditor({
       root,
       defaultValue: value,
       features: {
-        [Crepe.Feature.TopBar]: showToolbar,
-        [Crepe.Feature.Toolbar]: showToolbar,
+        [Crepe.Feature.TopBar]: showToolbar && !readOnly,
+        [Crepe.Feature.Toolbar]: showToolbar && !readOnly,
+        ...(readOnly ? {
+          [Crepe.Feature.BlockEdit]: false,
+          [Crepe.Feature.Cursor]: false,
+          [Crepe.Feature.Placeholder]: false,
+          [Crepe.Feature.LinkTooltip]: false,
+        } : {}),
         [Crepe.Feature.ImageBlock]: false,
         [Crepe.Feature.Latex]: false,
         [Crepe.Feature.AI]: false,
@@ -54,10 +62,11 @@ export function MarkdownEditor({
         },
       },
     });
+    crepe.setReadonly(readOnly);
 
     crepe.on((listener) => {
       listener.markdownUpdated((_ctx, markdown) => {
-        if (!disposed) onChangeRef.current(markdown);
+        if (!disposed && !readOnly) onChangeRef.current(markdown);
       });
     });
 
@@ -68,7 +77,7 @@ export function MarkdownEditor({
         root
           .querySelector<HTMLElement>(".ProseMirror")
           ?.setAttribute("aria-label", ariaLabel);
-        if (!showToolbar) {
+        if (!showToolbar || readOnly) {
           setLoading(false);
           return;
         }
@@ -136,7 +145,7 @@ export function MarkdownEditor({
       )}
       {error && (
         <div className="absolute inset-0 flex items-center justify-center bg-white px-6 text-center text-sm text-red-600">
-          Markdownエディタを読み込めませんでした
+          {readOnly ? "Markdown本文を表示できませんでした" : "Markdownエディタを読み込めませんでした"}
         </div>
       )}
     </div>

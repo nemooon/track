@@ -181,6 +181,42 @@
   line-height: 1.75;
 }
 
+.release-notes-markdown .milkdown .ProseMirror {
+  min-height: 0;
+  padding: 16px 20px;
+  overflow-wrap: anywhere;
+}
+
+.release-notes-markdown .milkdown .ProseMirror h1 {
+  font-size: 22px;
+  line-height: 30px;
+}
+
+.release-notes-markdown .milkdown .ProseMirror h2 {
+  font-size: 18px;
+  line-height: 26px;
+}
+
+.release-notes-markdown .milkdown .ProseMirror h3 {
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.release-notes-markdown .milkdown .ProseMirror :is(h1, h2, h3) {
+  margin-top: 20px;
+  margin-bottom: 8px;
+}
+
+.release-notes-markdown .milkdown .ProseMirror > :first-child {
+  margin-top: 0;
+}
+
+.release-notes-markdown .milkdown .ProseMirror p,
+.release-notes-markdown .milkdown .ProseMirror li {
+  font-size: 14px;
+  line-height: 1.75;
+}
+
 /* iOS Safari auto-zooms inputs whose font-size is < 16px on focus.
    Bump form controls to 16px on touch devices to suppress that zoom. */
 @media (pointer: coarse) {

@@ -27,6 +27,9 @@
       "allow": [
         {
           "url": "https://github.com/nemooon/track"
+        },
+        {
+          "url": "https://github.com/nemooon/track/*"
         }
       ]
     }

@@ -3,6 +3,37 @@ const LATEST_RELEASE_URL =
 
 interface LatestReleaseResponse {
   tag_name?: unknown;
+  body?: unknown;
+}
+
+export interface ReleaseNotes {
+  version: string;
+  body: string;
+  url: string;
+}
+
+export async function getReleaseNotes(
+  version: string,
+  signal?: AbortSignal,
+): Promise<ReleaseNotes | null> {
+  const tag = `v${version}`;
+  const response = await fetch(
+    `https://api.github.com/repos/nemooon/track/releases/tags/${encodeURIComponent(tag)}`,
+    { headers: { Accept: "application/vnd.github+json" }, signal },
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(`GitHub Releases API: ${response.status}`);
+  }
+  const release = (await response.json()) as LatestReleaseResponse;
+  if (release.tag_name !== tag) {
+    throw new Error("リリースのバージョンが一致しません");
+  }
+  return {
+    version,
+    body: typeof release.body === "string" ? release.body.trim() : "",
+    url: `https://github.com/nemooon/track/releases/tag/${encodeURIComponent(tag)}`,
+  };
 }
 
 export function isNewerVersion(candidate: string, current: string) {
