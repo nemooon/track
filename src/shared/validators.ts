@@ -57,6 +57,12 @@ export const entryCreateSchema = z
     title: z.string().max(100).nullable().optional(),
     note: z.string().max(500).nullable().optional(),
     tagIds: z.array(z.string().min(1)).optional(),
+    aiRegistration: z.object({
+      requestId: z.string().uuid(),
+      source: z.enum(["codex", "claude"]),
+      sessionId: z.string().min(1).max(200),
+      allowOverlap: z.boolean().default(false),
+    }).optional(),
     externalEventId: z.string().min(1).max(200).optional(),
     externalEventSource: z.enum(["kot", "outlook"]).optional(),
     breakMinutes: z.number().int().min(0).max(600).optional(),

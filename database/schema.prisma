@@ -73,6 +73,7 @@ model TimeEntry {
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
   tags                TagOnEntry[]
+  aiRegistrations     AiRegistration[]
 
   @@index([start])
   @@index([projectId])
@@ -110,4 +111,18 @@ model TagOnProject {
   @@unique([tagId, projectId])
   @@index([projectId])
   @@index([tagId])
+}
+
+// 登録要求を工数とは別に保持し、削除後の再送でも復活させない。
+model AiRegistration {
+  requestId     String    @id
+  payloadHash   String
+  source        String
+  sessionId     String
+  recordedFrom  DateTime?
+  recordedUntil DateTime
+  entryId       String?
+  entry         TimeEntry? @relation(fields: [entryId], references: [id], onDelete: SetNull)
+
+  @@index([source, sessionId, recordedUntil])
 }

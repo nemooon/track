@@ -58,7 +58,14 @@ mod ai_integration {
 
     fn is_track_command(path: &Path) -> bool {
         fs::read_to_string(path)
-            .map(|content| content.contains("# /track") && content.contains("個人用工数管理アプリ"))
+            .map(|content| {
+                content.lines().any(|line| line.trim() == "<!-- track:claude-command:v1 -->")
+                    || (content.contains("# /track")
+                        && (content.contains("個人用工数管理アプリ")
+                            || (content.contains("Track (個人の工数管理アプリ)")
+                                && content.contains("~/.track/runtime.json")
+                                && content.contains("prepare --source claude"))))
+            })
             .unwrap_or(false)
     }
 
@@ -274,6 +281,30 @@ mod ai_integration {
             assert!(fs::read_to_string(home.join(".claude/commands/track.md"))
                 .unwrap()
                 .contains("second"));
+            fs::remove_dir_all(directory).unwrap();
+        }
+
+        #[test]
+        fn updates_distributed_claude_command_and_recognizes_marker() {
+            let directory = test_dir("distributed-command");
+            let root = directory.join("resources/integrations");
+            let home = directory.join("home");
+            create_sources(
+                &root,
+                "---\nname: track\n---\nnew",
+                include_str!("../../integrations/claude/track.md"),
+            );
+            fs::create_dir_all(home.join(".claude/commands")).unwrap();
+            let command = home.join(".claude/commands/track.md");
+            fs::write(
+                &command,
+                "---\ndescription: Track (個人の工数管理アプリ) に、現セッションの作業を記録する\n---\n# /track — 今のセッションをTrackに記録\n~/.track/runtime.json\nprepare --source claude",
+            ).unwrap();
+            install_from(&root, &home).unwrap();
+            assert_eq!(fs::read_to_string(&command).unwrap(), include_str!("../../integrations/claude/track.md"));
+            install_from(&root, &home).unwrap();
+            fs::write(&command, "<!-- track:claude-command:v1 -->\n説明文を変更したTrack連携").unwrap();
+            install_from(&root, &home).unwrap();
             fs::remove_dir_all(directory).unwrap();
         }
 
