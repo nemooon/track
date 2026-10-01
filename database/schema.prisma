@@ -15,6 +15,7 @@ model Settings {
   workEnd              Int      @default(1110) // 定時終了 (分, 0-1440) 18:30
   workDays             String   @default("1,2,3,4,5") // 使う曜日 (0=Sun..6=Sat) CSV
   weeklyReportTemplate String   @default("## 今週の概要\n（2〜3文で要約）\n\n## 主な作業\n- プロジェクトごとに箇条書き\n\n## 課題・確認事項\n- なければ「特になし」")
+  reportCopyFormats    String   @default("[]")
   createdAt            DateTime @default(now())
 }
 

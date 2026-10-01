@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Track",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "identifier": "com.nemooon.track",
   "build": {
     "frontendDist": "http://127.0.0.1:8787",
@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "Track",
-        "width": 1280,
-        "height": 860,
+        "width": 1440,
+        "height": 900,
         "minWidth": 375,
         "minHeight": 600,
         "resizable": true,

@@ -90,7 +90,7 @@ async function request(method: string, route: string, body?: Json): Promise<unkn
   } catch (error) {
     return fail(
       "network_error",
-      `Trackへ接続できません。Trackアプリを起動してください (${api}): ${String(error)}`,
+      `Trackへ接続できません。Trackアプリの起動とローカル通信の権限を確認してください (${api}): ${String(error)}`,
     );
   }
   const data = await response.json().catch(() => null);

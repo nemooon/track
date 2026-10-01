@@ -6,7 +6,6 @@ import {
   useState,
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
 import {
   Archive,
   ArchiveRestore,
@@ -37,6 +36,7 @@ import { Tooltip } from "@client/components/ui/tooltip";
 import { MarkdownEditor } from "@client/components/MarkdownEditor";
 import { noteToBacklog } from "@client/lib/backlog";
 import { apiFetch } from "@client/lib/fetcher";
+import { generateAiText } from "@client/lib/ai";
 import { cn } from "@client/lib/utils";
 import type { Note, Project } from "@shared/types";
 
@@ -130,28 +130,6 @@ async function copyText(text: string) {
       document.body.removeChild(textarea);
     }
   }
-}
-
-function fallbackTitleFromContent(content: string) {
-  const line = content
-    .split("\n")
-    .map((value) =>
-      value
-        .trim()
-        .replace(/^#{1,6}\s+/, "")
-        .replace(/^[-*+]\s+(?:\[[ xX]\]\s*)?/, "")
-        .replace(/^>\s*/, "")
-        .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
-        .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-        .replace(/[*_~`]/g, "")
-        .trim(),
-    )
-    .find(Boolean);
-  if (!line) throw new Error("タイトルを生成できる本文がありません。");
-  const characters = Array.from(line);
-  return characters.length > 40
-    ? `${characters.slice(0, 39).join("")}…`
-    : line;
 }
 
 function normalizeGeneratedTitle(value: string) {
@@ -329,11 +307,8 @@ function NoteEditor({
 
     setTitleGenerating(true);
     try {
-      const generated =
-        "__TAURI_INTERNALS__" in window
-          ? await invoke<string>("generate_note_title", { content })
-          : fallbackTitleFromContent(content);
-      const normalized = normalizeGeneratedTitle(generated);
+      const generated = await generateAiText("note-title", content);
+      const normalized = normalizeGeneratedTitle(generated.text);
       if (!normalized) throw new Error("タイトルを生成できませんでした。");
       onDraftChange(note.id, {
         ...draftRef.current,

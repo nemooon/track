@@ -7,6 +7,8 @@ export type Env = {
   /** ~/.track — config.json / DB の置き場 */
   DATA_DIR: string;
   HOME_DIR: string;
+  /** アプリ同梱リソースまたは開発リポジトリのルート */
+  RESOURCE_DIR: string;
   /** database/migrations/*.sql の置き場（リストア後の追いつきに使う） */
   MIGRATIONS_DIR: string;
 };

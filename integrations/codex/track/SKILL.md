@@ -5,7 +5,7 @@ description: "現在のCodexタスクにおける直近の作業を、起動中�
 
 # Track
 
-1. 作業中のディレクトリから、読み取り専用の準備コマンドを実行する。
+1. 作業中のディレクトリから、読み取り専用の準備コマンドを実行する。Codex のサンドボックスがローカル通信を制限している場合は、このコマンドに通信権限を付けて実行する。
 
    ```bash
    TRACK_CLI=$(/usr/bin/plutil -extract cliPath raw ~/.track/runtime.json)
@@ -14,7 +14,7 @@ description: "現在のCodexタスクにおける直近の作業を、起動中�
 
 2. 返されたJSONから時間帯、プロジェクト、重複を確認する。タイトルは現在の会話から簡潔に作る。プロジェクトの根拠が弱ければ「プロジェクトなし」にする。
 3. 日付、時間帯、所要時間、プロジェクト、タイトル、重複を提示し、登録前に明示的な確認を得る。`crossesJstMidnight`が`true`なら同一日内の複数エントリに分ける。
-4. 確認後に登録する。
+4. 確認後に登録する。ローカル通信が制限されている場合は、登録コマンドにも通信権限を付ける。
 
    ```bash
    TRACK_CLI=$(/usr/bin/plutil -extract cliPath raw ~/.track/runtime.json)
@@ -29,7 +29,7 @@ description: "現在のCodexタスクにおける直近の作業を、起動中�
 ## エラー
 
 - `cliPath`を取得できない: Trackアプリを起動する。項目自体がなければTrackを更新する。
-- `network_error`: Trackアプリを起動してから再実行する。
+- `network_error`: ローカル通信がサンドボックスで遮断された可能性がある。読み取り専用の `prepare` を通信権限付きで一度再試行する。なお失敗する場合はTrackアプリの起動と`runtime.json`の接続先を確認する。
 - `invalid_runtime` / `invalid_api_base`: `~/.track/runtime.json`を削除してTrackを再起動する。
 - `exact_duplicate`: 再登録しない。
 - `overlap_requires_confirmation`: 重複を提示して続行するか確認する。

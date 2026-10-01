@@ -11,6 +11,16 @@ const updateSchema = z.object({
   exportDir: z.string().trim().min(1).optional(),
   backupIntervalHours: z.number().int().min(0).max(24 * 30).optional(),
   backupKeep: z.number().int().min(1).max(1000).optional(),
+  aiProvider: z
+    .enum(["apple-intelligence", "codex", "custom-command"])
+    .optional(),
+  aiCodexExecutable: z.string().trim().max(2_000).optional(),
+  aiCodexModel: z.string().trim().max(200).optional(),
+  aiCommandExecutable: z.string().trim().max(2_000).optional(),
+  aiCommandArgs: z
+    .array(z.string().trim().min(1).max(2_000))
+    .max(32)
+    .optional(),
 });
 
 config.get("/", (c) => {

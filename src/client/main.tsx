@@ -29,6 +29,11 @@ const ReportsPage = lazy(() =>
 const NotesPage = lazy(() =>
   import("@client/pages/NotesPage").then((m) => ({ default: m.NotesPage })),
 );
+const ReportCopyFormatPage = lazy(() =>
+  import("@client/pages/ReportCopyFormatPage").then((m) => ({
+    default: m.ReportCopyFormatPage,
+  })),
+);
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000 } },
 });
@@ -111,29 +116,49 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="/calendar" element={<CalendarPage />} />
                 <Route path="/reports" element={<ReportsPage />} />
                 <Route path="/notes" element={<NotesPage />} />
-                <Route path="/settings" element={<SettingsLayout />}>
-                  <Route index element={<Navigate to="work-hours" replace />} />
-                  <Route
-                    path="work-hours"
-                    element={<SettingsPage category="work-hours" />}
-                  />
-                  <Route
-                    path="weekly-report"
-                    element={<SettingsPage category="weekly-report" />}
-                  />
-                  <Route
-                    path="projects"
-                    element={<SettingsPage category="projects" />}
-                  />
-                  <Route
-                    path="backup"
-                    element={<SettingsPage category="backup" />}
-                  />
-                  <Route
-                    path="data-transfer"
-                    element={<SettingsPage category="data-transfer" />}
-                  />
-                </Route>
+              </Route>
+              <Route
+                path="/report-formats/:formatId"
+                element={<ReportCopyFormatPage />}
+              />
+              <Route path="/settings" element={<SettingsLayout />}>
+                <Route index element={<Navigate to="calendar" replace />} />
+                <Route
+                  path="calendar"
+                  element={<SettingsPage category="calendar" />}
+                />
+                <Route
+                  path="reports"
+                  element={<SettingsPage category="reports" />}
+                />
+                <Route
+                  path="notes"
+                  element={<SettingsPage category="notes" />}
+                />
+                <Route
+                  path="projects"
+                  element={<SettingsPage category="projects" />}
+                />
+                <Route
+                  path="ai"
+                  element={<SettingsPage category="ai" />}
+                />
+                <Route
+                  path="backup"
+                  element={<SettingsPage category="backup" />}
+                />
+                <Route
+                  path="work-hours"
+                  element={<Navigate to="../calendar" replace />}
+                />
+                <Route
+                  path="weekly-report"
+                  element={<Navigate to="../reports" replace />}
+                />
+                <Route
+                  path="data-transfer"
+                  element={<Navigate to="../backup" replace />}
+                />
               </Route>
               <Route path="*" element={<Navigate to="/calendar" replace />} />
             </Routes>

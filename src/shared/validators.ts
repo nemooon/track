@@ -118,9 +118,90 @@ export const reportsEntriesQuerySchema = z.object({
   tagIds: csvIds,
 });
 
+const reportCopyFieldSchema = z.enum([
+  "date",
+  "start",
+  "end",
+  "client",
+  "project",
+  "title",
+  "note",
+  "tags",
+  "duration",
+  "durationMinutes",
+  "percentage",
+  "category",
+  "summary",
+  "entryCount",
+]);
+
+const reportCopyColumnSchema = z.discriminatedUnion("kind", [
+  z.object({
+    id: z.string().min(1).max(100),
+    kind: z.literal("field"),
+    field: reportCopyFieldSchema,
+    label: z.string().max(100).optional(),
+    durationFormat: z.enum([
+      "hours-minutes",
+      "japanese",
+      "decimal-with-unit",
+      "decimal",
+    ]).optional(),
+  }),
+  z.object({
+    id: z.string().min(1).max(100),
+    kind: z.literal("blank"),
+    label: z.string().max(100).optional(),
+  }),
+  z.object({
+    id: z.string().min(1).max(100),
+    kind: z.literal("ai"),
+    label: z.string().trim().min(1).max(100),
+    prompt: z.string().trim().min(1).max(1_000),
+  }),
+]);
+
+const entryFields = new Set([
+  "date", "start", "end", "client", "project", "title", "note", "tags",
+  "duration", "durationMinutes", "percentage",
+]);
+const aggregationFields = new Set([
+  "category", "summary", "duration", "durationMinutes", "percentage", "entryCount",
+]);
+
+const reportCopyFormatSchema = z
+  .object({
+    id: z.string().min(1).max(100),
+    name: z.string().trim().min(1).max(100),
+    target: z.enum(["entries", "ai-aggregation"]),
+    delimiter: z.enum(["tab", "comma"]),
+    includeHeader: z.boolean(),
+    aiPrompt: z.string().trim().max(10_000),
+    columns: z.array(reportCopyColumnSchema).min(1).max(30),
+  })
+  .superRefine((copyFormat, ctx) => {
+    const allowed = copyFormat.target === "entries" ? entryFields : aggregationFields;
+    copyFormat.columns.forEach((column, index) => {
+      if (column.kind === "ai" && copyFormat.target !== "ai-aggregation") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["columns", index],
+          message: "AI生成項目はカスタム出力でのみ利用できます",
+        });
+      } else if (column.kind === "field" && !allowed.has(column.field)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["columns", index, "field"],
+          message: "対象では利用できない項目です",
+        });
+      }
+    });
+  });
+
 export const settingsUpdateSchema = z.object({
   workStart: z.number().int().min(0).max(1440).optional(),
   workEnd: z.number().int().min(0).max(1440).optional(),
   workDays: z.array(z.number().int().min(0).max(6)).optional(),
   weeklyReportTemplate: z.string().trim().min(1).max(10_000).optional(),
+  reportCopyFormats: z.array(reportCopyFormatSchema).min(1).max(20).optional(),
 });

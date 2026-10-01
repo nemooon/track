@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ArrowLeftRight,
   BarChart3,
   Bot,
   CalendarDays,
@@ -18,6 +19,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { Link, useLocation } from "react-router";
 import { toast } from "sonner";
 import { useAppUi } from "@client/components/AppUiContext";
+import { DataTransferDialog } from "@client/components/DataTransferDialog";
 import {
   Dialog,
   DialogFooter,
@@ -69,13 +71,17 @@ const shortcutGroups = [
 
 export function AppHeader() {
   const { pathname, search } = useLocation();
-  const { openSettings } = useAppUi();
+  const {
+    confirmDiscardChanges,
+    openSettings,
+    setSettingsDirty,
+  } = useAppUi();
   const updatePreviewVersion = import.meta.env.DEV
     ? new URLSearchParams(search).get("trackUpdateVersion")
     : null;
   const [menuOpen, setMenuOpen] = useState(false);
   const [openDialog, setOpenDialog] = useState<
-    "shortcuts" | "about" | "update" | null
+    "shortcuts" | "data-transfer" | "about" | "update" | null
   >(null);
   const [availableVersion, setAvailableVersion] = useState<string | null>(null);
   const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false);
@@ -176,6 +182,7 @@ export function AppHeader() {
     void Promise.all([
       listen("track-open-about", () => setOpenDialog("about")),
       listen("track-check-for-updates", () => void checkForUpdates(true)),
+      listen("track-open-data-transfer", () => setOpenDialog("data-transfer")),
     ]).then((disposers) => {
       if (active) unlisteners.push(...disposers);
       else disposers.forEach((dispose) => dispose());
@@ -254,6 +261,13 @@ export function AppHeader() {
             <Link
               key={href}
               to={href}
+              onClick={(event) => {
+                if (pathname === href || confirmDiscardChanges()) {
+                  setSettingsDirty(false);
+                  return;
+                }
+                event.preventDefault();
+              }}
               title={`${label}（⌘${shortcut}）`}
               aria-keyshortcuts={`Meta+${shortcut}`}
               className={cn(
@@ -366,6 +380,18 @@ export function AppHeader() {
                 <span>AI連携をインストール…</span>
               </button>
             )}
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false);
+                setOpenDialog("data-transfer");
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+            >
+              <ArrowLeftRight className="size-4 text-neutral-500" />
+              <span>データの移行…</span>
+            </button>
             <div
               role="separator"
               className="mx-2 my-1 h-px bg-neutral-200"
@@ -385,6 +411,13 @@ export function AppHeader() {
           </div>
         )}
       </div>
+
+      <DataTransferDialog
+        open={openDialog === "data-transfer"}
+        onOpenChange={(open) => {
+          if (!open) setOpenDialog(null);
+        }}
+      />
 
       <Dialog
         open={openDialog === "shortcuts"}

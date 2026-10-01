@@ -21,6 +21,12 @@ interface AppUiContextValue {
 
 const AppUiContext = createContext<AppUiContextValue | null>(null);
 
+function settingsPathForView(viewPath: string) {
+  if (viewPath === "/reports") return "/settings/reports";
+  if (viewPath === "/notes") return "/settings/notes";
+  return "/settings/calendar";
+}
+
 export function AppUiProvider({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -37,15 +43,16 @@ export function AppUiProvider({ children }: { children: ReactNode }) {
     }
   }, [pathname]);
 
-  const openSettings = useCallback(() => {
-    if (!pathname.startsWith("/settings")) {
-      navigate("/settings/work-hours");
-    }
-  }, [navigate, pathname]);
   const confirmDiscardChanges = useCallback(() => {
     if (!settingsDirty) return true;
     return window.confirm("保存していない変更があります。破棄して移動しますか？");
   }, [settingsDirty]);
+  const openSettings = useCallback(() => {
+    if (pathname.startsWith("/settings")) return;
+    if (!confirmDiscardChanges()) return;
+    setSettingsDirty(false);
+    navigate(settingsPathForView(lastViewRef.current));
+  }, [confirmDiscardChanges, navigate, pathname]);
   const closeSettings = useCallback(() => {
     if (!confirmDiscardChanges()) return false;
     setSettingsDirty(false);

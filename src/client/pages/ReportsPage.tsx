@@ -8,7 +8,6 @@ import {
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
-import { invoke } from "@tauri-apps/api/core";
 import {
   PieChart,
   Pie,
@@ -30,12 +29,19 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   Copy,
+  FileOutput,
   LoaderCircle,
   RefreshCw,
   Sparkles,
 } from "lucide-react";
 import { apiFetch } from "@client/lib/fetcher";
+import {
+  aiProviderLabel,
+  generateAiText,
+  generateAiTextStream,
+} from "@client/lib/ai";
 import { Button } from "@client/components/ui/button";
+import { Select } from "@client/components/ui/select";
 import { MarkdownEditor } from "@client/components/MarkdownEditor";
 import {
   Dialog,
@@ -51,9 +57,24 @@ import {
 } from "@client/components/ToolbarControls";
 import { FilterMultiSelect, type FilterOption } from "@client/components/reports/FilterMultiSelect";
 import {
+  aggregationColumnValue,
+  buildAggregationCopyText,
+  reportCopyFormatUsesAi,
+  reportCopyColumnHeader,
+} from "@client/lib/reportCopy";
+import {
+  aggregateAiResult,
+  buildReportAggregationPrompt,
+  type AiAggregationRow,
+} from "@client/lib/reportAggregation";
+import {
+  buildReportOutputCacheKey,
+  readReportOutputCache,
+  writeReportOutputCache,
+} from "@client/lib/reportOutputCache";
+import {
   ReportRow,
   buildEntriesUrl,
-  groupEntriesByTitle,
   type BaseFilters,
   type ExpansionApi,
   type RowKind,
@@ -65,6 +86,8 @@ import type {
   ReportResponse,
   ReportEntriesResponse,
   UserSettings,
+  AppConfig,
+  AiProgressUpdate,
 } from "@shared/types";
 
 const COLORS = [
@@ -83,6 +106,12 @@ function formatJapaneseDuration(min: number) {
   const m = min % 60;
   if (h === 0) return `${m}分`;
   return m > 0 ? `${h}時間${m}分` : `${h}時間`;
+}
+
+function formatElapsedTime(seconds: number) {
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return `${minutes}:${String(rest).padStart(2, "0")}`;
 }
 
 function ReportTableColumns() {
@@ -120,11 +149,7 @@ function buildWeeklyReportPrompt(opts: {
   const { period, data } = opts;
   const template = opts.template
     .replaceAll("{{期間}}", period)
-    .replaceAll("{{合計時間}}", formatJapaneseDuration(data.totalMinutes))
-    .replaceAll(
-      '- なければ「特になし」',
-      "（工数記録に明示された課題・確認事項を記載。なければ指定の定型文を記載）",
-    );
+    .replaceAll("{{合計時間}}", formatJapaneseDuration(data.totalMinutes));
   const projectTotals = new Map<
     string,
     {
@@ -181,21 +206,9 @@ function buildWeeklyReportPrompt(opts: {
 
   const prompt = `
 以下の出力テンプレートに沿って、工数記録から週報を作成してください。
-工数記録を単に列挙せず、同じプロジェクトと目的に属する作業をまとめ、読み手が今週の活動内容と成果を短時間で把握できる文章にしてください。
-
-必須ルール:
-- テンプレートの見出し、順番、固定文は維持してください。
-- テンプレートに存在しない見出しや項目は追加しないでください。「### クライアント名」のような小見出しも禁止です。
-- 括弧書きや「なければ〜」などの説明は生成指示なので、完成した週報には残さないでください。
-- 「主な作業」には、後述の確定本文をそのままコピーしてください。内容や形式を変更してはいけません。
-- 完了、改善、解決などの成果は、タイトルまたはメモから明確に確認できる場合だけ記載してください。
-- 「脆弱性検証を実施」は記載できますが、「セキュリティ強化のために脆弱性を検証」のように、記録にない目的を補ってはいけません。
-- 工数記録が根拠にない内容や、推測した成果、進捗、予定、課題は追加しないでください。
-- 概要では、工数の多いプロジェクトと具体的な作業を事実に沿って要約してください。「ニーズに合わせたソリューションを提供」のような抽象的な評価表現は禁止です。
-- 概要では、「順調」「進展」「貢献」「重点を置いた」など、工数記録から確認できない評価や状態を記載しないでください。
-- 課題が記録されていない場合は、「工数記録上、明示された課題・確認事項はありません」と記載してください。
-- 確定集計の数値を変更したり再計算したりしないでください。
-- 対象期間と合計時間は、テンプレートに記載欄がある場合だけ出力してください。
+同じプロジェクトや関連する作業はまとめ、工数記録にある事実だけを簡潔に記載してください。
+テンプレートの構成を保ち、「主な作業」には確定本文をそのまま使用してください。
+確定集計の数値は変更せず、週報の本文だけをMarkdownで返してください。
 
 <出力テンプレート>
 ${template}
@@ -243,38 +256,6 @@ function replaceMarkdownSection(
   ]
     .join("\n")
     .trim();
-}
-
-type SlackGroup = {
-  label: string;
-  totalMinutes: number;
-  entries: { title: string; minutes: number }[];
-};
-
-function buildSlackTable(opts: {
-  groups: SlackGroup[];
-  total: number;
-  groupBy: RowKind;
-  periodText: string;
-}): string {
-  const { groups, total, groupBy, periodText } = opts;
-  const groupLabel =
-    groupBy === "client" ? "クライアント" : groupBy === "project" ? "プロジェクト" : "タグ";
-
-  const pct = (min: number) =>
-    total > 0 ? `${Math.round((min / total) * 100)}%` : "0%";
-
-  // 1 行目（ヘッダー）に期間を含め、貼り付けた表だけで文脈が分かるようにする
-  const lines: string[][] = [[`${groupLabel}（${periodText}）`, "時間", "割合"]];
-  for (const g of groups) {
-    lines.push([g.label, formatDuration(g.totalMinutes), pct(g.totalMinutes)]);
-    for (const e of g.entries) {
-      lines.push([`└ ${e.title || "（タイトルなし）"}`, formatDuration(e.minutes), ""]);
-    }
-  }
-  lines.push(["合計", formatDuration(total), "100%"]);
-
-  return lines.map((cells) => cells.join("\t")).join("\n");
 }
 
 type TooltipPayload = {
@@ -401,6 +382,10 @@ export function ReportsPage() {
   const { data: settings } = useQuery({
     queryKey: ["settings"],
     queryFn: () => apiFetch<UserSettings>("/api/settings"),
+  });
+  const { data: appConfig } = useQuery({
+    queryKey: ["config"],
+    queryFn: () => apiFetch<AppConfig>("/api/config"),
   });
 
   const clientOptions: FilterOption[] = useMemo(
@@ -562,71 +547,230 @@ export function ReportsPage() {
   }, [rows.length]);
 
   const queryClient = useQueryClient();
-  const [copied, setCopied] = useState(false);
-  const [copying, setCopying] = useState(false);
+  const [selectedAggregationFormatId, setSelectedAggregationFormatId] = useState("");
   const [weeklyReportOpen, setWeeklyReportOpen] = useState(false);
   const [weeklyReport, setWeeklyReport] = useState("");
   const [weeklyReportError, setWeeklyReportError] = useState("");
   const [weeklyReportGenerating, setWeeklyReportGenerating] = useState(false);
   const [weeklyReportCopied, setWeeklyReportCopied] = useState(false);
-  async function copyTable() {
-    setCopying(true);
-    let text: string;
-    try {
-      const groups = await Promise.all(
-        rows.map(async (r) => {
-          const label =
-            groupBy === "project" ? r.label.split(" · ").slice(-1)[0] : r.label;
-          // 画面どおり：展開中の行だけ中身を含め、折りたたみ中は集計行のみ
-          const isExpanded = expandedPaths.has(`${groupBy}:${r.key}`);
-          if (!isExpanded) {
-            return { label, totalMinutes: r.totalMinutes, entries: [] };
-          }
-          const extra =
-            groupBy === "client"
-              ? { clientId: r.key }
-              : groupBy === "project"
-                ? { projectId: r.key }
-                : { tagId: r.key };
-          const url = buildEntriesUrl(baseFilters, extra);
-          const res = await queryClient.fetchQuery({
-            queryKey: ["reports-entries", url],
-            queryFn: () => apiFetch<ReportEntriesResponse>(url),
-          });
-          const raw = res?.entries ?? [];
-          const entries = groupSameTitles
-            ? groupEntriesByTitle(raw).map((g) => ({
-                title: g.title ?? "",
-                minutes: g.minutes,
-              }))
-            : raw.map((e) => ({ title: e.title ?? "", minutes: e.minutes }));
-          return { label, totalMinutes: r.totalMinutes, entries };
-        }),
-      );
-      text = buildSlackTable({
-        groups,
-        total,
-        groupBy,
-        periodText: periodLabel(anchor, range),
-      });
-    } finally {
-      setCopying(false);
+  const [aggregationOpen, setAggregationOpen] = useState(false);
+  const [aggregationRows, setAggregationRows] = useState<AiAggregationRow[]>([]);
+  const [aggregationError, setAggregationError] = useState("");
+  const [aggregationGenerating, setAggregationGenerating] = useState(false);
+  const [aggregationProgress, setAggregationProgress] =
+    useState<AiProgressUpdate | null>(null);
+  const [aggregationElapsedSeconds, setAggregationElapsedSeconds] = useState(0);
+  const [aggregationCopied, setAggregationCopied] = useState(false);
+  const [aggregationTotalMinutes, setAggregationTotalMinutes] = useState(0);
+  const [aggregationRestoredAt, setAggregationRestoredAt] = useState<
+    number | null
+  >(null);
+
+  const aggregationCopyFormats = useMemo(
+    () =>
+      (settings?.reportCopyFormats ?? []).filter(
+        (copyFormat) => copyFormat.target === "ai-aggregation",
+      ),
+    [settings?.reportCopyFormats],
+  );
+  const selectedAggregationFormat = aggregationCopyFormats.find(
+    (copyFormat) => copyFormat.id === selectedAggregationFormatId,
+  );
+  const selectedFormatUsesAi = selectedAggregationFormat
+    ? reportCopyFormatUsesAi(selectedAggregationFormat)
+    : false;
+  const aggregationEntriesUrl = buildEntriesUrl(baseFilters, {});
+  const { data: aggregationEntries, isFetching: aggregationEntriesFetching } = useQuery({
+    queryKey: ["reports-entries", aggregationEntriesUrl],
+    queryFn: () => apiFetch<ReportEntriesResponse>(aggregationEntriesUrl),
+    enabled: aggregationOpen,
+    staleTime: 0,
+  });
+  const aggregationCacheKey = useMemo(
+    () =>
+      selectedAggregationFormat && aggregationEntries
+        ? buildReportOutputCacheKey({
+            range,
+            anchor: format(anchor, "yyyy-MM-dd"),
+            groupBy,
+            clientIds: selectedClientIds,
+            projectIds: selectedProjectIds,
+            tagIds: selectedTagIds,
+            reportRows: rows,
+            entries: aggregationEntries.entries,
+            totalMinutes: total,
+            copyFormat: selectedAggregationFormat,
+          })
+        : "",
+    [
+      selectedAggregationFormat,
+      aggregationEntries,
+      range,
+      anchor,
+      groupBy,
+      selectedClientIds,
+      selectedProjectIds,
+      selectedTagIds,
+      rows,
+      total,
+    ],
+  );
+
+  useEffect(() => {
+    if (!aggregationOpen || !aggregationCacheKey || aggregationEntriesFetching) return;
+    const cached = readReportOutputCache(localStorage, aggregationCacheKey);
+    if (cached) {
+      setAggregationRows(cached.rows);
+      setAggregationTotalMinutes(cached.totalMinutes);
+      setAggregationRestoredAt(cached.createdAt);
+      setAggregationError("");
+    } else {
+      setAggregationRows([]);
+      setAggregationRestoredAt(null);
     }
+  }, [aggregationOpen, aggregationCacheKey, aggregationEntriesFetching]);
+
+  useEffect(() => {
+    if (!aggregationGenerating || !selectedFormatUsesAi) return;
+    const startedAt = Date.now();
+    setAggregationElapsedSeconds(0);
+    const timer = setInterval(() => {
+      setAggregationElapsedSeconds(
+        Math.floor((Date.now() - startedAt) / 1_000),
+      );
+    }, 1_000);
+    return () => clearInterval(timer);
+  }, [aggregationGenerating, selectedFormatUsesAi]);
+
+  useEffect(() => {
+    if (aggregationCopyFormats.length === 0) {
+      if (selectedAggregationFormatId) setSelectedAggregationFormatId("");
+      return;
+    }
+    if (
+      aggregationCopyFormats.length > 0 &&
+      !aggregationCopyFormats.some(
+        (copyFormat) => copyFormat.id === selectedAggregationFormatId,
+      )
+    ) {
+      setSelectedAggregationFormatId(aggregationCopyFormats[0].id);
+    }
+  }, [aggregationCopyFormats, selectedAggregationFormatId]);
+
+  async function fetchReportEntries() {
+    const url = buildEntriesUrl(baseFilters, {});
+    return queryClient.fetchQuery({
+      queryKey: ["reports-entries", url],
+      queryFn: () => apiFetch<ReportEntriesResponse>(url),
+    });
+  }
+
+  async function writeClipboard(text: string) {
     try {
       await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
     } catch {
-      // クリップボード API 非対応時のフォールバック
       const ta = document.createElement("textarea");
       ta.value = text;
       document.body.appendChild(ta);
       ta.select();
       document.execCommand("copy");
       document.body.removeChild(ta);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
     }
+  }
+
+  async function buildCurrentReportRows(): Promise<AiAggregationRow[]> {
+    return Promise.all(
+      rows.map(async (row) => {
+        const extra =
+          groupBy === "client"
+            ? { clientId: row.key }
+            : groupBy === "tag"
+              ? { tagId: row.key }
+              : { projectId: row.key };
+        const url = buildEntriesUrl(baseFilters, extra);
+        const entries = await queryClient.fetchQuery({
+          queryKey: ["reports-entries", url],
+          queryFn: () => apiFetch<ReportEntriesResponse>(url),
+        });
+        return {
+          label:
+            groupBy === "project"
+              ? row.label.split(" · ").slice(-1)[0]
+              : row.label,
+          summary: "",
+          minutes: row.totalMinutes,
+          entryCount: entries.entries.length,
+          generatedValues: {},
+        };
+      }),
+    );
+  }
+
+  async function createCustomOutput() {
+    if (!selectedAggregationFormat) {
+      setAggregationError(
+        "設定の「レポート」で出力フォーマットを登録してください。",
+      );
+      return;
+    }
+    setAggregationGenerating(true);
+    setAggregationRows([]);
+    setAggregationError("");
+    setAggregationCopied(false);
+    setAggregationProgress(null);
+    setAggregationRestoredAt(null);
+    try {
+      if (rows.length === 0) {
+        setAggregationError("この期間には出力する工数がありません。");
+        return;
+      }
+      setAggregationTotalMinutes(total);
+      const entries = await fetchReportEntries();
+      const outputCacheKey = buildReportOutputCacheKey({
+        range, anchor: format(anchor, "yyyy-MM-dd"), groupBy,
+        clientIds: selectedClientIds, projectIds: selectedProjectIds,
+        tagIds: selectedTagIds, reportRows: rows, entries: entries.entries,
+        totalMinutes: total, copyFormat: selectedAggregationFormat,
+      });
+      let outputRows: AiAggregationRow[];
+      if (reportCopyFormatUsesAi(selectedAggregationFormat)) {
+        const prompt = buildReportAggregationPrompt(entries, selectedAggregationFormat);
+        const generated = await generateAiTextStream(
+          "report-aggregation",
+          prompt,
+          (progress) => setAggregationProgress(progress),
+        );
+        outputRows = aggregateAiResult(generated.text, entries);
+      } else {
+        outputRows = await buildCurrentReportRows();
+      }
+      setAggregationRows(outputRows);
+      writeReportOutputCache(localStorage, {
+        key: outputCacheKey,
+        createdAt: Date.now(),
+        totalMinutes: total,
+        rows: outputRows,
+      });
+    } catch (error) {
+      setAggregationError(
+        error instanceof Error ? error.message : "出力を作成できませんでした。",
+      );
+    } finally {
+      setAggregationGenerating(false);
+    }
+  }
+
+  async function copyAggregation() {
+    if (!selectedAggregationFormat) return;
+    await writeClipboard(
+      buildAggregationCopyText(
+        aggregationRows,
+        aggregationTotalMinutes,
+        selectedAggregationFormat,
+      ),
+    );
+    setAggregationCopied(true);
+    setTimeout(() => setAggregationCopied(false), 2000);
   }
 
   async function generateWeeklyReport() {
@@ -635,15 +779,9 @@ export function ReportsPage() {
     setWeeklyReportError("");
     setWeeklyReportCopied(false);
 
-    if (!("__TAURI_INTERNALS__" in window)) {
-      setWeeklyReportError(
-        "Apple Intelligenceによる週報生成はデスクトップアプリで利用できます。",
-      );
-      return;
-    }
     if (!settings?.weeklyReportTemplate.trim()) {
       setWeeklyReportError(
-        "設定の「週報」で出力テンプレートを保存してください。",
+        "設定の「レポート」で出力テンプレートを保存してください。",
       );
       return;
     }
@@ -665,10 +803,10 @@ export function ReportsPage() {
         period: periodLabel(anchor, "week"),
         data: entries,
       });
-      const generated = await invoke<string>("generate_weekly_report", {
-        prompt,
-      });
-      setWeeklyReport(replaceMarkdownSection(generated, "主な作業", mainWork));
+      const generated = await generateAiText("weekly-report", prompt);
+      setWeeklyReport(
+        replaceMarkdownSection(generated.text, "主な作業", mainWork),
+      );
     } catch (error) {
       setWeeklyReportError(
         typeof error === "string"
@@ -961,41 +1099,17 @@ export function ReportsPage() {
                   )}
                   <button
                     type="button"
-                    onClick={copyTable}
-                    disabled={copying}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 px-2.5 py-1 text-xs text-neutral-600 hover:bg-neutral-50 disabled:opacity-60"
+                    onClick={() => {
+                      setAggregationOpen(true);
+                      setAggregationError("");
+                      setAggregationRows([]);
+                      setAggregationProgress(null);
+                      setAggregationRestoredAt(null);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-800 hover:bg-blue-100"
                   >
-                    {copied ? (
-                      <>
-                        <Check className="size-3.5 text-emerald-600" />
-                        コピーしました
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="size-3.5" />
-                        {copying ? "取得中…" : "Slack用にコピー"}
-                      </>
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={groupSameTitles}
-                    onClick={() => setGroupSameTitles((v) => !v)}
-                    className="inline-flex items-center gap-2 text-xs text-neutral-600"
-                  >
-                    <span>同名エントリをまとめる</span>
-                    <span
-                      className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${
-                        groupSameTitles ? "bg-neutral-900" : "bg-neutral-300"
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
-                          groupSameTitles ? "translate-x-3.5" : "translate-x-0.5"
-                        }`}
-                      />
-                    </span>
+                    <FileOutput className="size-3.5" />
+                    出力を作成
                   </button>
                 </div>
               </div>
@@ -1027,6 +1141,28 @@ export function ReportsPage() {
                             )}
                           </button>
                           <span>内容</span>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={groupSameTitles}
+                            onClick={() => setGroupSameTitles((value) => !value)}
+                            className="ml-2 inline-flex items-center gap-2 text-xs font-normal text-neutral-600"
+                          >
+                            <span>まとめる</span>
+                            <span
+                              className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${
+                                groupSameTitles ? "bg-neutral-900" : "bg-neutral-300"
+                              }`}
+                            >
+                              <span
+                                className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
+                                  groupSameTitles
+                                    ? "translate-x-3.5"
+                                    : "translate-x-0.5"
+                                }`}
+                              />
+                            </span>
+                          </button>
                         </div>
                       </th>
                       <th className="whitespace-nowrap px-3 py-2 font-medium">日時</th>
@@ -1086,6 +1222,179 @@ export function ReportsPage() {
       </div>
 
       <Dialog
+        open={aggregationOpen}
+        onOpenChange={setAggregationOpen}
+        contentClassName="flex h-[min(780px,calc(100svh-40px))] w-[min(1200px,calc(100vw-40px))] max-w-none flex-col overflow-hidden"
+      >
+        <DialogHeader>
+          <DialogTitle>カスタム出力</DialogTitle>
+          <p className="text-sm text-neutral-500">
+            {periodLabel(anchor, range)} · 表示中の絞り込みを反映
+          </p>
+        </DialogHeader>
+
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+          <div className="shrink-0 space-y-1.5">
+            <label
+              htmlFor="aggregation-copy-format"
+              className="text-sm font-medium text-neutral-800"
+            >
+              出力形式
+            </label>
+            {aggregationCopyFormats.length > 0 ? (
+              <Select
+                id="aggregation-copy-format"
+                value={selectedAggregationFormatId}
+                disabled={aggregationGenerating}
+                onChange={(event) => {
+                  setSelectedAggregationFormatId(event.target.value);
+                  setAggregationRows([]);
+                  setAggregationError("");
+                  setAggregationProgress(null);
+                  setAggregationRestoredAt(null);
+                }}
+              >
+                {aggregationCopyFormats.map((copyFormat) => (
+                  <option key={copyFormat.id} value={copyFormat.id}>
+                    {copyFormat.name}（{copyFormat.delimiter === "comma" ? "CSV" : "TSV"}・{copyFormat.columns.length}列）
+                  </option>
+                ))}
+              </Select>
+            ) : (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                設定の「レポート」で出力フォーマットを登録してください。
+              </div>
+            )}
+            {selectedAggregationFormat && (
+              <p className="flex items-center gap-2 text-xs text-neutral-500">
+                <span
+                  className={`rounded-full px-2 py-0.5 font-medium ${
+                    selectedFormatUsesAi
+                      ? "bg-violet-100 text-violet-700"
+                      : "bg-neutral-100 text-neutral-600"
+                  }`}
+                >
+                  {selectedFormatUsesAi ? "AI使用" : "AIなし"}
+                </span>
+                {selectedFormatUsesAi
+                  ? "設定した指示で工数を再分類して出力します。"
+                  : "現在の集計結果を指定した列順で出力します。"}
+              </p>
+            )}
+          </div>
+
+          {aggregationGenerating ? (
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-sm text-neutral-500">
+              <div className="flex items-center gap-2">
+                <LoaderCircle className="size-5 animate-spin text-blue-700" />
+                <span>
+                  {selectedFormatUsesAi
+                    ? `${aiProviderLabel(appConfig?.aiProvider)}で作成しています…`
+                    : "現在の集計から作成しています…"}
+                </span>
+                {selectedFormatUsesAi && (
+                  <span className="font-mono text-xs tabular-nums text-neutral-400">
+                    {formatElapsedTime(aggregationElapsedSeconds)}
+                  </span>
+                )}
+              </div>
+              {selectedFormatUsesAi && aggregationProgress && (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="max-h-40 w-full max-w-2xl overflow-auto rounded-lg border border-blue-100 bg-blue-50/60 px-4 py-3 text-left"
+                >
+                  <div className="mb-1 text-[11px] font-medium text-blue-700">
+                    {aggregationProgress.kind === "reasoning"
+                      ? "考えていること"
+                      : "進捗"}
+                  </div>
+                  <p className="whitespace-pre-wrap text-xs leading-5 text-neutral-600">
+                    {aggregationProgress.message}
+                  </p>
+                </div>
+              )}
+            </div>
+          ) : aggregationError ? (
+            <div
+              role="alert"
+              className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700"
+            >
+              {aggregationError}
+            </div>
+          ) : aggregationRows.length > 0 ? (
+            <div className="flex min-h-0 flex-1 flex-col gap-2">
+            <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-neutral-200">
+              <table className="w-full min-w-[680px] text-sm">
+                <thead className="sticky top-0 bg-neutral-50 text-left text-neutral-500">
+                  <tr>
+                    {selectedAggregationFormat?.columns.map((column) => (
+                      <th key={column.id} className="whitespace-nowrap px-3 py-2 font-medium">
+                        {reportCopyColumnHeader(column)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100">
+                  {aggregationRows.map((row, index) => (
+                    <tr key={`${row.label}-${index}`}>
+                      {selectedAggregationFormat?.columns.map((column) => (
+                        <td key={column.id} className="px-3 py-2 text-neutral-700">
+                          {aggregationColumnValue(
+                            row,
+                            column,
+                            aggregationTotalMinutes,
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+              <div className="flex flex-wrap justify-end gap-x-5 gap-y-1 text-xs text-neutral-500">
+                {aggregationRestoredAt && (
+                  <span className="text-blue-600">
+                    保存済み結果を復元 · {new Date(aggregationRestoredAt).toLocaleString("ja-JP")}
+                  </span>
+                )}
+                <span>合計 {formatDuration(aggregationRows.reduce((sum, row) => sum + row.minutes, 0))}</span>
+                <span>{aggregationRows.reduce((sum, row) => sum + row.entryCount, 0)}件</span>
+              </div>
+            </div>
+          ) : (
+            <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed border-neutral-200 px-4 py-10 text-center text-sm text-neutral-400">
+              出力フォーマットを選んで「作成する」を押してください
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="shrink-0 flex-wrap items-center">
+          <Button variant="ghost" onClick={() => setAggregationOpen(false)}>
+            閉じる
+          </Button>
+          <Button
+            variant="outline"
+            onClick={createCustomOutput}
+            disabled={aggregationGenerating || !selectedAggregationFormat}
+          >
+            {aggregationGenerating ? (
+              <LoaderCircle className="size-4 animate-spin" />
+            ) : (
+              <FileOutput className="size-4" />
+            )}
+            {aggregationRows.length > 0 ? "再作成" : "作成する"}
+          </Button>
+          {aggregationRows.length > 0 && !aggregationGenerating && (
+            <Button onClick={copyAggregation}>
+              {aggregationCopied ? <Check className="size-4" /> : <Copy className="size-4" />}
+              {aggregationCopied ? "コピーしました" : "結果をコピー"}
+            </Button>
+          )}
+        </DialogFooter>
+      </Dialog>
+
+      <Dialog
         open={weeklyReportOpen}
         onOpenChange={setWeeklyReportOpen}
         contentClassName="w-[min(760px,92vw)]"
@@ -1100,7 +1409,7 @@ export function ReportsPage() {
         {weeklyReportGenerating ? (
           <div className="flex min-h-72 flex-col items-center justify-center gap-3 text-sm text-neutral-500">
             <LoaderCircle className="size-6 animate-spin text-emerald-700" />
-            端末内のApple Intelligenceで生成しています…
+            {aiProviderLabel(appConfig?.aiProvider)}で生成しています…
           </div>
         ) : weeklyReportError ? (
           <div

@@ -90,11 +90,101 @@ export type ReportEntriesResponse = {
   totalMinutes: number;
 };
 
+export type ReportCopyDelimiter = "tab" | "comma";
+
+export type ReportDurationFormat =
+  | "hours-minutes"
+  | "japanese"
+  | "decimal-with-unit"
+  | "decimal";
+
+export type ReportCopyTarget = "entries" | "ai-aggregation";
+
+export type ReportCopyField =
+  | "date"
+  | "start"
+  | "end"
+  | "client"
+  | "project"
+  | "title"
+  | "note"
+  | "tags"
+  | "duration"
+  | "durationMinutes"
+  | "percentage"
+  | "category"
+  | "summary"
+  | "entryCount";
+
+export type ReportCopyColumn =
+  | {
+      id: string;
+      kind: "field";
+      field: ReportCopyField;
+      label?: string;
+      durationFormat?: ReportDurationFormat;
+    }
+  | {
+      id: string;
+      kind: "blank";
+      label?: string;
+    }
+  | {
+      id: string;
+      kind: "ai";
+      label: string;
+      prompt: string;
+    };
+
+export type ReportCopyFormat = {
+  id: string;
+  name: string;
+  target: ReportCopyTarget;
+  delimiter: ReportCopyDelimiter;
+  includeHeader: boolean;
+  aiPrompt: string;
+  columns: ReportCopyColumn[];
+};
+
 export type UserSettings = {
   workStart: number;
   workEnd: number;
   workDays: number[];
   weeklyReportTemplate: string;
+  reportCopyFormats: ReportCopyFormat[];
+};
+
+export type AiProviderId =
+  | "apple-intelligence"
+  | "codex"
+  | "custom-command";
+
+export type AiGenerationMode =
+  | "weekly-report"
+  | "report-aggregation"
+  | "note-title";
+
+export type AiGenerateResponse = {
+  text: string;
+  provider: AiProviderId;
+};
+
+export type AiProgressUpdate = {
+  kind: "status" | "reasoning";
+  message: string;
+};
+
+export type AiGenerateStreamEvent =
+  | ({ type: "progress" } & AiProgressUpdate)
+  | { type: "heartbeat" }
+  | { type: "result"; text: string; provider: AiProviderId }
+  | { type: "error"; message: string };
+
+export type AiProviderStatus = {
+  provider: AiProviderId;
+  label: string;
+  available: boolean;
+  detail: string;
 };
 
 export type Snapshot = {
@@ -109,7 +199,21 @@ export type AppConfig = {
   exportDir: string;
   backupIntervalHours: number;
   backupKeep: number;
-  defaults: { exportDir: string; backupIntervalHours: number; backupKeep: number };
+  aiProvider: AiProviderId;
+  aiCodexExecutable: string;
+  aiCodexModel: string;
+  aiCommandExecutable: string;
+  aiCommandArgs: string[];
+  defaults: {
+    exportDir: string;
+    backupIntervalHours: number;
+    backupKeep: number;
+    aiProvider: AiProviderId;
+    aiCodexExecutable: string;
+    aiCodexModel: string;
+    aiCommandExecutable: string;
+    aiCommandArgs: string[];
+  };
 };
 
 export type ExternalEventSource = "kot" | "outlook";

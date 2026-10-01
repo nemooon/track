@@ -27,6 +27,7 @@ import { initDb, db } from "./db/client";
 import { runMigrations, MIGRATIONS_PATH } from "./db/migrate";
 import { external } from "./routes/external";
 import { events } from "./routes/events";
+import { ai } from "./routes/ai";
 import { clearRuntimeInfo, writeRuntimeInfo } from "./runtime";
 import type { Env } from "./types";
 
@@ -93,6 +94,7 @@ app.use("*", async (c, next) => {
     EXPORT_DIR: loadConfig(DATA_DIR).exportDir,
     DATA_DIR,
     HOME_DIR: homedir(),
+    RESOURCE_DIR: ROOT,
     MIGRATIONS_DIR: path.join(ROOT, MIGRATIONS_PATH),
   } as Env;
   await next();
@@ -109,6 +111,7 @@ app.route("/api/data", data);
 app.route("/api/config", configRoute);
 app.route("/api/external", external);
 app.route("/api/events", events);
+app.route("/api/ai", ai);
 
 app.get("/health", (c) => c.json({ ok: true, db: DB_PATH }));
 

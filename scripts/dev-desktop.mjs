@@ -6,7 +6,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const vite = path.join(root, "node_modules", ".bin", "vite");
 
 const processes = [
-  spawn("bun", ["src/server/index.ts"], {
+  spawn("bun", ["--watch", "src/server/index.ts"], {
     cwd: root,
     stdio: "inherit",
   }),

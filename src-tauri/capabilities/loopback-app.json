@@ -19,8 +19,6 @@
     "core:window:allow-start-dragging",
     "core:window:allow-toggle-maximize",
     "core:event:allow-listen",
-    "allow-generate-weekly-report",
-    "allow-generate-note-title",
     "allow-install-update",
     "allow-restart-track",
     "allow-show-ai-integration-installer",

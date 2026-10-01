@@ -13,126 +13,6 @@ use tauri::{Manager, RunEvent, Url};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 #[cfg(target_os = "macos")]
-mod apple_intelligence {
-    use std::{
-        fs::{self, OpenOptions},
-        io::Write,
-        os::unix::fs::OpenOptionsExt,
-        path::{Path, PathBuf},
-        process::Command,
-        time::{SystemTime, UNIX_EPOCH},
-    };
-    use tauri::Manager;
-
-    fn helper_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-        let resource = app
-            .path()
-            .resource_dir()
-            .map_err(|error| format!("アプリのリソースを取得できません: {error}"))?
-            .join("TrackAIHelper.app");
-        if resource.exists() {
-            return Ok(resource);
-        }
-
-        let development = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("binaries")
-            .join("TrackAIHelper.app");
-        if development.exists() {
-            return Ok(development);
-        }
-        Err("Apple Intelligenceヘルパーが見つかりません。アプリを再ビルドしてください。".into())
-    }
-
-    fn write_private(path: &Path, content: &[u8]) -> Result<(), String> {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(path)
-            .map_err(|error| format!("AI生成の一時ファイルを作成できません: {error}"))?;
-        file.write_all(content)
-            .map_err(|error| format!("AI生成の一時ファイルへ書き込めません: {error}"))
-    }
-
-    fn macos_major_version() -> Result<u32, String> {
-        let output = Command::new("/usr/bin/sw_vers")
-            .arg("-productVersion")
-            .output()
-            .map_err(|error| format!("macOSのバージョンを確認できません: {error}"))?;
-        let version = String::from_utf8_lossy(&output.stdout);
-        version
-            .trim()
-            .split('.')
-            .next()
-            .and_then(|part| part.parse().ok())
-            .ok_or_else(|| format!("macOSのバージョンを判定できません: {version}"))
-    }
-
-    pub fn generate(app: &tauri::AppHandle, prompt: &str, mode: &str) -> Result<String, String> {
-        if prompt.trim().is_empty() {
-            return Err("AI生成の入力が空です。".into());
-        }
-        if prompt.len() > 200_000 {
-            return Err("AI生成の入力が大きすぎます。内容を短くしてください。".into());
-        }
-        if macos_major_version()? < 26 {
-            return Err("Apple Intelligenceによる生成にはmacOS 26以降が必要です。".into());
-        }
-
-        let helper = helper_path(app)?;
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|error| error.to_string())?
-            .as_nanos();
-        let temp_dir =
-            std::env::temp_dir().join(format!("track-ai-{}-{stamp}", std::process::id()));
-        fs::create_dir(&temp_dir)
-            .map_err(|error| format!("AI生成の一時フォルダを作成できません: {error}"))?;
-
-        let result = (|| {
-            let input = temp_dir.join("prompt.txt");
-            let stdout = temp_dir.join("response.txt");
-            let stderr = temp_dir.join("error.txt");
-            write_private(&input, prompt.as_bytes())?;
-            write_private(&stdout, b"")?;
-            write_private(&stderr, b"")?;
-
-            let status = Command::new("/usr/bin/open")
-                .arg("-n")
-                .arg("-W")
-                .arg("--stdout")
-                .arg(&stdout)
-                .arg("--stderr")
-                .arg(&stderr)
-                .arg(&helper)
-                .arg("--args")
-                .arg(&input)
-                .arg(mode)
-                .status()
-                .map_err(|error| format!("Apple Intelligenceを起動できません: {error}"))?;
-
-            let response = fs::read_to_string(&stdout)
-                .map_err(|error| format!("AIの生成結果を読み込めません: {error}"))?;
-            let helper_error = fs::read_to_string(&stderr).unwrap_or_default();
-            if !status.success() || response.trim().is_empty() {
-                let detail = helper_error.trim();
-                return Err(if detail.is_empty() {
-                    "Apple Intelligenceから応答がありませんでした。".into()
-                } else {
-                    detail.into()
-                });
-            }
-            Ok(response.trim().to_string())
-        })();
-
-        if let Err(error) = fs::remove_dir_all(&temp_dir) {
-            log::warn!("AI生成の一時ファイルを削除できません: {error}");
-        }
-        result
-    }
-}
-
-#[cfg(target_os = "macos")]
 mod ai_integration {
     use std::{
         env, fs,
@@ -473,41 +353,8 @@ mod ai_integration {
     }
 }
 
-#[tauri::command]
-async fn generate_weekly_report(app: tauri::AppHandle, prompt: String) -> Result<String, String> {
-    #[cfg(target_os = "macos")]
-    {
-        return tauri::async_runtime::spawn_blocking(move || {
-            apple_intelligence::generate(&app, &prompt, "weekly-report")
-        })
-        .await
-        .map_err(|error| format!("週報生成処理を完了できません: {error}"))?;
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (app, prompt);
-        Err("週報のAI生成はmacOSでのみ利用できます。".into())
-    }
-}
-
-#[tauri::command]
-async fn generate_note_title(app: tauri::AppHandle, content: String) -> Result<String, String> {
-    #[cfg(target_os = "macos")]
-    {
-        return tauri::async_runtime::spawn_blocking(move || {
-            apple_intelligence::generate(&app, &content, "note-title")
-        })
-        .await
-        .map_err(|error| format!("タイトル生成処理を完了できません: {error}"))?;
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (app, content);
-        Err("タイトルのAI生成はmacOSでのみ利用できます。".into())
-    }
-}
-
 const HOMEBREW_TRACK_CASK: &str = "nemooon/tap/track";
+const XATTR_EXECUTABLE: &str = "/usr/bin/xattr";
 
 fn homebrew_executable() -> Option<PathBuf> {
     ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
@@ -550,7 +397,31 @@ fn installed_track_version(brew: &std::path::Path) -> Result<Option<String>, Str
         .flatten())
 }
 
-fn run_homebrew_update(brew: &std::path::Path, expected_version: &str) -> Result<(), String> {
+fn remove_quarantine(xattr: &std::path::Path, app_path: &std::path::Path) -> Result<(), String> {
+    let output = Command::new(xattr)
+        .args(["-dr", "com.apple.quarantine"])
+        .arg(app_path)
+        .output()
+        .map_err(|error| {
+            format!("アップデートは完了しましたが、隔離属性を削除できませんでした: {error}")
+        })?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "アップデートは完了しましたが、隔離属性を削除できませんでした。\n\n{}\n\nターミナルから次のコマンドを実行してください:\n\nxattr -dr com.apple.quarantine \"{}\"",
+            command_error(&output),
+            app_path.display()
+        ))
+    }
+}
+
+fn run_homebrew_update(
+    brew: &std::path::Path,
+    xattr: &std::path::Path,
+    app_path: &std::path::Path,
+    expected_version: &str,
+) -> Result<(), String> {
     if installed_track_version(brew)?.is_none() {
         return Err(
             "TrackはHomebrewでインストールされていません。ターミナルからアップデートしてください。"
@@ -577,23 +448,45 @@ fn run_homebrew_update(brew: &std::path::Path, expected_version: &str) -> Result
     }
 
     match installed_track_version(brew)? {
-        Some(version) if version == expected_version => Ok(()),
-        Some(version) => Err(format!(
-            "Homebrewにはまだバージョン{expected_version}が反映されていません（現在: {version}）。少し待ってからもう一度お試しください。"
-        )),
-        None => Err(
-            "アップデート後のバージョンを確認できませんでした。ターミナルから状態を確認してください。"
-                .into(),
-        ),
+        Some(version) if version == expected_version => {}
+        Some(version) => {
+            return Err(format!(
+                "Homebrewにはまだバージョン{expected_version}が反映されていません（現在: {version}）。少し待ってからもう一度お試しください。"
+            ));
+        }
+        None => {
+            return Err(
+                "アップデート後のバージョンを確認できませんでした。ターミナルから状態を確認してください。"
+                    .into(),
+            );
+        }
     }
+
+    remove_quarantine(xattr, app_path)
+}
+
+fn current_app_bundle() -> Result<PathBuf, String> {
+    let executable = std::env::current_exe()
+        .map_err(|error| format!("Trackのインストール先を確認できません: {error}"))?;
+    executable
+        .ancestors()
+        .find(|path| path.extension().and_then(|extension| extension.to_str()) == Some("app"))
+        .map(std::path::Path::to_path_buf)
+        .ok_or_else(|| "Track.appのインストール先を確認できません。".to_string())
 }
 
 #[tauri::command]
 async fn install_update(expected_version: String) -> Result<(), String> {
+    let app_path = current_app_bundle()?;
     tauri::async_runtime::spawn_blocking(move || {
         let brew = homebrew_executable()
             .ok_or("Homebrewが見つかりません。ターミナルからアップデートしてください。")?;
-        run_homebrew_update(&brew, &expected_version)
+        run_homebrew_update(
+            &brew,
+            std::path::Path::new(XATTR_EXECUTABLE),
+            &app_path,
+            &expected_version,
+        )
     })
     .await
     .map_err(|error| format!("アップデート処理を完了できません: {error}"))?
@@ -644,6 +537,16 @@ mod update_tests {
     }
 
     #[cfg(unix)]
+    fn fake_xattr(directory: &std::path::Path, body: &str) -> PathBuf {
+        let xattr = directory.join("xattr");
+        fs::write(&xattr, format!("#!/bin/sh\nset -eu\n{body}\n")).unwrap();
+        let mut permissions = fs::metadata(&xattr).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&xattr, permissions).unwrap();
+        xattr
+    }
+
+    #[cfg(unix)]
     #[test]
     fn runs_expected_homebrew_upgrade_and_verifies_version() {
         let (brew, directory) = fake_brew(
@@ -664,13 +567,27 @@ else
 fi
 "#,
         );
+        let app_path = directory.join("Track.app");
+        let xattr = fake_xattr(
+            &directory,
+            r#"
+directory=$(dirname "$0")
+printf '%s\n' "$*" > "$directory/xattr-arguments"
+"#,
+        );
 
-        run_homebrew_update(&brew, "0.4.0").unwrap();
+        run_homebrew_update(&brew, &xattr, &app_path, "0.4.0").unwrap();
         assert_eq!(
             fs::read_to_string(directory.join("arguments"))
                 .unwrap()
                 .trim(),
             "upgrade --cask --no-quit --no-ask nemooon/tap/track"
+        );
+        assert_eq!(
+            fs::read_to_string(directory.join("xattr-arguments"))
+                .unwrap()
+                .trim(),
+            format!("-dr com.apple.quarantine {}", app_path.to_string_lossy())
         );
         fs::remove_dir_all(directory).unwrap();
     }
@@ -691,8 +608,50 @@ fi
 "#,
         );
 
-        let error = run_homebrew_update(&brew, "0.4.0").unwrap_err();
+        let error = run_homebrew_update(
+            &brew,
+            &directory.join("xattr-must-not-run"),
+            &directory.join("Track.app"),
+            "0.4.0",
+        )
+        .unwrap_err();
         assert!(error.contains("まだバージョン0.4.0が反映されていません"));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reports_when_quarantine_removal_fails_after_update() {
+        let (brew, directory) = fake_brew(
+            "xattr-failure",
+            r#"
+directory=$(dirname "$0")
+if [ "$1" = "list" ]; then
+  if [ -f "$directory/updated" ]; then
+    echo "track 0.4.0"
+  else
+    echo "track 0.3.0"
+  fi
+elif [ "$1" = "upgrade" ]; then
+  touch "$directory/updated"
+else
+  exit 1
+fi
+"#,
+        );
+        let xattr = fake_xattr(
+            &directory,
+            r#"
+echo "Operation not permitted" >&2
+exit 1
+"#,
+        );
+        let app_path = directory.join("Track.app");
+
+        let error = run_homebrew_update(&brew, &xattr, &app_path, "0.4.0").unwrap_err();
+        assert!(error.contains("アップデートは完了しました"));
+        assert!(error.contains("Operation not permitted"));
+        assert!(error.contains("xattr -dr com.apple.quarantine"));
         fs::remove_dir_all(directory).unwrap();
     }
 }
@@ -712,6 +671,8 @@ const SETTINGS_MENU_ID: &str = "open-settings";
 const ABOUT_MENU_ID: &str = "open-about";
 #[cfg(desktop)]
 const CHECK_FOR_UPDATES_MENU_ID: &str = "check-for-updates";
+#[cfg(desktop)]
+const DATA_TRANSFER_MENU_ID: &str = "open-data-transfer";
 #[cfg(target_os = "macos")]
 const INSTALL_AI_INTEGRATION_MENU_ID: &str = "install-ai-integration";
 #[cfg(desktop)]
@@ -867,6 +828,17 @@ fn open_about_dialog(app: &tauri::AppHandle) {
     };
     if let Err(error) = window.emit("track-open-about", ()) {
         log::error!("Trackについてを開けません: {error}");
+    }
+}
+
+#[cfg(desktop)]
+fn open_data_transfer_dialog(app: &tauri::AppHandle) {
+    focus_main_window(app);
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    if let Err(error) = window.emit("track-open-data-transfer", ()) {
+        log::error!("データ移行ダイアログを開けません: {error}");
     }
 }
 
@@ -1026,6 +998,13 @@ pub fn run() {
                         true,
                         Some("CmdOrCtrl+,"),
                     )?;
+                    let data_transfer = MenuItem::with_id(
+                        app,
+                        DATA_TRANSFER_MENU_ID,
+                        "データの移行…",
+                        true,
+                        None::<&str>,
+                    )?;
                     let install_ai_integration = MenuItem::with_id(
                         app,
                         INSTALL_AI_INTEGRATION_MENU_ID,
@@ -1101,6 +1080,8 @@ pub fn run() {
                         .quit_with_text(format!("{app_name}を終了"))
                         .build()?;
                     let file_menu = SubmenuBuilder::new(app, "ファイル")
+                        .item(&data_transfer)
+                        .separator()
                         .close_window_with_text("ウインドウを閉じる")
                         .build()?;
                     let edit_menu = SubmenuBuilder::new(app, "編集")
@@ -1161,10 +1142,17 @@ pub fn run() {
                         true,
                         Some("CmdOrCtrl+,"),
                     )?;
+                    let data_transfer = MenuItem::with_id(
+                        app,
+                        DATA_TRANSFER_MENU_ID,
+                        "データの移行…",
+                        true,
+                        None::<&str>,
+                    )?;
                     let separator = PredefinedMenuItem::separator(app)?;
                     let items = menu.items()?;
                     if let Some(app_menu) = items.first().and_then(|item| item.as_submenu()) {
-                        app_menu.insert_items(&[&settings, &separator], 2)?;
+                        app_menu.insert_items(&[&settings, &data_transfer, &separator], 2)?;
                     }
                     Ok(menu)
                 }
@@ -1182,6 +1170,7 @@ pub fn run() {
                 #[cfg(target_os = "macos")]
                 INSTALL_AI_INTEGRATION_MENU_ID => prompt_install_ai_integration(app),
                 SETTINGS_MENU_ID => open_settings_overlay(app),
+                DATA_TRANSFER_MENU_ID => open_data_transfer_dialog(app),
                 CALENDAR_MENU_ID => open_app_view(app, "/calendar"),
                 REPORTS_MENU_ID => open_app_view(app, "/reports"),
                 NOTES_MENU_ID => open_app_view(app, "/notes"),
@@ -1202,8 +1191,6 @@ pub fn run() {
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
-            generate_weekly_report,
-            generate_note_title,
             install_update,
             restart_track,
             show_ai_integration_installer

@@ -4,6 +4,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { PrismaClient } from "@prisma/client";
 import { getPrisma } from "../db/prisma";
+import { settingsUpdateSchema } from "../../shared/validators";
+import { parseReportCopyFormats } from "./settings";
 import { listSnapshots, snapshot, validateSnapshot, restore } from "../db/backup";
 import type { Env } from "../types";
 
@@ -20,6 +22,7 @@ export async function buildExport(prisma: PrismaClient) {
         workEnd: true,
         workDays: true,
         weeklyReportTemplate: true,
+        reportCopyFormats: true,
       },
     }),
     prisma.client.findMany({ orderBy: { createdAt: "asc" } }),
@@ -44,6 +47,7 @@ export async function buildExport(prisma: PrismaClient) {
       workEnd: current.workEnd,
       workDays: current.workDays.split(",").map(Number).filter((n) => !isNaN(n)),
       weeklyReportTemplate: current.weeklyReportTemplate,
+      reportCopyFormats: parseReportCopyFormats(current.reportCopyFormats),
     },
     clients: clients.map((x) => ({
       id: x.id,
@@ -137,6 +141,7 @@ const importSchema = z.object({
     workEnd: z.number().int().min(0).max(1440),
     workDays: z.array(z.number().int().min(0).max(6)),
     weeklyReportTemplate: z.string().min(1).max(10_000).optional(),
+    reportCopyFormats: settingsUpdateSchema.shape.reportCopyFormats,
   }),
   clients: z.array(
     z.object({
@@ -308,6 +313,9 @@ data.post("/import", async (c) => {
         workStart: d.settings.workStart,
         workEnd: d.settings.workEnd,
         workDays: d.settings.workDays.join(","),
+        ...(d.settings.reportCopyFormats
+          ? { reportCopyFormats: JSON.stringify(d.settings.reportCopyFormats) }
+          : {}),
         ...(d.settings.weeklyReportTemplate
           ? { weeklyReportTemplate: d.settings.weeklyReportTemplate }
           : {}),
