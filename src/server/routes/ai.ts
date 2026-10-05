@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { stream } from "hono/streaming";
 import { z } from "zod";
 import { createAiProvider } from "../ai/providers";
+import { loadCodexModels } from "../ai/models";
 import { loadConfig } from "../config";
 import type { Env } from "../types";
 import type { AiGenerateStreamEvent } from "../../shared/types";
@@ -21,6 +22,12 @@ function provider(c: { env: Env }) {
 }
 
 ai.get("/status", (c) => c.json(provider(c).status()));
+
+ai.get("/codex-models", async (c) => {
+  const config = loadConfig(c.env.DATA_DIR);
+  c.header("Cache-Control", "no-store");
+  return c.json(await loadCodexModels(config.aiCodexExecutable, c.env.HOME_DIR));
+});
 
 ai.post("/generate", async (c) => {
   const body = await c.req.json().catch(() => null);

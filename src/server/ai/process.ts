@@ -1,7 +1,7 @@
-import { accessSync, constants } from "node:fs";
+import { accessSync, constants, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 const MAX_STDOUT_BYTES = 2 * 1024 * 1024;
 const MAX_STDERR_BYTES = 1024 * 1024;
@@ -36,6 +36,34 @@ export function executableSearchDirectories(home = homedir()): string[] {
   ].filter((entry, index, all) => all.indexOf(entry) === index);
 }
 
+export function newestCodexExecutable(candidates: string[]): string | null {
+  const seen = new Set<string>();
+  let selected: string | null = null;
+  let selectedVersion = [-1, -1, -1];
+  for (const candidate of candidates) {
+    if (!isExecutable(candidate)) continue;
+    const realPath = realpathSync(candidate);
+    if (seen.has(realPath)) continue;
+    seen.add(realPath);
+    selected ??= candidate;
+    const result = spawnSync(candidate, ["--version"], {
+      encoding: "utf8",
+      timeout: 1_000,
+      maxBuffer: 64 * 1024,
+    });
+    if (result.status !== 0) continue;
+    const match = result.stdout?.match(/codex-cli\s+(\d+)\.(\d+)\.(\d+)/);
+    if (!match) continue;
+    const version = match.slice(1).map(Number);
+    const differing = version.findIndex((part, index) => part !== selectedVersion[index]);
+    if (differing >= 0 && version[differing]! > selectedVersion[differing]!) {
+      selected = candidate;
+      selectedVersion = version;
+    }
+  }
+  return selected;
+}
+
 export function resolveExecutable(
   requested: string,
   home = homedir(),
@@ -46,14 +74,29 @@ export function resolveExecutable(
   if (path.isAbsolute(value)) return isExecutable(value) ? value : null;
   if (value.includes("/") || value.includes("\\")) return null;
 
-  const candidates = executableSearchDirectories(home).map((directory) =>
+  const directories = executableSearchDirectories(home);
+  const candidates = directories.map((directory) =>
     path.join(directory, value),
   );
   if (value === "codex") {
-    candidates.push(
+    // npm scripts prepend project dependencies to PATH. Prefer the user's CLI
+    // and desktop installation over the SDK's bundled, potentially older CLI.
+    const isProjectDependency = (directory: string) =>
+      directory.split(/[\\/]/).includes("node_modules");
+    const external = directories.filter((directory) => !isProjectDependency(directory));
+    const bundled = directories.filter(isProjectDependency);
+    // Compare the PATH CLI with desktop copies. The desktop CLI may be newer
+    // and receive a newer model catalog even when Homebrew is already installed.
+    const installed = [
+      external.map((directory) => path.join(directory, value)).find(isExecutable),
+      "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
+      "/Applications/Codex.app/Contents/Resources/codex-cli/bin/codex",
       "/Applications/ChatGPT.app/Contents/Resources/codex",
       "/Applications/Codex.app/Contents/Resources/codex",
-    );
+    ].filter((candidate): candidate is string => Boolean(candidate));
+    return newestCodexExecutable(installed)
+      ?? bundled.map((directory) => path.join(directory, value)).find(isExecutable)
+      ?? null;
   }
   return candidates.find(isExecutable) ?? null;
 }

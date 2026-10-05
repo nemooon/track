@@ -33,6 +33,7 @@ import { ProjectsPage } from "@client/pages/ProjectsPage";
 import type {
   AiProviderId,
   AiProviderStatus,
+  CodexModelCatalog,
   UserSettings,
   AppConfig,
   Snapshot,
@@ -44,33 +45,6 @@ import {
 } from "@client/lib/reportCopy";
 
 const DAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
-
-const CODEX_MODEL_SUGGESTIONS = [
-  {
-    id: "gpt-5.6-sol",
-    label: "GPT-5.6-Sol — 最新の高性能エージェントモデル",
-  },
-  {
-    id: "gpt-5.6-terra",
-    label: "GPT-5.6-Terra — 日常作業向けのバランス型",
-  },
-  {
-    id: "gpt-5.6-luna",
-    label: "GPT-5.6-Luna — 高速・低コスト",
-  },
-  {
-    id: "gpt-5.5",
-    label: "GPT-5.5 — 複雑な作業向け",
-  },
-  {
-    id: "gpt-5.4",
-    label: "GPT-5.4 — 日常的なコーディング向け",
-  },
-  {
-    id: "gpt-5.4-mini",
-    label: "GPT-5.4-Mini — 軽量・高速",
-  },
-] as const;
 
 function minutesToTime(mins: number): string {
   const h = Math.floor(mins / 60);
@@ -375,6 +349,20 @@ export function SettingsPage({ category }: { category: SettingsCategory }) {
     queryKey: ["ai-status", config?.aiProvider],
     queryFn: () => apiFetch<AiProviderStatus>("/api/ai/status"),
     enabled: Boolean(config) && !aiConfigDirty,
+  });
+
+  const {
+    data: codexModels,
+    isFetching: codexModelsFetching,
+    isError: codexModelsError,
+    refetch: refreshCodexModels,
+  } = useQuery({
+    queryKey: ["codex-models", config?.aiCodexExecutable],
+    queryFn: () => apiFetch<CodexModelCatalog>("/api/ai/codex-models"),
+    enabled: Boolean(config) && category === "ai" && aiProvider === "codex",
+    staleTime: 0,
+    refetchInterval: 5 * 60_000,
+    retry: false,
   });
 
   function resetBackupSettings() {
@@ -729,7 +717,7 @@ export function SettingsPage({ category }: { category: SettingsCategory }) {
                     spellCheck={false}
                   />
                   <datalist id="ai-codex-model-suggestions">
-                    {CODEX_MODEL_SUGGESTIONS.map((model) => (
+                    {codexModels?.models.map((model) => (
                       <option
                         key={model.id}
                         value={model.id}
@@ -737,10 +725,31 @@ export function SettingsPage({ category }: { category: SettingsCategory }) {
                       />
                     ))}
                   </datalist>
+                  <div className="mt-2 flex items-center gap-3">
+                    <p className="flex-1 text-xs leading-5 text-neutral-500" role="status">
+                      {codexModelsError
+                        ? "モデル一覧を更新できませんでした。任意のモデルIDを入力できます。"
+                        : codexModels?.detail ?? "Codexのモデル一覧を取得しています…"}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={codexModelsFetching}
+                      onClick={() => void refreshCodexModels()}
+                    >
+                      {codexModelsFetching ? "更新中…" : "一覧を更新"}
+                    </Button>
+                  </div>
+                  {aiCodexExecutable !== config?.aiCodexExecutable && (
+                    <p className="mt-2 text-xs text-neutral-500">
+                      実行ファイルの変更を保存すると、そのCodexから候補を取得します。
+                    </p>
+                  )}
                 </SettingsRow>
                 <SettingsRow
                   title="codex実行ファイル"
-                  description="空欄ではPATHやChatGPTアプリから自動検出します。"
+                  description="空欄ではPATHとChatGPTアプリから新しいバージョンを自動検出します。"
                   htmlFor="ai-codex-executable"
                 >
                   <Input

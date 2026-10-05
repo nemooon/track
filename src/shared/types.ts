@@ -187,6 +187,17 @@ export type AiProviderStatus = {
   detail: string;
 };
 
+export type CodexModelSuggestion = {
+  id: string;
+  label: string;
+};
+
+export type CodexModelCatalog = {
+  models: CodexModelSuggestion[];
+  source: "codex" | "cache" | "fallback";
+  detail: string;
+};
+
 export type Snapshot = {
   name: string;
   path: string;
