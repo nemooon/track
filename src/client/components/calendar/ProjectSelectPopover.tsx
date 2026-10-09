@@ -67,7 +67,8 @@ export function ProjectSelectPopover({
   return createPortal(
     <div
       ref={ref}
-      className="fixed z-[60] overflow-x-hidden overflow-y-auto overscroll-contain rounded-md border border-neutral-200 bg-white shadow-lg"
+      // This body portal must appear above the edit dialog's z-[200] layer.
+      className="fixed z-[210] overflow-x-hidden overflow-y-auto overscroll-contain rounded-md border border-neutral-200 bg-white shadow-lg"
       style={{ ...position, width: WIDTH }}
     >
       <input
