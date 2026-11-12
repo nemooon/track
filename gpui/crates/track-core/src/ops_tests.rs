@@ -37,3 +37,80 @@ fn writes_nest_inside_an_outer_transaction() {
     assert_eq!(count(&db, r#"SELECT COUNT(*) FROM "Tag""#), 2);
     assert_eq!(count(&db, r#"SELECT COUNT(*) FROM "AiRegistration""#), 0);
 }
+
+use crate::ops::Table;
+
+fn one_entry(db: &mut crate::Db) -> TimeEntry {
+    db.create_entry(NewEntry { start: local(12, 9, 0), end: local(12, 10, 0), title: Some("旧".into()), ..Default::default() }).unwrap()
+}
+
+fn rename(db: &mut crate::Db, id: &str, title: &str) -> crate::error::Result<((), crate::ops::Operation)> {
+    let id = id.to_string();
+    let title = title.to_string();
+    db.with_operation("codex", move |db, rec| {
+        rec.watch(db, Table::TimeEntry, "id", &id)?;
+        rec.watch(db, Table::TagOnEntry, "entryId", &id)?;
+        db.update_entry(&id, EntryPatch { title: Some(Some(title)), ..Default::default() })?;
+        Ok(((), "タイトル変更".into(), 1))
+    })
+}
+
+#[test]
+fn operation_records_before_and_after_rows() {
+    let (_d, mut db) = db();
+    let e = one_entry(&mut db);
+    let (_, op) = rename(&mut db, &e.id, "新").unwrap();
+    assert_eq!((op.source.as_str(), op.summary.as_str(), op.count), ("codex", "タイトル変更", 1));
+    assert!(op.undone_at.is_none());
+    let ops = db.operations(10).unwrap();
+    assert_eq!(ops.len(), 1);
+    assert_eq!(ops[0].id, op.id);
+    let changes: serde_json::Value = serde_json::from_str(&db.conn().query_row(r#"SELECT changes FROM "AiOperation""#, [], |r| r.get::<_, String>(0)).unwrap()).unwrap();
+    let te = changes.as_array().unwrap().iter().find(|c| c["table"] == "TimeEntry").unwrap();
+    assert_eq!(te["before"][0]["title"], "旧");
+    assert_eq!(te["after"][0]["title"], "新");
+}
+
+#[test]
+fn failed_operation_changes_nothing_and_records_nothing() {
+    let (_d, mut db) = db();
+    let e = one_entry(&mut db);
+    let id = e.id.clone();
+    let r: crate::error::Result<((), crate::ops::Operation)> = db.with_operation("codex", move |db, rec| {
+        rec.watch(db, Table::TimeEntry, "id", &id)?;
+        db.update_entry(&id, EntryPatch { title: Some(Some("新".into())), ..Default::default() })?;
+        Err(crate::CoreError::code_msg("not_found", "x"))
+    });
+    assert!(r.is_err());
+    assert_eq!(db.entry(&e.id).unwrap().unwrap().title.as_deref(), Some("旧"));
+    assert!(db.operations(10).unwrap().is_empty());
+    assert!(db.conn().is_autocommit(), "transaction closed");
+}
+
+#[test]
+fn operations_are_pruned_to_100_and_30_days() {
+    let (_d, mut db) = db();
+    let e = one_entry(&mut db);
+    for i in 0..101 {
+        rename(&mut db, &e.id, &format!("t{i}")).unwrap();
+    }
+    assert_eq!(db.operations(1000).unwrap().len(), 100);
+    let old = db.operations(1000).unwrap().last().unwrap().id;
+    db.conn().execute(r#"UPDATE "AiOperation" SET createdAt = ?1 WHERE id = ?2"#, rusqlite::params![crate::time::to_db(chrono::Utc::now() - chrono::Duration::days(31)), old]).unwrap();
+    rename(&mut db, &e.id, "last").unwrap();
+    let ops = db.operations(1000).unwrap();
+    assert_eq!(ops.len(), 100);
+    assert!(ops.iter().all(|o| o.id != old));
+}
+
+#[test]
+fn operations_after_returns_newer_only() {
+    let (_d, mut db) = db();
+    let e = one_entry(&mut db);
+    assert_eq!(db.latest_operation_id().unwrap(), 0);
+    let (_, a) = rename(&mut db, &e.id, "a").unwrap();
+    let (_, b) = rename(&mut db, &e.id, "b").unwrap();
+    assert_eq!(db.latest_operation_id().unwrap(), b.id);
+    let after: Vec<i64> = db.operations_after(a.id).unwrap().iter().map(|o| o.id).collect();
+    assert_eq!(after, vec![b.id]);
+}

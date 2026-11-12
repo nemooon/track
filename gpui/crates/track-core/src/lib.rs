@@ -10,6 +10,7 @@ pub mod guard;
 pub mod integrations;
 pub mod ids;
 pub mod migrate;
+pub mod ops;
 pub mod prepare;
 pub mod model;
 pub mod report;
