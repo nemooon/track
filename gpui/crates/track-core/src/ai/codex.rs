@@ -1,6 +1,6 @@
 //! `CodexProvider`: runs `codex exec --experimental-json` like @openai/codex-sdk and reads its JSONL events.
 use super::process::{TempDir, resolve_executable};
-use super::{AiMode, AiProgress, AiProvider, ai_error, build_prompt, clean_response};
+use super::{AiMode, AiProgress, AiProvider, AiStatus, ai_error, build_prompt, clean_response};
 use crate::CoreError;
 use crate::model::AppConfig;
 use serde_json::Value;
@@ -179,6 +179,17 @@ impl Codex {
 impl AiProvider for Codex {
     fn id(&self) -> &'static str {
         "codex"
+    }
+
+    fn status(&self) -> AiStatus {
+        let (available, detail) = match &self.executable {
+            Some(exe) => (
+                true,
+                format!("既存のCodexログインを使用します（モデル: {}、実行ファイル: {}）。", self.model.as_deref().unwrap_or("Codexの既定値"), exe.display()),
+            ),
+            None => (false, "codex実行ファイルが見つかりません。Codexへログイン後、実行ファイルを指定してください。".into()),
+        };
+        AiStatus { provider: self.id(), label: "Codex".into(), available, detail }
     }
 
     fn generate(&self, mode: AiMode, input: &str, on_progress: &mut dyn FnMut(AiProgress)) -> Result<String, CoreError> {

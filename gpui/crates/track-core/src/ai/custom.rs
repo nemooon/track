@@ -1,6 +1,6 @@
 //! `CustomCommandProvider`: the prompt on stdin, the answer on stdout.
 use super::process::{DEFAULT_TIMEOUT, resolve_executable, run_process};
-use super::{AiMode, AiProgress, AiProvider, ai_error, build_prompt, clean_response};
+use super::{AiMode, AiProgress, AiProvider, AiStatus, ai_error, build_prompt, clean_response};
 use crate::CoreError;
 use crate::model::AppConfig;
 use std::path::{Path, PathBuf};
@@ -26,6 +26,20 @@ impl CustomCommand {
 impl AiProvider for CustomCommand {
     fn id(&self) -> &'static str {
         "custom-command"
+    }
+
+    fn status(&self) -> AiStatus {
+        let available = !self.executable.as_os_str().is_empty();
+        AiStatus {
+            provider: self.id(),
+            label: "カスタムコマンド".into(),
+            available,
+            detail: if available {
+                format!("標準入力でプロンプトを渡します（{}）。", self.executable.display())
+            } else {
+                "実行可能なコマンドを指定してください。".into()
+            },
+        }
     }
 
     fn generate(&self, mode: AiMode, input: &str, on_progress: &mut dyn FnMut(AiProgress)) -> Result<String, CoreError> {

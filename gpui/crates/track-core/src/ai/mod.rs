@@ -3,6 +3,7 @@
 pub mod apple;
 pub mod codex;
 pub mod custom;
+pub mod models;
 pub mod process;
 #[cfg(test)]
 mod tests;
@@ -68,9 +69,19 @@ impl AiProgress {
     }
 }
 
+/// `/api/ai/status`
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiStatus {
+    pub provider: &'static str,
+    pub label: String,
+    pub available: bool,
+    pub detail: String,
+}
+
 pub trait AiProvider {
     /// "codex", "custom-command" or "apple-intelligence"
     fn id(&self) -> &'static str;
+    fn status(&self) -> AiStatus;
     fn generate(&self, mode: AiMode, input: &str, on_progress: &mut dyn FnMut(AiProgress)) -> Result<String, CoreError>;
 }
 

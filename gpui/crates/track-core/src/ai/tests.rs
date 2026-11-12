@@ -120,3 +120,85 @@ fn codex_runs_executable_and_reads_final_message() {
     let err = codex::Codex::new(Some(exe), None).generate(AiMode::WeeklyReport, "x", &mut |_| {}).unwrap_err();
     assert_eq!(err.to_string(), "Codexへログインしていません。ターミナルで「codex login」を実行してください。");
 }
+
+fn fake_exe(dir: &std::path::Path, name: &str, body: &str) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let p = dir.join(name);
+    std::fs::write(&p, format!("#!/bin/sh\n{body}")).unwrap();
+    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+    p
+}
+
+#[test]
+fn status_texts_match_server() {
+    use crate::model::AppConfig;
+    let custom = |exe: &str| AppConfig { ai_provider: "custom-command".into(), ai_command_executable: exe.into(), ..Default::default() };
+    let s = provider_from_config(&custom("")).status();
+    assert_eq!((s.provider, s.label.as_str(), s.available, s.detail.as_str()), ("custom-command", "カスタムコマンド", false, "実行可能なコマンドを指定してください。"));
+    let s = provider_from_config(&custom("/bin/cat")).status();
+    assert!(s.available);
+    assert_eq!(s.detail, "標準入力でプロンプトを渡します（/bin/cat）。");
+    let s = codex::Codex::new(None, None).status();
+    assert_eq!((s.label.as_str(), s.available), ("Codex", false));
+    assert_eq!(s.detail, "codex実行ファイルが見つかりません。Codexへログイン後、実行ファイルを指定してください。");
+    let s = codex::Codex::new(Some("/x/codex".into()), None).status();
+    assert_eq!(s.detail, "既存のCodexログインを使用します（モデル: Codexの既定値、実行ファイル: /x/codex）。");
+    let s = codex::Codex::new(Some("/x/codex".into()), Some("gpt-6".into())).status();
+    assert!(s.detail.contains("モデル: gpt-6、"));
+    let s = apple::AppleIntelligence::with_helper(None).status();
+    assert_eq!((s.label.as_str(), s.available, s.detail.as_str()), ("Apple Intelligence", false, "Apple Intelligenceヘルパーが見つかりません。"));
+    let s = apple::AppleIntelligence::with_helper(Some("/Applications/Track.app/Contents/Resources/TrackAIHelper.app".into())).status();
+    assert_eq!((s.available, s.detail.as_str()), (true, "端末内モデルを使用します。"));
+}
+
+#[test]
+fn codex_models_from_app_server() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = fake_exe(
+        dir.path(),
+        "codex",
+        r#"[ "$1" = "app-server" ] || exit 2
+read init
+echo '{"id":0,"result":{}}'
+read initialized
+read list1
+echo '{"id":1,"result":{"data":[{"model":"gpt-a","displayName":"GPT A"},{"model":"gpt-h","displayName":"Hidden","hidden":true}],"nextCursor":"c2"}}'
+read list2
+case "$list2" in *'"cursor":"c2"'*) ;; *) exit 3;; esac
+echo '{"id":2,"result":{"data":[{"model":"gpt-b","displayName":"GPT B"}],"nextCursor":null}}'
+sleep 5
+"#,
+    );
+    let started = std::time::Instant::now();
+    let cat = models::codex_models(exe.to_str().unwrap(), dir.path(), &dir.path().join("codex-home"));
+    assert!(started.elapsed() < std::time::Duration::from_secs(4), "does not wait for the server to exit");
+    assert_eq!(cat.source, "codex");
+    assert_eq!(cat.models, vec![("gpt-a".to_string(), "GPT A".to_string()), ("gpt-b".to_string(), "GPT B".to_string())]);
+    assert_eq!(cat.detail, "Codexから取得したモデル候補です。表示中は5分ごとに自動更新します。");
+}
+
+#[test]
+fn codex_models_fall_back_to_cache() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("codex-home");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::write(
+        home.join("models_cache.json"),
+        r#"{"models":[{"slug":"m1","display_name":"M 1","visibility":"list"},{"slug":"m2","display_name":"M 2","visibility":"hide"}]}"#,
+    )
+    .unwrap();
+    let exe = fake_exe(dir.path(), "codex", "exit 1\n");
+    let cat = models::codex_models(exe.to_str().unwrap(), dir.path(), &home);
+    assert_eq!(cat.source, "cache");
+    assert_eq!(cat.models, vec![("m1".to_string(), "M 1".to_string())]);
+    assert!(cat.detail.starts_with("Codexへ接続できないため"));
+}
+
+#[test]
+fn codex_models_fall_back_to_builtin() {
+    let dir = tempfile::tempdir().unwrap();
+    let cat = models::codex_models("/no/such/codex", dir.path(), &dir.path().join("none"));
+    assert_eq!(cat.source, "fallback");
+    assert_eq!(cat.models.len(), 4);
+    assert_eq!(cat.models[0], ("gpt-6.1-sol".to_string(), "GPT-6.1 Sol".to_string()));
+}

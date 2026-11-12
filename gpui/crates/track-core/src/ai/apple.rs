@@ -1,6 +1,6 @@
 //! `AppleIntelligenceProvider`: the on-device model through Track's bundled helper app.
 use super::process::{DEFAULT_TIMEOUT, TempDir, run_process};
-use super::{AiMode, AiProgress, AiProvider, ai_error, clean_response};
+use super::{AiMode, AiProgress, AiProvider, AiStatus, ai_error, clean_response};
 use crate::CoreError;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
@@ -17,6 +17,10 @@ impl AppleIntelligence {
         ];
         AppleIntelligence { helper: candidates.into_iter().find(|p| p.exists()) }
     }
+
+    pub fn with_helper(helper: Option<PathBuf>) -> Self {
+        AppleIntelligence { helper }
+    }
 }
 
 fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
@@ -27,6 +31,24 @@ fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
 impl AiProvider for AppleIntelligence {
     fn id(&self) -> &'static str {
         "apple-intelligence"
+    }
+
+    fn status(&self) -> AiStatus {
+        let mac = cfg!(target_os = "macos");
+        let available = mac && self.helper.is_some();
+        AiStatus {
+            provider: self.id(),
+            label: "Apple Intelligence".into(),
+            available,
+            detail: if available {
+                "端末内モデルを使用します。"
+            } else if !mac {
+                "macOSでのみ利用できます。"
+            } else {
+                "Apple Intelligenceヘルパーが見つかりません。"
+            }
+            .into(),
+        }
     }
 
     fn generate(&self, mode: AiMode, input: &str, on_progress: &mut dyn FnMut(AiProgress)) -> Result<String, CoreError> {
