@@ -144,3 +144,20 @@ fn external_write_triggers_reload(cx: &mut TestAppContext) {
     let projects = app.read_with(cx, |a, cx| a.state.read(cx).data.as_ref().map(|d| d.projects.iter().any(|p| p.id == "p3")));
     assert_eq!(projects, Some(true), "reference data is reloaded too");
 }
+
+#[gpui::test]
+fn integrations_dialog_installs_dev_names(cx: &mut TestAppContext) {
+    let (app, cx) = open_app(cx);
+    let home = tempfile::tempdir().unwrap();
+    app.update(cx, |a, _| a.integrations_home = home.path().to_path_buf());
+    cx.dispatch_action(crate::actions::InstallIntegrations);
+    cx.run_until_parked();
+    let b = cx.debug_bounds("install-both").expect("dialog with choices");
+    cx.simulate_click(b.center(), gpui::Modifiers::none());
+    cx.run_until_parked();
+    assert!(home.path().join(".codex/skills/track-dev/SKILL.md").is_file());
+    assert!(home.path().join(".claude/commands/track-dev.md").is_file());
+    assert!(!home.path().join(".codex/skills/track").exists(), "the real skill name is never used");
+    let status = app.read_with(cx, |a, cx| a.integrations.as_ref().map(|d| d.read(cx).status.clone()));
+    assert!(matches!(status, Some(Some(Ok(ref paths))) if paths.len() == 2), "{status:?}");
+}

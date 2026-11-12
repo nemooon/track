@@ -5,6 +5,7 @@ pub mod dates;
 pub mod db;
 pub mod error;
 pub mod guard;
+pub mod integrations;
 pub mod ids;
 pub mod migrate;
 pub mod prepare;
@@ -12,6 +13,7 @@ pub mod model;
 pub mod report;
 pub mod repo;
 pub mod reports;
+pub mod runtime;
 pub mod validate;
 pub mod time;
 
@@ -21,3 +23,5 @@ pub use error::CoreError;
 mod db_tests;
 #[cfg(test)]
 mod reports_tests;
+#[cfg(test)]
+mod integrations_tests;

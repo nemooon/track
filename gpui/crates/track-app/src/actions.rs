@@ -1,6 +1,6 @@
 use gpui::{App, KeyBinding, Menu, MenuItem, OsAction, SystemMenuType, actions};
 
-actions!(track, [ShowCalendar, ShowReports, PrevPeriod, NextPeriod, Today, ZoomIn, ZoomOut, Quit]);
+actions!(track, [ShowCalendar, ShowReports, PrevPeriod, NextPeriod, Today, ZoomIn, ZoomOut, InstallIntegrations, Quit]);
 
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
@@ -20,6 +20,8 @@ pub fn bind_keys(cx: &mut App) {
 pub fn set_menus(cx: &mut App) {
     cx.set_menus([
         Menu::new("Track").items([
+            MenuItem::action("AI 連携をインストール…（開発用）", InstallIntegrations),
+            MenuItem::separator(),
             MenuItem::os_submenu("サービス", SystemMenuType::Services),
             MenuItem::separator(),
             MenuItem::action("Track を終了", Quit),

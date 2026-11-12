@@ -95,6 +95,9 @@ pub struct TrackApp {
     pub calendar: Entity<CalendarView>,
     pub reports: Entity<ReportsView>,
     focus: FocusHandle,
+    /// Where 「AI 連携をインストール」 installs (tests point it at a tempdir).
+    pub integrations_home: PathBuf,
+    pub integrations: Option<Entity<crate::ui::integrations_dialog::IntegrationsDialog>>,
     _watcher: gpui::Task<()>,
 }
 
@@ -103,7 +106,15 @@ const EXTERNAL_POLL: std::time::Duration = std::time::Duration::from_secs(1);
 
 impl TrackApp {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let state = cx.new(|_| AppState::new(DataClient::from_env()));
+        let data = DataClient::from_env();
+        // Tell AI skills where the CLI is (it sits next to this binary). Kept after exit: the CLI
+        // works without the app.
+        if track_core::guard::dev_guard(&data.data_dir).is_ok()
+            && let Some(cli) = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("track-cli")))
+        {
+            let _ = track_core::runtime::write_runtime(&data.data_dir, &cli);
+        }
+        let state = cx.new(|_| AppState::new(data));
         state.update(cx, |s, cx| s.load(cx));
         Self::with_state(state, window, cx)
     }
@@ -117,7 +128,16 @@ impl TrackApp {
         // Dev convenience: TRACK_GPUI_PAGE=reports opens the Reports screen first.
         let page = if std::env::var("TRACK_GPUI_PAGE").as_deref() == Ok("reports") { Page::Reports } else { Page::Calendar };
         let watcher = Self::watch_external_changes(state.clone(), calendar.clone(), reports.clone(), cx);
-        Self { state, page, calendar, reports, focus, _watcher: watcher }
+        Self {
+            state,
+            page,
+            calendar,
+            reports,
+            focus,
+            integrations_home: dirs::home_dir().unwrap_or_default(),
+            integrations: None,
+            _watcher: watcher,
+        }
     }
 
     /// Polls `PRAGMA data_version`, which changes only when another connection commits,
@@ -146,6 +166,13 @@ impl TrackApp {
                 last = Some(v);
             }
         })
+    }
+
+    pub fn open_integrations(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        use gpui_component::WindowExt as _;
+        let view = cx.new(|_| crate::ui::integrations_dialog::IntegrationsDialog::new(self.integrations_home.clone()));
+        self.integrations = Some(view.clone());
+        window.open_dialog(cx, move |dialog, _, _| dialog.title("AI 連携をインストール（開発用）").w(px(520.)).child(view.clone()));
     }
 
     fn show(&mut self, page: Page, cx: &mut Context<Self>) {
@@ -264,6 +291,7 @@ impl Render for TrackApp {
             .text_color(n900())
             .font_family(".SystemUIFont")
             .on_action(cx.listener(|this, _: &ShowCalendar, _, cx| this.show(Page::Calendar, cx)))
+            .on_action(cx.listener(|this, _: &InstallIntegrations, w, cx| this.open_integrations(w, cx)))
             .on_action(cx.listener(|this, _: &ShowReports, _, cx| this.show(Page::Reports, cx)))
             .on_action(cx.listener(|this, _: &PrevPeriod, w, cx| this.forward(crate::ui::date_nav::NavEvent::Prev, w, cx)))
             .on_action(cx.listener(|this, _: &NextPeriod, w, cx| this.forward(crate::ui::date_nav::NavEvent::Next, w, cx)))
