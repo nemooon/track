@@ -93,13 +93,13 @@ def run_tauri(settle=8, idle=10):
             "idle_cpu_pct": round((c1 - c0) / idle * 100, 2), "pids": pids, "wid": wid}
 
 def run_gpui(settle=8, idle=10, keep=False):
-    env = dict(os.environ, TRACK_GPUI_WINDOW="1440x900")
+    env = dict(os.environ, TRACK_GPUI_WINDOW="1440x900", TRACK_DATA_DIR=os.path.expanduser("~/.track-gpui"))
     t0 = time.time()
     p = subprocess.Popen([GPUI], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     t_win, t_ready, wid = wait_ready(p.pid, t0)
     time.sleep(settle)
-    server = [int(x) for x in sh("lsof", "-nP", "-iTCP:8787", "-sTCP:LISTEN", "-t").split()]
-    mem = {"app": footprint_mb([p.pid]), "server": footprint_mb(server)}
+    # The native version has no API server: the app reads SQLite itself.
+    mem = {"app": footprint_mb([p.pid])}
     c0 = cpu_seconds([p.pid]); time.sleep(idle); c1 = cpu_seconds([p.pid])
     res = {"window_s": round(t_win, 2), "ready_s": round(t_ready, 2), "mem_mb": mem, "mem_total_mb": round(sum(mem.values()), 1),
            "idle_cpu_pct": round((c1 - c0) / idle * 100, 2), "pid": p.pid, "wid": wid}

@@ -1,6 +1,6 @@
 # GPUI 版 / Tauri 版の計測
 
-前提: コピー DB の API が 8787 で動いていること、`cargo build --release` 済み、インストール済みの `/Applications/Track.app`。
+前提: `prepare-db.sh` でコピー DB を作ってあること（GPUI 版は API サーバー不要）、`cargo build --release --workspace` 済み、インストール済みの `/Applications/Track.app`。
 操作系の計測にはアクセシビリティ権限、画面取得には画面収録の権限が要る。どちらのアプリのデータも書き換えない
 （`⌘]`/`⌘[` の往復、マウス移動、スクロールだけ）。Tauri 版は起動・終了を繰り返す。
 
