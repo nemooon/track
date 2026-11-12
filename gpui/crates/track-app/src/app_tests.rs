@@ -161,3 +161,16 @@ fn integrations_dialog_installs_dev_names(cx: &mut TestAppContext) {
     let status = app.read_with(cx, |a, cx| a.integrations.as_ref().map(|d| d.read(cx).status.clone()));
     assert!(matches!(status, Some(Some(Ok(ref paths))) if paths.len() == 2), "{status:?}");
 }
+
+#[test]
+fn db_job_panic_does_not_close_data_access() {
+    let dir = tempfile::tempdir().unwrap();
+    let data = crate::data::DataClient::open_unguarded(dir.path());
+    let err = futures_lite_block(data.call("boom", |_| -> Result<(), track_core::CoreError> { panic!("bug") })).unwrap_err();
+    assert_eq!(err.code, "internal_error");
+    assert!(futures_lite_block(data.settings()).is_ok(), "later calls still work");
+}
+
+fn futures_lite_block<T>(f: impl std::future::Future<Output = T>) -> T {
+    gpui::block_on(f)
+}

@@ -99,7 +99,10 @@ impl DataClient {
                 Err(DataError { code: "test_failure".into(), message: format!("{op} failed (test)") })
             } else {
                 match db {
-                    Ok(db) => f(db).map_err(DataError::from),
+                    // A bug in one operation must not take the DB thread (and every later call) down with it.
+                    Ok(db) => std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(db)))
+                        .unwrap_or_else(|_| Err(CoreError::code_msg("internal_error", format!("{op} で内部エラーが発生しました。"))))
+                        .map_err(DataError::from),
                     Err(e) => Err(e.clone()),
                 }
             };
