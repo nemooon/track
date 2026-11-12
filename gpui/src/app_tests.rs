@@ -98,7 +98,8 @@ fn refuses_to_run_against_the_real_track_db(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn loads_when_server_uses_the_copy_db(cx: &mut TestAppContext) {
-    let (app, cx) = crate::testing::open_app_loading(cx, reference_stub("/Users/someone/.track-gpui/track.db"));
+    let db: &'static str = Box::leak(dirs::home_dir().unwrap().join(".track-gpui/track.db").to_string_lossy().into_owned().into_boxed_str());
+    let (app, cx) = crate::testing::open_app_loading(cx, reference_stub(db));
     settle(cx);
     assert!(app.read_with(cx, |a, cx| a.state.read(cx).data.is_some()));
 }
@@ -145,7 +146,7 @@ fn reconnect_event_retries_startup_load(cx: &mut TestAppContext) {
     let (base, _) = crate::testing::stub_server(move |_, path| match path {
         // first startup check fails (server "not up yet"), later ones succeed
         "/health" if hc.fetch_add(1, Ordering::SeqCst) == 0 => (503, "{}".into()),
-        "/health" => (200, r#"{"ok":true,"db":"/x/.track-gpui/track.db"}"#.into()),
+        "/health" => (200, format!(r#"{{"ok":true,"db":"{}"}}"#, dirs::home_dir().unwrap().join(".track-gpui/track.db").display())),
         "/api/events" => (200, "event: track.connected\ndata: {}\n\n".into()),
         "/api/projects" | "/api/clients" | "/api/tags" | "/api/entries" => (200, "[]".into()),
         "/api/settings" => (200, r#"{"workStart":600,"workEnd":1110,"workDays":[1,2,3,4,5]}"#.into()),

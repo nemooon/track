@@ -71,7 +71,11 @@ pub struct Health {
 /// The prototype may only talk to a server whose DB lives under `~/.track-gpui`
 /// (see scripts/prepare-db.sh); the real `~/.track` must never be modified.
 pub fn is_copy_db(db_path: &str) -> bool {
-    db_path.contains("/.track-gpui/")
+    let Some(home) = dirs::home_dir() else { return false };
+    let copy_dir = home.join(".track-gpui");
+    let p = std::path::Path::new(db_path);
+    // Must be absolute: a literal "~/…" would be relative to the server's cwd.
+    p.is_absolute() && p.starts_with(&copy_dir)
 }
 
 /// HTTP client for the local Bun API. All requests run on a dedicated tokio
@@ -328,7 +332,7 @@ mod live_crud_tests {
         fn b<F: std::future::Future>(f: F) -> F::Output { futures::executor::block_on(f) }
         let api = ApiClient::from_env();
         let db = b(api.health()).unwrap().db;
-        assert!(is_copy_db(&db), "refusing to write to {db}; start the API with TRACK_DATA_DIR=~/.track-gpui");
+        assert!(is_copy_db(&db), "refusing to write to {db}; start the API with TRACK_DATA_DIR=$HOME/.track-gpui");
         let t = |h, m| Local.with_ymd_and_hms(2030, 1, 7, h, m, 0).unwrap().to_utc();
         let tag = b(api.tags()).unwrap().into_iter().next();
         let created = b(api.create_entry(NewEntry {
@@ -343,5 +347,20 @@ mod live_crud_tests {
         let err = b(api.update_entry(&created.id, EntryPatch { end: Some(t(9, 0) + chrono::Duration::days(2)), ..Default::default() })).unwrap_err();
         println!("cross-day error: {}", err.message);
         b(api.delete_entry(&created.id)).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod copy_db_tests {
+    use super::*;
+
+    #[test]
+    fn copy_db_must_be_the_absolute_home_copy() {
+        let home = dirs::home_dir().unwrap();
+        assert!(is_copy_db(&home.join(".track-gpui/track.db").to_string_lossy()));
+        // a literal, unexpanded tilde resolves relative to the server's cwd: reject
+        assert!(!is_copy_db("~/.track-gpui/track.db"));
+        assert!(!is_copy_db("/tmp/x/.track-gpui/track.db"));
+        assert!(!is_copy_db(&home.join(".track/track.db").to_string_lossy()));
     }
 }

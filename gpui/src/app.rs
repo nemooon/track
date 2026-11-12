@@ -55,7 +55,7 @@ impl AppState {
                 if !crate::api::client::is_copy_db(&health.db) {
                     return Err(crate::api::ApiError {
                         status: None,
-                        message: format!("本物の DB に接続しています（{}）。TRACK_DATA_DIR=~/.track-gpui で起動した API に接続してください。", health.db),
+                        message: format!("コピー DB（~/.track-gpui）以外に接続しています（{}）。TRACK_DATA_DIR=\"$HOME/.track-gpui\" で起動した API に接続してください。", health.db),
                     });
                 }
                 Ok::<_, crate::api::ApiError>(AppData {
