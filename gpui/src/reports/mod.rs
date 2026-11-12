@@ -1,4 +1,6 @@
+pub mod custom_output;
 mod summary;
+pub mod weekly_report;
 
 use crate::api::{GroupBy, ReportEntry, ReportQuery, ReportRange, ReportResponse};
 use crate::app::AppState;
@@ -23,6 +25,8 @@ pub enum FilterKind {
     Project,
     Tag,
 }
+
+pub type CustomOutputView = custom_output::CustomOutput;
 
 #[derive(Debug, Clone)]
 pub enum Children {
@@ -49,6 +53,8 @@ pub struct ReportsView {
     pub open_filter: Option<FilterKind>,
     filter_query: Entity<InputState>,
     donut_hover: Option<usize>,
+    pub output: Option<Entity<custom_output::CustomOutput>>,
+    pub weekly: Option<Entity<weekly_report::WeeklyReport>>,
     donut_bounds_store: std::rc::Rc<std::cell::Cell<Option<gpui::Bounds<gpui::Pixels>>>>,
     _subs: Vec<Subscription>,
 }
@@ -78,6 +84,8 @@ impl ReportsView {
             open_filter: None,
             filter_query,
             donut_hover: None,
+            output: None,
+            weekly: None,
             donut_bounds_store: Default::default(),
             _subs: subs,
         }
@@ -746,8 +754,59 @@ impl ReportsView {
             .into_any_element()
     }
 
-    fn render_output_buttons(&self, _cx: &mut Context<Self>) -> AnyElement {
-        div().into_any_element()
+    fn render_output_buttons(&self, cx: &mut Context<Self>) -> AnyElement {
+        let small = |id: &'static str| div().id(id).debug_selector(move || id.into()).flex().items_center().gap(px(6.)).rounded_md().border_1().px(px(10.)).py_1().text_xs().font_weight(FontWeight::MEDIUM).cursor_pointer();
+        div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .justify_end()
+            .gap_3()
+            .when(self.range == ReportRange::Week, |d| {
+                d.child(
+                    small("weekly-open")
+                        .border_color(gpui::rgb(0xa7f3d0))
+                        .bg(gpui::rgb(0xecfdf5))
+                        .text_color(gpui::rgb(0x065f46))
+                        .hover(|s| s.bg(gpui::rgb(0xd1fae5)))
+                        .child(Icon::new(IconName::Bot).size_3p5())
+                        .child("週報を生成")
+                        .on_click(cx.listener(|this, _, w, cx| this.open_weekly(w, cx))),
+                )
+            })
+            .child(
+                small("output-open")
+                    .border_color(gpui::rgb(0xbfdbfe))
+                    .bg(gpui::rgb(0xeff6ff))
+                    .text_color(gpui::rgb(0x1e40af))
+                    .hover(|s| s.bg(gpui::rgb(0xdbeafe)))
+                    .child(Icon::new(IconName::FileText).size_3p5())
+                    .child("出力を作成")
+                    .on_click(cx.listener(|this, _, w, cx| this.open_output(w, cx))),
+            )
+            .into_any_element()
+    }
+
+    pub fn open_output(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        use gpui_component::WindowExt as _;
+        let ctx = custom_output::OutputContext {
+            query: self.current_query(),
+            anchor: self.anchor,
+            rows: self.data.as_ref().map(|d| d.rows.clone()).unwrap_or_default(),
+            total: self.data.as_ref().map(|d| d.total_minutes).unwrap_or(0),
+        };
+        let state = self.state.clone();
+        let view = cx.new(|cx| custom_output::CustomOutput::new(state, ctx, cx));
+        self.output = Some(view.clone());
+        window.open_dialog(cx, move |dialog, _, _| dialog.title("カスタム出力").w(px(1100.)).child(view.clone()));
+    }
+
+    pub fn open_weekly(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        use gpui_component::WindowExt as _;
+        let (state, q, anchor) = (self.state.clone(), self.current_query(), self.anchor);
+        let view = cx.new(|cx| weekly_report::WeeklyReport::new(state, q, anchor, window, cx));
+        self.weekly = Some(view.clone());
+        window.open_dialog(cx, move |dialog, _, _| dialog.title("週報").w(px(760.)).child(view.clone()));
     }
 }
 

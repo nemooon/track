@@ -86,3 +86,100 @@ fn group_by_switch_and_same_titles_toggle(cx: &mut TestAppContext) {
     click(cx, "group-same-titles");
     assert!(app.read_with(cx, |a, cx| a.state.read(cx).persist.group_same_titles));
 }
+
+fn ai_setup<'a>(cx: &'a mut TestAppContext, ai_text: &'static str) -> (gpui::Entity<crate::app::TrackApp>, &'a mut gpui::VisualTestContext, Arc<Mutex<Vec<Recorded>>>) {
+    let (base, log) = stub_server(move |_, path| match path {
+        "/api/reports" => (200, REPORT.into()),
+        "/api/reports/entries" => (200, ENTRIES.into()),
+        "/api/entries" => (200, "[]".into()),
+        "/api/ai/generate-stream" => {
+            let result = serde_json::json!({"type": "result", "text": ai_text, "provider": "codex"}).to_string();
+            (200, format!("{{\"type\":\"progress\",\"kind\":\"reasoning\",\"message\":\"分類中\"}}\n{{\"type\":\"heartbeat\"}}\n{result}\n"))
+        }
+        _ => (404, r#"{"error":"nf"}"#.into()),
+    });
+    let (app, cx) = open_app_with(cx, base);
+    app.update(cx, |a, cx| {
+        a.state.update(cx, |s, _| {
+            let d = s.data.as_mut().unwrap();
+            let col = |id: &str, field: crate::api::ReportCopyField| crate::api::ReportCopyColumn::Field { id: id.into(), field, label: None, duration_format: None };
+            d.settings.report_copy_formats = vec![
+                crate::api::ReportCopyFormat { id: "plain".into(), name: "標準".into(), target: "ai-aggregation".into(), delimiter: "tab".into(), include_header: true, ai_prompt: "".into(), columns: vec![col("c", crate::api::ReportCopyField::Category), col("n", crate::api::ReportCopyField::EntryCount)] },
+                crate::api::ReportCopyFormat { id: "ai".into(), name: "AI".into(), target: "ai-aggregation".into(), delimiter: "comma".into(), include_header: false, ai_prompt: "目的別".into(), columns: vec![col("c", crate::api::ReportCopyField::Category), col("s", crate::api::ReportCopyField::Summary)] },
+            ];
+            d.settings.weekly_report_template = "## 主な作業\n（ここ）\n\n## 課題\n- {{期間}}".into();
+        })
+    });
+    cx.simulate_keystrokes("cmd-2");
+    wait_io(cx);
+    (app, cx, log)
+}
+
+fn output(app: &gpui::Entity<crate::app::TrackApp>, cx: &mut gpui::VisualTestContext) -> gpui::Entity<crate::reports::CustomOutputView> {
+    app.read_with(cx, |a, cx| a.reports.read(cx).output.clone().expect("output dialog"))
+}
+
+#[gpui::test]
+fn custom_output_without_ai_uses_report_rows_and_copies_tsv(cx: &mut TestAppContext) {
+    let (app, cx, _log) = ai_setup(cx, "");
+    click(cx, "output-open");
+    wait_io(cx);
+    click(cx, "output-create");
+    wait_io(cx);
+    let out = output(&app, cx);
+    let rows = out.read_with(cx, |o, _| o.result.clone());
+    assert_eq!(rows.iter().map(|r| (r.label.as_str(), r.entry_count)).collect::<Vec<_>>(), vec![("Alpha", 2), ("プロジェクトなし", 2)]);
+    click(cx, "output-copy");
+    assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()), Some("集計名\t件数\nAlpha\t2\nプロジェクトなし\t2".into()));
+    assert!(out.read_with(cx, |o, _| o.copied));
+}
+
+#[gpui::test]
+fn custom_output_with_ai_streams_and_restores_from_cache(cx: &mut TestAppContext) {
+    let (app, cx, log) = ai_setup(cx, r#"{"groups":[{"label":"定例","summary":"会議","entryIds":["e1","e2"]}]}"#);
+    click(cx, "output-open");
+    wait_io(cx);
+    click(cx, "format-select");
+    click(cx, "format-ai");
+    click(cx, "output-create");
+    wait_io(cx);
+    let out = output(&app, cx);
+    let rows = out.read_with(cx, |o, _| o.result.clone());
+    assert_eq!((rows[0].label.as_str(), rows[0].minutes, rows[0].summary.as_str()), ("定例", 90, "会議"));
+    let req = log.lock().unwrap().iter().find(|r| r.path == "/api/ai/generate-stream").cloned().expect("ai request");
+    let body: serde_json::Value = serde_json::from_str(&req.body).unwrap();
+    assert_eq!(body["mode"], "report-aggregation");
+    assert!(body["input"].as_str().unwrap().contains("目的別"));
+    // Re-open: the cached result for the same format and data is restored.
+    cx.update(|w, cx| gpui_component::WindowExt::close_dialog(w, cx));
+    click(cx, "output-open");
+    wait_io(cx);
+    click(cx, "format-select");
+    click(cx, "format-ai");
+    wait_io(cx);
+    let out = output(&app, cx);
+    assert!(out.read_with(cx, |o, _| o.restored_at.is_some()));
+    assert_eq!(out.read_with(cx, |o, _| o.result.len()), 1);
+}
+
+#[gpui::test]
+fn weekly_report_replaces_main_work_with_fixed_text(cx: &mut TestAppContext) {
+    let (app, cx, _log) = ai_setup(cx, "## 主な作業\n- AIの文章\n\n## 課題\n- なし");
+    click(cx, "weekly-open");
+    wait_io(cx);
+    let weekly = app.read_with(cx, |a, cx| a.reports.read(cx).weekly.clone().unwrap());
+    let text = weekly.read_with(cx, |w, cx| w.editor.read(cx).value().to_string());
+    assert_eq!(text, "## 主な作業\n\n- **Acme / Alpha**（1時間30分）：定例\n\n## 課題\n- なし");
+    click(cx, "weekly-copy");
+    assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()), Some(text));
+}
+
+#[gpui::test]
+fn weekly_report_requires_template(cx: &mut TestAppContext) {
+    let (app, cx, _log) = ai_setup(cx, "x");
+    app.update(cx, |a, cx| a.state.update(cx, |s, _| s.data.as_mut().unwrap().settings.weekly_report_template = "  ".into()));
+    click(cx, "weekly-open");
+    wait_io(cx);
+    let weekly = app.read_with(cx, |a, cx| a.reports.read(cx).weekly.clone().unwrap());
+    assert_eq!(weekly.read_with(cx, |w, _| w.error.clone()), Some("設定の「レポート」で出力テンプレートを保存してください。".into()));
+}
