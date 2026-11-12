@@ -5,5 +5,9 @@
   <!-- Bunが単一実行ファイル内のlibSQLアドオンを一時展開して読み込むために必要。 -->
   <key>com.apple.security.cs.disable-library-validation</key>
   <true/>
+  <!-- Hardened Runtime下でJavaScriptCoreのJITを使うために必要。無いとインタプリタで動き、
+       待機中もCPUを10%以上使い、リクエスト処理も約2倍遅くなる。 -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
 </dict>
 </plist>
