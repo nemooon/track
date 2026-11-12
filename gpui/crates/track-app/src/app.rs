@@ -87,16 +87,28 @@ impl AppState {
     pub fn refresh_all(&mut self, cx: &mut Context<Self>) {
         let fut = Self::read_all(self.api.clone());
         let ops = self.ops_seen.map(|seen| self.api.operations_after(seen));
+        let shown = self.ai_op.as_ref().map(|n| (n.operation.id, self.api.operation(n.operation.id)));
         cx.spawn(async move |this, cx| {
             let result = fut.await;
             let ops = match ops {
                 Some(f) => f.await.ok(),
                 None => None,
             };
+            // The offered operation may have been undone (or pruned) from the CLI meanwhile.
+            let gone = match shown {
+                Some((id, f)) => match f.await {
+                    Ok(current) if current.as_ref().is_none_or(|op| op.undone_at.is_some()) => Some(id),
+                    _ => None,
+                },
+                None => None,
+            };
             let _ = this.update(cx, |this, cx| {
                 match result {
                     Ok(data) => this.data = Some(data),
                     Err(e) => this.error = Some(e.message),
+                }
+                if gone.is_some() && this.ai_op.as_ref().map(|n| n.operation.id) == gone {
+                    this.ai_op = None;
                 }
                 if let Some(ops) = ops {
                     this.note_operations(ops);

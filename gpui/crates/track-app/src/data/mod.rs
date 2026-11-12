@@ -173,6 +173,10 @@ impl DataClient {
         self.call("operations_after", move |db| db.operations_after(id))
     }
 
+    pub fn operation(&self, id: i64) -> impl Future<Output = DataResult<Option<track_core::ops::Operation>>> + Send + 'static {
+        self.call("operation", move |db| db.operation(id))
+    }
+
     pub fn undo_operation(&self, id: i64) -> impl Future<Output = DataResult<track_core::ops::UndoResult>> + Send + 'static {
         self.call("undo_operation", move |db| db.undo_operation(Some(id)))
     }

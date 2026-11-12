@@ -234,3 +234,15 @@ fn undo_conflict_shows_error_in_banner(cx: &mut TestAppContext) {
     settle(cx);
     assert!(cx.debug_bounds("ai-op-banner").is_none());
 }
+
+#[gpui::test]
+fn banner_goes_away_when_undone_elsewhere(cx: &mut TestAppContext) {
+    let (app, cx, f) = seeded(cx, false);
+    refresh(&app, cx);
+    ai_rename(&mut f.db(), "a", "AI");
+    refresh(&app, cx);
+    assert!(cx.debug_bounds("ai-op-banner").is_some());
+    f.db().undo_operation(None).unwrap();
+    refresh(&app, cx);
+    assert!(cx.debug_bounds("ai-op-banner").is_none(), "an operation undone from the CLI is no longer offered");
+}
