@@ -42,7 +42,15 @@ if (!result.success) {
 
 if (targetTriple.endsWith("-apple-darwin")) {
   const sign = Bun.spawnSync({
-    cmd: ["codesign", "--force", "--options", "runtime", "--sign", "-", outfile],
+    // Hardened RuntimeでもJITを使えるよう、sidecarと同じエンタイトルメントを渡す。
+    cmd: [
+      "codesign",
+      "--force",
+      "--options", "runtime",
+      "--entitlements", path.join(TAURI_DIR, "Entitlements.plist"),
+      "--sign", "-",
+      outfile,
+    ],
     stdout: "inherit",
     stderr: "inherit",
   });
