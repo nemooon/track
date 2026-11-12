@@ -20,6 +20,7 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
     ("0013_report_copy_formats.sql", include_str!("../../../../database/migrations/0013_report_copy_formats.sql")),
     ("0014_ai_registration.sql", include_str!("../../../../database/migrations/0014_ai_registration.sql")),
     ("0015_ai_registration_interval.sql", include_str!("../../../../database/migrations/0015_ai_registration_interval.sql")),
+    ("0016_ai_operation.sql", include_str!("../../../../database/migrations/0016_ai_operation.sql")),
 ];
 
 pub struct MigrationState {

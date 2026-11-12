@@ -6,11 +6,11 @@ fn tmp() -> tempfile::TempDir {
 }
 
 #[test]
-fn fresh_db_applies_all_15_migrations() {
+fn fresh_db_applies_all_16_migrations() {
     let dir = tmp();
     let db = Db::open(dir.path()).unwrap();
     let n: i64 = db.conn().query_row("SELECT COUNT(*) FROM _local_migrations", [], |r| r.get(0)).unwrap();
-    assert_eq!(n, 15);
+    assert_eq!(n, 16);
     for t in ["TimeEntry", "AiRegistration", "Settings", "Project", "Client", "Tag", "TagOnEntry", "TagOnProject"] {
         let c: i64 = db.conn().query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", [t], |r| r.get(0)).unwrap();
         assert_eq!(c, 1, "{t}");

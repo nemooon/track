@@ -75,7 +75,7 @@ impl Db {
     pub fn create_entry(&mut self, input: NewEntry) -> Result<TimeEntry> {
         self.ensure_writable()?;
         let (start, end) = check_new_entry(&input)?;
-        let tx = self.conn_mut().transaction()?;
+        let tx = self.conn_mut().savepoint()?;
         let id = insert_entry(&tx, &input, start, end)?;
         tx.commit()?;
         Ok(self.entry(&id)?.expect("just created"))
@@ -105,7 +105,7 @@ impl Db {
         let title = patch.title.clone().unwrap_or(existing.title.clone());
         let note = patch.note.clone().unwrap_or(existing.note.clone());
         let break_minutes = patch.break_minutes.unwrap_or(existing.break_minutes);
-        let tx = self.conn_mut().transaction()?;
+        let tx = self.conn_mut().savepoint()?;
         tx.execute(
             r#"UPDATE "TimeEntry" SET projectId = ?2, start = ?3, "end" = ?4, title = ?5, note = ?6, breakMinutes = ?7, updatedAt = ?8 WHERE id = ?1"#,
             params![id, project_id, time::to_db(start), time::to_db(end), title, note, break_minutes, time::now_db()],
@@ -171,7 +171,7 @@ pub(crate) fn check_new_entry(input: &NewEntry) -> Result<(DateTime<Utc>, DateTi
     Ok((start, end))
 }
 
-pub(crate) fn insert_entry(tx: &rusqlite::Transaction, input: &NewEntry, start: DateTime<Utc>, end: DateTime<Utc>) -> Result<String> {
+pub(crate) fn insert_entry(tx: &rusqlite::Connection, input: &NewEntry, start: DateTime<Utc>, end: DateTime<Utc>) -> Result<String> {
     let id = ids::cuid();
     let now = time::now_db();
     tx.execute(

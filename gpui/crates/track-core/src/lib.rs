@@ -31,3 +31,5 @@ mod integrations_tests;
 mod config_tests;
 #[cfg(test)]
 mod backup_tests;
+#[cfg(test)]
+mod ops_tests;

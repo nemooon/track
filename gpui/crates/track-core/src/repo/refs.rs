@@ -73,7 +73,7 @@ impl Db {
         check_name(name, 100)?;
         check_color(color)?;
         let id = ids::cuid();
-        let tx = self.conn_mut().transaction()?;
+        let tx = self.conn_mut().savepoint()?;
         tx.execute(
             r#"INSERT INTO "Project"(id, clientId, name, color, createdAt) VALUES (?1, ?2, ?3, ?4, ?5)"#,
             params![id, client_id, name, color, time::now_db()],
@@ -120,7 +120,7 @@ impl Db {
             check_name(n, 100)?;
         }
         self.exists("Client", id)?;
-        let tx = self.conn_mut().transaction()?;
+        let tx = self.conn_mut().savepoint()?;
         if let Some(n) = &patch.name {
             tx.execute(r#"UPDATE "Client" SET name = ?1 WHERE id = ?2"#, params![n, id])?;
         }
@@ -166,7 +166,7 @@ impl Db {
             return Err(invalid());
         }
         self.exists("Project", id)?;
-        let tx = self.conn_mut().transaction()?;
+        let tx = self.conn_mut().savepoint()?;
         if let Some(v) = &patch.client_id {
             tx.execute(r#"UPDATE "Project" SET clientId = ?1 WHERE id = ?2"#, params![v, id])?;
         }

@@ -5,7 +5,7 @@ use crate::repo::entries::{check_new_entry, insert_entry};
 use crate::validate::{invalid, is_quarter, normalize_tag_ids};
 use crate::{Db, time};
 use chrono::{DateTime, Utc};
-use rusqlite::{OptionalExtension, TransactionBehavior, params};
+use rusqlite::{OptionalExtension, params};
 use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -61,6 +61,24 @@ impl Db {
     /// Returns the entry and whether it was a replay of an earlier identical request.
     pub fn create_ai_entry(&mut self, input: NewEntry, reg: AiRegistrationInput) -> Result<(TimeEntry, bool)> {
         self.ensure_writable()?;
+        // Take the write lock up front when standing alone; inside an outer transaction
+        // (an AI operation) the caller already holds it.
+        let own = self.conn().is_autocommit();
+        if own {
+            self.conn().execute_batch("BEGIN IMMEDIATE")?;
+        }
+        let result = self.create_ai_entry_locked(input, reg);
+        if own {
+            let end = if result.is_ok() { "COMMIT" } else { "ROLLBACK" };
+            if let Err(e) = self.conn().execute_batch(end) {
+                let _ = self.conn().execute_batch("ROLLBACK");
+                return Err(e.into());
+            }
+        }
+        result
+    }
+
+    fn create_ai_entry_locked(&mut self, input: NewEntry, reg: AiRegistrationInput) -> Result<(TimeEntry, bool)> {
         if !is_uuid(&reg.request_id)
             || !matches!(reg.source.as_str(), "codex" | "claude")
             || reg.session_id.is_empty()
@@ -77,7 +95,7 @@ impl Db {
         let (start, end) = check_new_entry(&input)?;
         let hash = payload_hash(&NewEntry { start, end, ..input.clone() }, &reg.source, &reg.session_id);
 
-        let tx = self.conn_mut().transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = self.conn_mut().savepoint()?;
         let prior: Option<(String, Option<String>)> = tx
             .query_row(r#"SELECT payloadHash, entryId FROM "AiRegistration" WHERE requestId = ?1"#, [&reg.request_id], |r| Ok((r.get(0)?, r.get(1)?)))
             .optional()?;

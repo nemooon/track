@@ -123,7 +123,7 @@ impl Db {
         if end <= start || days.is_empty() {
             return Err(CoreError::code_msg("invalid_schedule", "終了は開始より後にし、勤務日を1日以上選んでください。"));
         }
-        let tx = self.conn_mut().transaction()?;
+        let tx = self.conn_mut().savepoint()?;
         if let Some(v) = patch.work_start {
             tx.execute(r#"UPDATE "Settings" SET workStart = ?1"#, [v])?;
         }
