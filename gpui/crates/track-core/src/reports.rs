@@ -128,6 +128,12 @@ impl Db {
         Ok(ReportResponse { rows: out, total_minutes: total, range: DateSpan { from, to } })
     }
 
+    /// Project totals for the query's range and filters, whatever the screen groups by.
+    pub fn weekly_copy(&self, q: &ReportQuery) -> Result<String> {
+        let by_project = ReportQuery { group_by: GroupBy::Project, ..q.clone() };
+        Ok(crate::report::view::weekly_copy_text(&self.report(&by_project)?.rows))
+    }
+
     pub fn report_entries(&self, q: &ReportQuery) -> Result<ReportEntriesResponse> {
         let (from, to, entries) = self.report_source(q)?;
         let mut total = 0;

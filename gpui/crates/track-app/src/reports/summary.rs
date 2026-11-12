@@ -1,7 +1,8 @@
 //! 集計サマリー: donut (recharts PieChart look-alike), legend, collapsed strip.
 use track_core::model::{GroupBy, ReportRow};
 use track_core::report::view::{display_label, percent, row_color};
-use crate::core::time::format_duration_report;
+use crate::core::time::format_duration;
+use crate::persist::DurationStyle;
 use crate::ui::theme::*;
 use gpui::{
     App, Bounds, Div, FontWeight, ParentElement, PathBuilder, Pixels, Point, Styled, Window, canvas, div, linear_color_stop,
@@ -74,6 +75,7 @@ pub struct SummaryProps<'a> {
     pub total: i64,
     pub group_by: GroupBy,
     pub hovered: Option<usize>,
+    pub style: DurationStyle,
 }
 
 pub fn colors(rows: &[ReportRow]) -> Vec<gpui::Rgba> {
@@ -99,7 +101,7 @@ pub fn donut(p: &SummaryProps) -> Div {
                 .items_center()
                 .justify_center()
                 .child(div().text_size(px(10.)).text_color(n400()).child("TOTAL"))
-                .child(div().mt(px(2.)).text_2xl().font_weight(FontWeight::SEMIBOLD).text_color(n900()).child(format_duration_report(p.total))),
+                .child(div().mt(px(2.)).text_2xl().font_weight(FontWeight::SEMIBOLD).text_color(n900()).child(format_duration(p.total, p.style))),
         )
         .when_some(tooltip, |d, (r, color)| {
             d.child(
@@ -125,7 +127,7 @@ pub fn donut(p: &SummaryProps) -> Div {
                             .when(r.color.is_some(), |d| d.child(div().size(px(8.)).rounded_full().bg(color)))
                             .child(display_label(group_by, &r.label)),
                     )
-                    .child(div().mt(px(2.)).text_color(n600()).child(format_duration_report(r.total_minutes))),
+                    .child(div().mt(px(2.)).text_color(n600()).child(format_duration(r.total_minutes, p.style))),
             )
         })
 }
@@ -146,7 +148,7 @@ pub fn legend(p: &SummaryProps) -> Div {
                     .gap_2()
                     .child(div().size(px(10.)).flex_shrink_0().rounded_full().bg(cols[i]))
                     .child(div().min_w_0().flex_1().truncate().text_color(n700()).child(display_label(p.group_by, &r.label)))
-                    .child(div().flex_shrink_0().text_xs().text_color(n700()).child(format_duration_report(r.total_minutes)))
+                    .child(div().flex_shrink_0().text_xs().text_color(n700()).child(format_duration(r.total_minutes, p.style)))
                     .child(div().w(px(36.)).flex_shrink_0().flex().justify_end().text_xs().text_color(n400()).child(format!("{}%", percent(r.total_minutes, p.total)))),
             )
             .child(

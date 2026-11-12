@@ -169,3 +169,26 @@ fn weekly_report_requires_template(cx: &mut TestAppContext) {
     let weekly = app.read_with(cx, |a, cx| a.reports.read(cx).weekly.clone().unwrap());
     assert_eq!(weekly.read_with(cx, |w, _| w.error.clone()), Some("設定の「レポート」で出力テンプレートを保存してください。".into()));
 }
+
+#[gpui::test]
+fn weekly_copy_button_writes_clipboard(cx: &mut TestAppContext) {
+    let (app, cx, _f) = setup(cx);
+    // Grouped by tag on screen; the copy is still per project.
+    app.update(cx, |a, cx| a.reports.update(cx, |r, cx| r.set_group_by(GroupBy::Tag, cx)));
+    wait_io(cx);
+    click(cx, "weekly-copy-totals");
+    wait_io(cx);
+    assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()), Some("Alpha\t1.5\nプロジェクトなし\t0.5".into()));
+}
+
+#[gpui::test]
+fn duration_style_defaults_to_decimal_and_toggles(cx: &mut TestAppContext) {
+    use crate::persist::DurationStyle;
+    let (app, cx, _f) = setup(cx);
+    assert_eq!(app.read_with(cx, |a, cx| a.reports.read(cx).duration(90, cx)), "1.5h");
+    click(cx, "duration-hm");
+    assert_eq!(app.read_with(cx, |a, cx| a.state.read(cx).persist.duration_style), DurationStyle::HoursMinutes);
+    assert_eq!(app.read_with(cx, |a, cx| a.reports.read(cx).duration(90, cx)), "1h 30m");
+    click(cx, "duration-decimal");
+    assert_eq!(app.read_with(cx, |a, cx| a.reports.read(cx).duration(90, cx)), "1.5h");
+}

@@ -7,7 +7,8 @@ use crate::app::AppState;
 use crate::core::geometry::at_minutes;
 use track_core::report::group::group_entries_by_title;
 use track_core::report::view::*;
-use crate::core::time::format_duration_report;
+use crate::core::time::format_duration;
+use crate::persist::DurationStyle;
 use crate::ui::{controls, date_nav::{self, DateNav, HasDateNav, NavEvent, NavKind}, theme::*};
 use chrono::{Datelike, Duration, Local, NaiveDate};
 use gpui::{
@@ -59,6 +60,8 @@ pub struct ReportsView {
     pub output: Option<Entity<custom_output::CustomOutput>>,
     pub weekly: Option<Entity<weekly_report::WeeklyReport>>,
     donut_bounds_store: std::rc::Rc<std::cell::Cell<Option<gpui::Bounds<gpui::Pixels>>>>,
+    totals_copied: bool,
+    copy_task: Option<Task<()>>,
     _subs: Vec<Subscription>,
 }
 
@@ -91,6 +94,8 @@ impl ReportsView {
             output: None,
             weekly: None,
             donut_bounds_store: Default::default(),
+            totals_copied: false,
+            copy_task: None,
             _subs: subs,
         }
     }
@@ -220,6 +225,49 @@ impl ReportsView {
         cx.notify();
     }
 
+    fn style(&self, cx: &gpui::App) -> DurationStyle {
+        self.state.read(cx).persist.duration_style
+    }
+
+    /// A duration as the report shows it ("1.5h" or "1h 30m").
+    pub fn duration(&self, minutes: i64, cx: &gpui::App) -> String {
+        format_duration(minutes, self.style(cx))
+    }
+
+    fn set_duration_style(&mut self, style: DurationStyle, cx: &mut Context<Self>) {
+        self.state.update(cx, |s, _| s.update_persist(|p| p.duration_style = style));
+        cx.notify();
+    }
+
+    /// Copies "project<TAB>hours" lines for the shown week, for pasting into a timesheet.
+    pub fn copy_weekly_totals(&mut self, cx: &mut Context<Self>) {
+        let fut = self.state.read(cx).api.weekly_copy(&self.current_query());
+        self.copy_task = Some(cx.spawn(async move |this, cx| {
+            let result = fut.await;
+            let ok = this
+                .update(cx, |this, cx| {
+                    match result {
+                        Ok(text) => {
+                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+                            this.totals_copied = true;
+                            this.error = None;
+                        }
+                        Err(e) => this.error = Some(e.message),
+                    }
+                    cx.notify();
+                    this.totals_copied
+                })
+                .unwrap_or(false);
+            if ok {
+                cx.background_executor().timer(std::time::Duration::from_secs(2)).await;
+                let _ = this.update(cx, |this, cx| {
+                    this.totals_copied = false;
+                    cx.notify();
+                });
+            }
+        }));
+    }
+
     pub fn set_group_by(&mut self, g: GroupBy, cx: &mut Context<Self>) {
         if self.group_by == g {
             return;
@@ -277,6 +325,14 @@ impl ReportsView {
             })))
             .child(controls::group().children([(GroupBy::Client, "クライアント"), (GroupBy::Project, "プロジェクト"), (GroupBy::Tag, "タグ")].into_iter().map(
                 |(g, label)| controls::button(label, self.group_by == g, false).child(label).on_click(cx.listener(move |this, _, _, cx| this.set_group_by(g, cx))),
+            )))
+            .child(controls::group().children([(DurationStyle::Decimal, "duration-decimal", "1.5h"), (DurationStyle::HoursMinutes, "duration-hm", "1h 30m")].into_iter().map(
+                |(s, id, label)| {
+                    controls::button(id, self.style(cx) == s, false)
+                        .debug_selector(move || id.into())
+                        .child(label)
+                        .on_click(cx.listener(move |this, _, _, cx| this.set_duration_style(s, cx)))
+                },
             )))
     }
 
@@ -481,7 +537,7 @@ impl ReportsView {
         if collapsed {
             return collapsed_strip(&data.rows, wide).into_any_element();
         }
-        let props = SummaryProps { rows: &data.rows, total: data.total_minutes, group_by: self.group_by, hovered: self.donut_hover };
+        let props = SummaryProps { rows: &data.rows, total: data.total_minutes, group_by: self.group_by, hovered: self.donut_hover, style: self.style(cx) };
         let angles = slice_angles(&data.rows.iter().map(|r| r.total_minutes).collect::<Vec<_>>());
         div()
             .flex()
@@ -541,6 +597,7 @@ impl ReportsView {
 
     fn render_details(&self, data: &ReportResponse, cx: &mut Context<Self>) -> AnyElement {
         let group_same = self.state.read(cx).persist.group_same_titles;
+        let style = self.style(cx);
         let total = data.total_minutes;
         let cols = |content: AnyElement, date: AnyElement, tags: AnyElement, time: AnyElement, pct: AnyElement| {
             div()
@@ -656,7 +713,7 @@ impl ReportsView {
                             .into_any_element(),
                         e(),
                         e(),
-                        div().child(format_duration_report(r.total_minutes)).into_any_element(),
+                        div().child(format_duration(r.total_minutes, style)).into_any_element(),
                         div().text_color(n500()).child(format!("{}%", percent(r.total_minutes, total))).into_any_element(),
                     ))
                     .on_click(cx.listener(move |this, _, _, cx| this.toggle_row(p2.clone(), k2.clone(), cx)))
@@ -676,7 +733,7 @@ impl ReportsView {
                         div().pl(px(20.)).flex().items_center().gap_2().child(div().size_4().flex_shrink_0()).child(content).into_any_element(),
                         date,
                         tags,
-                        div().child(format_duration_report(minutes)).into_any_element(),
+                        div().child(format_duration(minutes, style)).into_any_element(),
                         div().text_color(n400()).child(format!("{}%", percent(minutes, r.total_minutes))).into_any_element(),
                     ))
                     .into_any_element()
@@ -766,7 +823,7 @@ impl ReportsView {
                     div().child("合計").into_any_element(),
                     e(),
                     e(),
-                    div().child(format_duration_report(total)).into_any_element(),
+                    div().child(format_duration(total, style)).into_any_element(),
                     div().child("100%").into_any_element(),
                 )),
             )
@@ -783,6 +840,16 @@ impl ReportsView {
             .gap_3()
             .when(self.range == ReportRange::Week, |d| {
                 d.child(
+                    small("weekly-copy-totals")
+                        .border_color(n200())
+                        .bg(white())
+                        .text_color(n700())
+                        .hover(|s| s.bg(n50()))
+                        .child(Icon::new(if self.totals_copied { IconName::Check } else { IconName::Copy }).size_3p5())
+                        .child(if self.totals_copied { "コピーしました" } else { "週の合計をコピー" })
+                        .on_click(cx.listener(|this, _, _, cx| this.copy_weekly_totals(cx))),
+                )
+                .child(
                     small("weekly-open")
                         .border_color(gpui::rgb(0xa7f3d0))
                         .bg(gpui::rgb(0xecfdf5))

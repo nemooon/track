@@ -80,6 +80,14 @@ pub fn format_duration_report(minutes: i64) -> String {
     if m > 0 { format!("{h}h {m}m") } else { format!("{h}h") }
 }
 
+/// Report durations in the user's chosen style: "1.5h" or "1h 30m".
+pub fn format_duration(minutes: i64, style: crate::persist::DurationStyle) -> String {
+    match style {
+        crate::persist::DurationStyle::Decimal => format!("{}h", track_core::report::view::decimal_hours(minutes)),
+        crate::persist::DurationStyle::HoursMinutes => format_duration_report(minutes),
+    }
+}
+
 /// `EntryBlock.tsx` label: "Xh", "Xh Ym", or "Ym" under an hour.
 pub fn format_duration_calendar(minutes: i64) -> String {
     let (h, m) = (minutes / 60, minutes % 60);

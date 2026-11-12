@@ -149,3 +149,28 @@ fn matches_bun_server_on_copy_db() {
         }
     }
 }
+
+#[test]
+fn weekly_copy_uses_projects_regardless_of_group_by() {
+    let (_d, mut db) = db();
+    let (p, red, _blue) = seed(&mut db);
+    add(&mut db, (12, 9, 0), (12, 10, 30), Some(&p), &[&red], 0);
+    add(&mut db, (12, 11, 0), (12, 11, 45), None, &[], 0);
+    for g in [GroupBy::Tag, GroupBy::Client, GroupBy::Project] {
+        assert_eq!(db.weekly_copy(&q(ReportRange::Week, g, 12)).unwrap(), "Alpha\t1.5\nプロジェクトなし\t0.75", "{g:?}");
+    }
+}
+
+#[test]
+fn weekly_copy_follows_filters() {
+    let (_d, mut db) = db();
+    let (p, _red, blue) = seed(&mut db);
+    add(&mut db, (12, 9, 0), (12, 10, 0), Some(&p), &[], 0);
+    add(&mut db, (12, 11, 0), (12, 13, 0), None, &[&blue], 0);
+    let mut query = q(ReportRange::Week, GroupBy::Tag, 12);
+    query.tag_ids = vec![blue];
+    assert_eq!(db.weekly_copy(&query).unwrap(), "プロジェクトなし\t2");
+    let mut query = q(ReportRange::Week, GroupBy::Project, 12);
+    query.project_ids = vec![p];
+    assert_eq!(db.weekly_copy(&query).unwrap(), "Alpha\t1");
+}

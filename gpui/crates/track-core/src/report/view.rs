@@ -1,5 +1,5 @@
 //! Pure helpers behind the Reports screen (ReportsPage.tsx, ReportRow.tsx, FilterMultiSelect.tsx).
-use crate::model::{GroupBy, Project, ReportQuery};
+use crate::model::{GroupBy, Project, ReportQuery, ReportRow};
 
 pub const PALETTE: [&str; 10] = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16", "#f97316", "#6366f1"];
 
@@ -75,9 +75,35 @@ pub fn percent(part: i64, total: i64) -> i64 {
     if total > 0 { (part as f64 / total as f64 * 100.).round() as i64 } else { 0 }
 }
 
+/// Hours as a decimal for timesheets: 90 → "1.5", 80 → "1.33", 120 → "2".
+/// Rounded to hundredths, trailing zeros dropped.
+pub fn decimal_hours(minutes: i64) -> String {
+    let sign = if minutes < 0 { "-" } else { "" };
+    let hundredths = (minutes.abs() * 200 + 60) / 120;
+    let (whole, frac) = (hundredths / 100, hundredths % 100);
+    let frac = format!("{frac:02}");
+    let frac = frac.trim_end_matches('0');
+    if frac.is_empty() { format!("{sign}{whole}") } else { format!("{sign}{whole}.{frac}") }
+}
+
+/// One `name\thours` line per project row of a project-grouped report, for pasting into a timesheet.
+pub fn weekly_copy_text(rows: &[ReportRow]) -> String {
+    rows.iter().map(|r| format!("{}\t{}", display_label(GroupBy::Project, &r.label), decimal_hours(r.total_minutes))).collect::<Vec<_>>().join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decimal_hours_formats() {
+        assert_eq!(decimal_hours(90), "1.5");
+        assert_eq!(decimal_hours(80), "1.33");
+        assert_eq!(decimal_hours(120), "2");
+        assert_eq!(decimal_hours(0), "0");
+        assert_eq!(decimal_hours(45), "0.75");
+        assert_eq!(decimal_hours(1), "0.02");
+    }
     use crate::model::{GroupBy, ReportQuery, ReportRange};
     use crate::report::fixtures::projects;
 

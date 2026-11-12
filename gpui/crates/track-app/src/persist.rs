@@ -17,11 +17,22 @@ pub struct PersistState {
     pub summary_collapsed: bool,
     /// `reports.customOutputCache.v1`
     pub output_cache: Vec<track_core::report::cache::CachedOutput>,
+    /// How report durations are shown.
+    pub duration_style: DurationStyle,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum DurationStyle {
+    /// "1.5h", matching the decimal hours typed into timesheets.
+    #[default]
+    Decimal,
+    /// "1h 30m"
+    HoursMinutes,
 }
 
 impl Default for PersistState {
     fn default() -> Self {
-        Self { zoom_index: DEFAULT_ZOOM, reports_expanded: HashMap::new(), group_same_titles: false, summary_collapsed: false, output_cache: Vec::new() }
+        Self { zoom_index: DEFAULT_ZOOM, reports_expanded: HashMap::new(), group_same_titles: false, summary_collapsed: false, output_cache: Vec::new(), duration_style: DurationStyle::Decimal }
     }
 }
 

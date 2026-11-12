@@ -162,6 +162,11 @@ impl DataClient {
         self.call("report", move |db| db.report(&q))
     }
 
+    pub fn weekly_copy(&self, q: &ReportQuery) -> impl Future<Output = DataResult<String>> + Send + 'static {
+        let q = q.clone();
+        self.call("weekly_copy", move |db| db.weekly_copy(&q))
+    }
+
     pub fn report_entries(&self, q: &ReportQuery) -> impl Future<Output = DataResult<ReportEntriesResponse>> + Send + 'static {
         let q = q.clone();
         self.call("report_entries", move |db| db.report_entries(&q))
