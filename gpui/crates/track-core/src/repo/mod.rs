@@ -1,4 +1,4 @@
-mod entries;
+pub(crate) mod entries;
 mod refs;
 mod settings;
 
