@@ -24,16 +24,15 @@ pub fn group_entries_by_title(entries: &[ReportEntry]) -> Vec<GroupedEntry> {
                     g.tags.push(tag.clone());
                 }
             }
-            if let (Some(a), Some(b)) = (&g.project, &e.project) {
-                if a.id != b.id {
+            if let (Some(a), Some(b)) = (&g.project, &e.project)
+                && a.id != b.id {
                     g.project = None;
                 }
-            }
         } else {
             out.push(GroupedEntry { key, title: e.title.clone(), minutes: e.minutes, count: 1, project: e.project.clone(), tags: e.tags.clone() });
         }
     }
-    out.sort_by(|a, b| b.minutes.cmp(&a.minutes));
+    out.sort_by_key(|g| std::cmp::Reverse(g.minutes));
     out
 }
 

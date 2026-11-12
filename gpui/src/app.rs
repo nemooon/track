@@ -100,9 +100,26 @@ impl TrackApp {
         let reports = cx.new(|cx| ReportsView::new(state.clone(), window, cx));
         let focus = cx.focus_handle();
         focus.focus(window, cx);
+        Self::listen_server_changes(&state, &calendar, &reports, cx);
         // Dev convenience: TRACK_GPUI_PAGE=reports opens the Reports screen first.
         let page = if std::env::var("TRACK_GPUI_PAGE").as_deref() == Ok("reports") { Page::Reports } else { Page::Calendar };
         Self { state, page, calendar, reports, focus }
+    }
+
+    /// ServerChangeListener.tsx: `/api/events` → refetch entries and reports.
+    fn listen_server_changes(state: &Entity<AppState>, calendar: &Entity<CalendarView>, reports: &Entity<ReportsView>, cx: &mut Context<Self>) {
+        let rx = state.read(cx).api.subscribe_events();
+        let (calendar, reports) = (calendar.downgrade(), reports.downgrade());
+        cx.spawn(async move |_, cx| {
+            while let Ok(ev) = rx.recv().await {
+                if ev.event != "track.connected" && ev.event != "entries.changed" {
+                    continue;
+                }
+                let _ = calendar.update(cx, |c, cx| c.reload(cx));
+                let _ = reports.update(cx, |r, cx| r.reload_if_shown(cx));
+            }
+        })
+        .detach();
     }
 
     fn show(&mut self, page: Page, cx: &mut Context<Self>) {

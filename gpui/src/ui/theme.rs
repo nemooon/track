@@ -37,16 +37,19 @@ pub fn n700() -> Rgba { rgb(0x404040) }
 pub fn n800() -> Rgba { rgb(0x262626) }
 pub fn n900() -> Rgba { rgb(0x171717) }
 pub fn amber50() -> Rgba { rgb(0xfffbeb) }
+#[allow(dead_code)]
 pub fn amber100() -> Rgba { rgb(0xfef3c7) }
+#[allow(dead_code)]
 pub fn amber500() -> Rgba { rgb(0xf59e0b) }
 pub fn amber600() -> Rgba { rgb(0xd97706) }
+#[allow(dead_code)]
 pub fn amber700() -> Rgba { rgb(0xb45309) }
 pub fn red500() -> Rgba { rgb(0xef4444) }
 pub fn red50() -> Rgba { rgb(0xfef2f2) }
 pub fn red600() -> Rgba { rgb(0xdc2626) }
 pub fn red700() -> Rgba { rgb(0xb91c1c) }
 pub fn blue500() -> Rgba { rgb(0x3b82f6) }
-pub fn black_a(a: f32) -> Rgba { rgba(0x00000000 | ((a * 255.) as u32)) }
+pub fn black_a(a: f32) -> Rgba { rgba((a * 255.) as u32) }
 pub fn white_a(a: f32) -> Rgba { rgba(0xffffff00 | ((a * 255.) as u32)) }
 
 #[cfg(test)]

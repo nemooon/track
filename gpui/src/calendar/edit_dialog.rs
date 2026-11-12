@@ -204,7 +204,7 @@ impl Render for EditForm {
                             cx.notify();
                         }))
                         .when(self.select_open, |d| {
-                            let on_pick: Rc<dyn Fn(&mut Self, Option<String>, &mut Window, &mut Context<Self>)> = Rc::new(|this, id, _, cx| {
+                            let on_pick: super::picker::PickFn<Self> = Rc::new(|this, id, _, cx| {
                                 this.project_id = id;
                                 this.select_open = false;
                                 cx.notify();

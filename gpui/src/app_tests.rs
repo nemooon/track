@@ -47,3 +47,23 @@ fn date_picker_selects_week(cx: &mut TestAppContext) {
     assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).anchor), ws);
     assert!(!app.read_with(cx, |a, cx| a.calendar.read(cx).nav_open()));
 }
+
+#[gpui::test]
+fn server_change_events_reload_both_screens(cx: &mut TestAppContext) {
+    let (base, log) = crate::testing::stub_server(|_, path| match path {
+        "/api/events" => (200, "event: entries.changed\ndata: {\"action\":\"created\"}\n\n".into()),
+        "/api/entries" => (200, "[]".into()),
+        "/api/reports" => (200, r#"{"rows":[],"totalMinutes":0,"range":{"from":"2026-11-07T15:00:00Z","to":"2026-11-14T15:00:00Z"}}"#.into()),
+        _ => (404, "{}".into()),
+    });
+    let (_app, cx) = crate::testing::open_app_with(cx, base);
+    cx.simulate_keystrokes("cmd-2 cmd-1");
+    let count = |path: &str| log.lock().unwrap().iter().filter(|r| r.path.starts_with(path) && r.path[path.len()..].starts_with('?')).count();
+    for _ in 0..150 {
+        cx.run_until_parked();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    // initial load + at least one event-driven reload (the stub stream closes, so it reconnects and fires again)
+    assert!(count("/api/entries") >= 2, "entries fetched {} times", count("/api/entries"));
+    assert!(count("/api/reports") >= 2, "reports fetched {} times", count("/api/reports"));
+}

@@ -1,6 +1,9 @@
 //! reportCopy.ts
 use super::aggregation::AiAggregationRow;
-use crate::api::{ReportCopyColumn, ReportCopyField, ReportCopyFormat, ReportDurationFormat, ReportEntry};
+use crate::api::{ReportCopyColumn, ReportCopyField, ReportCopyFormat, ReportDurationFormat};
+#[cfg(test)]
+use crate::api::ReportEntry;
+#[cfg(test)]
 use chrono::Local;
 
 pub fn field_label(f: ReportCopyField) -> &'static str {
@@ -37,6 +40,7 @@ pub fn report_copy_column_header(c: &ReportCopyColumn) -> String {
     }
 }
 
+#[cfg(test)] // used by the settings screen in the React app; kept for parity tests
 pub fn reorder_report_copy_columns(columns: &[ReportCopyColumn], column_id: &str, target_id: &str) -> Vec<ReportCopyColumn> {
     let mut next = columns.to_vec();
     if column_id == target_id {
@@ -74,6 +78,7 @@ fn percentage(minutes: i64, total: i64) -> String {
     if total > 0 { format!("{}%", (minutes as f64 / total as f64 * 100.).round() as i64) } else { "0%".into() }
 }
 
+#[cfg(test)]
 fn entry_column_value(e: &ReportEntry, c: &ReportCopyColumn, total: i64) -> String {
     let ReportCopyColumn::Field { field, duration_format, .. } = c else { return String::new() };
     let (start, end) = (e.start.with_timezone(&Local), e.end.with_timezone(&Local));
@@ -127,6 +132,7 @@ fn serialize_rows(rows: Vec<Vec<String>>, f: &ReportCopyFormat) -> String {
     lines.iter().map(|l| l.iter().map(|c| escape_cell(c, d)).collect::<Vec<_>>().join(d)).collect::<Vec<_>>().join("\n")
 }
 
+#[cfg(test)] // per-entry export exists only in TS tests
 pub fn build_report_copy_text(entries: &[ReportEntry], total: i64, f: &ReportCopyFormat) -> String {
     serialize_rows(entries.iter().map(|e| f.columns.iter().map(|c| entry_column_value(e, c, total)).collect()).collect(), f)
 }

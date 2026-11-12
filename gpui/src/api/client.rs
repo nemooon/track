@@ -58,8 +58,8 @@ impl Utf8Chunks {
             }
         };
         let rest = self.pending.split_off(valid);
-        let s = String::from_utf8(std::mem::replace(&mut self.pending, rest)).unwrap_or_default();
-        s
+        
+        String::from_utf8(std::mem::replace(&mut self.pending, rest)).unwrap_or_default()
     }
 }
 
@@ -174,8 +174,8 @@ impl ApiClient {
                 if tx.is_closed() {
                     return;
                 }
-                if let Ok(res) = http.get(&url).send().await {
-                    if res.status().is_success() {
+                if let Ok(res) = http.get(&url).send().await
+                    && res.status().is_success() {
                         let mut parser = SseParser::default();
                         let mut utf8 = Utf8Chunks::default();
                         let mut stream = res.bytes_stream();
@@ -187,7 +187,6 @@ impl ApiClient {
                             }
                         }
                     }
-                }
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
         });

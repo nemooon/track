@@ -13,6 +13,9 @@ use std::rc::Rc;
 
 pub const PICKER_WIDTH: f32 = 280.;
 
+/// Callback for a picked project (`None` = 「プロジェクトなし」).
+pub type PickFn<V> = Rc<dyn Fn(&mut V, Option<String>, &mut Window, &mut Context<V>)>;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum PickerEvent {
     Submit { project_id: Option<String>, title: String, note: String, tag_ids: Vec<String> },
@@ -196,7 +199,7 @@ impl ProjectPicker {
 }
 
 /// Client-grouped project list with a trailing 「プロジェクトなし」 row (ProjectPickerPopover / ProjectSelectPopover).
-pub fn project_list<V: 'static>(projects: &[Project], query: &str, on_pick: Rc<dyn Fn(&mut V, Option<String>, &mut Window, &mut Context<V>)>, cx: &mut Context<V>) -> AnyElement {
+pub fn project_list<V: 'static>(projects: &[Project], query: &str, on_pick: PickFn<V>, cx: &mut Context<V>) -> AnyElement {
     let groups = filter_projects(projects, query);
     let row = |id: gpui::SharedString, color: gpui::Rgba, label: String| {
         div()
@@ -294,7 +297,7 @@ impl Render for ProjectPicker {
         let Some(picked) = self.picked.clone() else {
             let q = self.query.read(cx).value().to_string();
             let projects = self.projects.clone();
-            let on_pick: Rc<dyn Fn(&mut Self, Option<String>, &mut Window, &mut Context<Self>)> = Rc::new(move |this, id, w, cx| {
+            let on_pick: PickFn<Self> = Rc::new(move |this, id, w, cx| {
                 let p = id.and_then(|id| this.projects.iter().find(|p| p.id == id).cloned());
                 this.pick(p.as_ref(), w, cx);
             });

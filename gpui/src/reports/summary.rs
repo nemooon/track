@@ -74,7 +74,6 @@ pub struct SummaryProps<'a> {
     pub total: i64,
     pub group_by: GroupBy,
     pub hovered: Option<usize>,
-    pub wide: bool,
 }
 
 pub fn colors(rows: &[ReportRow]) -> Vec<gpui::Rgba> {

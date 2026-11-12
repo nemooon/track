@@ -1,4 +1,3 @@
-#![allow(dead_code)] // prototype: modules land before their callers
 mod actions;
 mod api;
 mod app;

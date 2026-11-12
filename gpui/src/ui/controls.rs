@@ -44,6 +44,7 @@ pub fn button(id: impl Into<ElementId>, active: bool, icon_only: bool) -> Statef
         })
 }
 
+#[allow(dead_code)]
 pub fn disabled(d: Stateful<Div>, is_disabled: bool) -> Stateful<Div> {
     if is_disabled { d.opacity(0.4).cursor_default() } else { d }
 }

@@ -28,6 +28,7 @@ pub fn week_start(anchor: NaiveDate) -> NaiveDate {
 }
 
 /// Sunday-start week; `to` is exclusive.
+#[cfg(test)]
 pub fn week_range(anchor: NaiveDate) -> (NaiveDate, NaiveDate) {
     let from = week_start(anchor);
     (from, from + Duration::days(7))

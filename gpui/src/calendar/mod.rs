@@ -91,6 +91,7 @@ impl CalendarView {
         self.reload_blocked = true;
     }
 
+    #[cfg(test)]
     pub fn nav_open(&self) -> bool {
         self.nav.open
     }
@@ -575,7 +576,7 @@ impl CalendarView {
 
     fn notify_msg(&self, n: Notification, cx: &mut Context<Self>) {
         let n = n.autohide(true);
-        if let Some(w) = self.window.clone() {
+        if let Some(w) = self.window {
             let _ = w.update(cx, |_, window, cx| window.push_notification(n, cx));
         }
     }
@@ -714,8 +715,8 @@ impl CalendarView {
         let sub = cx.subscribe_in(&picker, window, |this, _, ev: &PickerEvent, window, cx| {
             match ev.clone() {
                 PickerEvent::Submit { project_id, title, note, tag_ids } => {
-                    if let DragState::Picking { day_index, start_min, end_min } = this.drag {
-                        if let Some(day) = this.rendered_days.get(day_index).copied() {
+                    if let DragState::Picking { day_index, start_min, end_min } = this.drag
+                        && let Some(day) = this.rendered_days.get(day_index).copied() {
                             let body = NewEntry {
                                 project_id,
                                 start: at_minutes(day, start_min).to_utc(),
@@ -727,7 +728,6 @@ impl CalendarView {
                             };
                             this.create(body, window, cx);
                         }
-                    }
                     this.close_picker(cx);
                     this.focus.focus(window, cx);
                 }

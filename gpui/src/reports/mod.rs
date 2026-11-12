@@ -26,6 +26,7 @@ pub enum FilterKind {
     Tag,
 }
 
+#[cfg(test)]
 pub type CustomOutputView = custom_output::CustomOutput;
 
 #[derive(Debug, Clone)]
@@ -129,6 +130,13 @@ impl ReportsView {
                 cx.notify();
             });
         }));
+    }
+
+    /// Live-update hook: only refetch once the screen has loaded something.
+    pub fn reload_if_shown(&mut self, cx: &mut Context<Self>) {
+        if self.requested.is_some() {
+            self.reload(cx);
+        }
     }
 
     fn ensure_loaded(&mut self, cx: &mut Context<Self>) {
@@ -462,7 +470,7 @@ impl ReportsView {
         if collapsed {
             return collapsed_strip(&data.rows, wide).into_any_element();
         }
-        let props = SummaryProps { rows: &data.rows, total: data.total_minutes, group_by: self.group_by, hovered: self.donut_hover, wide };
+        let props = SummaryProps { rows: &data.rows, total: data.total_minutes, group_by: self.group_by, hovered: self.donut_hover };
         let angles = slice_angles(&data.rows.iter().map(|r| r.total_minutes).collect::<Vec<_>>());
         div()
             .flex()
@@ -522,7 +530,6 @@ impl ReportsView {
 
     fn render_details(&self, data: &ReportResponse, cx: &mut Context<Self>) -> AnyElement {
         let group_same = self.state.read(cx).persist.group_same_titles;
-        let any_expanded = !self.expanded.is_empty();
         let total = data.total_minutes;
         let cols = |content: AnyElement, date: AnyElement, tags: AnyElement, time: AnyElement, pct: AnyElement| {
             div()
@@ -561,7 +568,7 @@ impl ReportsView {
                             .text_color(n400())
                             .cursor_pointer()
                             .hover(|s| s.bg(with_alpha(n200(), 0.7)).text_color(n600()))
-                            .child(Icon::new(if any_expanded { IconName::ChevronsUpDown } else { IconName::ChevronsUpDown }).size_3())
+                            .child(Icon::new(IconName::ChevronsUpDown).size_3())
                             .on_click(cx.listener(|this, _, _, cx| this.toggle_all(cx))),
                     )
                     .child("内容")
