@@ -193,3 +193,135 @@ impl Db {
         Ok(st.query_map([id], op_from_row)?.collect::<std::result::Result<_, _>>()?)
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UndoResult {
+    pub operation: Operation,
+}
+
+fn sql_value(v: &Value) -> rusqlite::types::Value {
+    use rusqlite::types::Value as V;
+    match v {
+        Value::Null => V::Null,
+        Value::Bool(b) => V::Integer(*b as i64),
+        Value::Number(n) => n.as_i64().map(V::Integer).unwrap_or_else(|| V::Real(n.as_f64().unwrap_or(0.))),
+        Value::String(s) => V::Text(s.clone()),
+        other => V::Text(other.to_string()),
+    }
+}
+
+fn key_of(table: Table, row: &Row) -> String {
+    match row.get(table.pk()) {
+        Some(Value::String(s)) => s.clone(),
+        Some(v) => v.to_string(),
+        None => String::new(),
+    }
+}
+
+fn find<'a>(rows: &'a [Row], table: Table, key: &str) -> Option<&'a Row> {
+    rows.iter().find(|r| key_of(table, r) == key)
+}
+
+impl Db {
+    /// Undoes an AI operation (the newest not yet undone when `id` is None). Refuses with
+    /// `undo_conflict` when any recorded row has changed since, and changes nothing then.
+    pub fn undo_operation(&mut self, id: Option<i64>) -> Result<UndoResult> {
+        self.ensure_writable()?;
+        if !self.conn().is_autocommit() {
+            return Err(CoreError::code_msg("database_error", "操作の途中で取り消しはできません。"));
+        }
+        self.conn().execute_batch("BEGIN IMMEDIATE")?;
+        let result = self.undo_locked(id);
+        let end = if result.is_ok() { "COMMIT" } else { "ROLLBACK" };
+        if let Err(e) = self.conn().execute_batch(end) {
+            let _ = self.conn().execute_batch("ROLLBACK");
+            return Err(e.into());
+        }
+        result
+    }
+
+    fn undo_locked(&mut self, id: Option<i64>) -> Result<UndoResult> {
+        use rusqlite::OptionalExtension;
+        let row: Option<(i64, String, Option<String>)> = match id {
+            Some(id) => self.conn().query_row(r#"SELECT id, changes, undoneAt FROM "AiOperation" WHERE id = ?1"#, [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional()?,
+            None => self
+                .conn()
+                .query_row(r#"SELECT id, changes, undoneAt FROM "AiOperation" WHERE undoneAt IS NULL ORDER BY id DESC LIMIT 1"#, [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .optional()?,
+        };
+        let Some((op_id, changes, undone)) = row else {
+            return Err(match id {
+                Some(_) => CoreError::code_msg("not_found", "操作が見つかりません（古い操作は消えています）。"),
+                None => CoreError::code_msg("nothing_to_undo", "取り消せる操作がありません。"),
+            });
+        };
+        if undone.is_some() {
+            return Err(CoreError::code_msg("already_undone", "この操作は取り消し済みです。"));
+        }
+        let changes: Vec<Change> = serde_json::from_str(&changes).map_err(|e| CoreError::code_msg("database_error", format!("操作の記録を読めません: {e}")))?;
+
+        // Every recorded row must still be exactly as the operation left it.
+        let mut current: Vec<Vec<Row>> = Vec::with_capacity(changes.len());
+        let mut changed = Vec::new();
+        for c in &changes {
+            let now = self.scope_rows(c.table, &c.column, &c.value)?;
+            let mut keys: Vec<String> = now.iter().chain(c.after.iter()).map(|r| key_of(c.table, r)).collect();
+            keys.sort();
+            keys.dedup();
+            for k in keys {
+                if find(&now, c.table, &k) != find(&c.after, c.table, &k) {
+                    changed.push(serde_json::json!({ "table": c.table.name(), "key": k }));
+                }
+            }
+            current.push(now);
+        }
+        if !changed.is_empty() {
+            return Err(CoreError::with_details(
+                "undo_conflict",
+                "この操作のあとで内容が変わっているため取り消せません。",
+                serde_json::json!({ "error": "undo_conflict", "changed": changed }),
+            ));
+        }
+
+        self.conn().execute_batch("PRAGMA defer_foreign_keys = ON")?;
+        // Deletes child-first; updates and inserts parent-first. Rows present before and now are
+        // updated in place so ON DELETE CASCADE / SET NULL never touch their children.
+        for table in Table::PARENT_FIRST.iter().rev() {
+            for (c, now) in changes.iter().zip(&current).filter(|(c, _)| c.table == *table) {
+                for r in now {
+                    let k = key_of(c.table, r);
+                    if find(&c.before, c.table, &k).is_none() {
+                        self.conn().execute(&format!(r#"DELETE FROM "{}" WHERE "{}" = ?1"#, table.name(), table.pk()), [&k])?;
+                    }
+                }
+            }
+        }
+        for table in Table::PARENT_FIRST {
+            for (c, now) in changes.iter().zip(&current).filter(|(c, _)| c.table == table) {
+                for r in &c.before {
+                    let k = key_of(table, r);
+                    let cols: Vec<&String> = r.keys().collect();
+                    let values: Vec<rusqlite::types::Value> = r.values().map(sql_value).collect();
+                    match find(now, table, &k) {
+                        Some(existing) if existing == r => {}
+                        Some(_) => {
+                            let set = cols.iter().enumerate().map(|(i, c)| format!(r#""{c}" = ?{}"#, i + 1)).collect::<Vec<_>>().join(", ");
+                            let sql = format!(r#"UPDATE "{}" SET {set} WHERE "{}" = ?{}"#, table.name(), table.pk(), cols.len() + 1);
+                            let mut params: Vec<rusqlite::types::Value> = values;
+                            params.push(rusqlite::types::Value::Text(k));
+                            self.conn().execute(&sql, rusqlite::params_from_iter(params))?;
+                        }
+                        None => {
+                            let names = cols.iter().map(|c| format!(r#""{c}""#)).collect::<Vec<_>>().join(", ");
+                            let marks = (1..=cols.len()).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ");
+                            self.conn().execute(&format!(r#"INSERT INTO "{}" ({names}) VALUES ({marks})"#, table.name()), rusqlite::params_from_iter(values))?;
+                        }
+                    }
+                }
+            }
+        }
+        self.conn().execute(r#"UPDATE "AiOperation" SET undoneAt = ?1 WHERE id = ?2"#, params![time::now_db(), op_id])?;
+        Ok(UndoResult { operation: self.operation(op_id)?.expect("exists") })
+    }
+}

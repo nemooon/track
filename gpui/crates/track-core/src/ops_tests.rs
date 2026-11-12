@@ -114,3 +114,111 @@ fn operations_after_returns_newer_only() {
     let after: Vec<i64> = db.operations_after(a.id).unwrap().iter().map(|o| o.id).collect();
     assert_eq!(after, vec![b.id]);
 }
+
+fn code<T: std::fmt::Debug>(r: crate::error::Result<T>) -> String {
+    r.unwrap_err().code().to_string()
+}
+
+#[test]
+fn undo_restores_updated_entry_and_tags() {
+    let (_d, mut db) = db();
+    let (_p, red, blue) = seed(&mut db);
+    let e = db.create_entry(NewEntry { start: local(12, 9, 0), end: local(12, 10, 0), title: Some("旧".into()), tag_ids: vec![red.clone()], ..Default::default() }).unwrap();
+    let id = e.id.clone();
+    let (_, op) = db
+        .with_operation("codex", |db, rec| {
+            rec.watch(db, Table::TimeEntry, "id", &id)?;
+            rec.watch(db, Table::TagOnEntry, "entryId", &id)?;
+            db.update_entry(&id, EntryPatch { title: Some(Some("新".into())), tag_ids: Some(vec![blue.clone()]), ..Default::default() })?;
+            Ok(((), "x".into(), 1))
+        })
+        .unwrap();
+    let r = db.undo_operation(None).unwrap();
+    assert_eq!(r.operation.id, op.id);
+    let back = db.entry(&e.id).unwrap().unwrap();
+    assert_eq!(back.title.as_deref(), Some("旧"));
+    assert_eq!(back.tags.iter().map(|t| t.tag_id.clone()).collect::<Vec<_>>(), vec![red]);
+    assert!(db.operations(10).unwrap()[0].undone_at.is_some());
+}
+
+fn ai_create(db: &mut crate::Db) -> (TimeEntry, crate::ops::Operation) {
+    let ((e, _), op) = db
+        .with_operation("codex", |db, rec| {
+            let (e, replay) = db.create_ai_entry(
+                NewEntry { start: local(12, 11, 0), end: local(12, 12, 0), title: Some("ai".into()), ..Default::default() },
+                AiRegistrationInput { request_id: "6f1c1f8e-2a6b-4c1d-9d3e-1a2b3c4d5e6f".into(), source: "codex".into(), session_id: "s".into(), allow_overlap: false },
+            )?;
+            rec.created(Table::TimeEntry, "id", &e.id);
+            rec.created(Table::TagOnEntry, "entryId", &e.id);
+            rec.created(Table::AiRegistration, "requestId", "6f1c1f8e-2a6b-4c1d-9d3e-1a2b3c4d5e6f");
+            Ok(((e, replay), "記録".into(), 1))
+        })
+        .unwrap();
+    (e, op)
+}
+
+#[test]
+fn undo_of_ai_create_removes_entry_and_registration() {
+    let (_d, mut db) = db();
+    let (e, _) = ai_create(&mut db);
+    assert_eq!(db.ai_coverage("codex", "s").unwrap().len(), 1);
+    db.undo_operation(None).unwrap();
+    assert!(db.entry(&e.id).unwrap().is_none());
+    assert!(db.ai_coverage("codex", "s").unwrap().is_empty());
+}
+
+#[test]
+fn undo_of_tag_delete_restores_links() {
+    let (_d, mut db) = db();
+    let (p, red, _) = seed(&mut db);
+    let e = db.create_entry(NewEntry { start: local(12, 9, 0), end: local(12, 10, 0), tag_ids: vec![red.clone()], ..Default::default() }).unwrap();
+    let tag = red.clone();
+    db.with_operation("codex", |db, rec| {
+        rec.watch(db, Table::Tag, "id", &tag)?;
+        rec.watch(db, Table::TagOnEntry, "tagId", &tag)?;
+        rec.watch(db, Table::TagOnProject, "tagId", &tag)?;
+        db.delete_tag(&tag)?;
+        Ok(((), "タグ削除".into(), 1))
+    })
+    .unwrap();
+    assert!(db.entry(&e.id).unwrap().unwrap().tags.is_empty());
+    db.undo_operation(None).unwrap();
+    assert_eq!(db.entry(&e.id).unwrap().unwrap().tags[0].tag_id, red);
+    assert_eq!(db.project(&p).unwrap().tags.iter().map(|t| t.tag_id.clone()).collect::<Vec<_>>(), vec![red]);
+}
+
+#[test]
+fn undo_conflicts_when_row_changed_later() {
+    let (_d, mut db) = db();
+    let e = one_entry(&mut db);
+    rename(&mut db, &e.id, "AI").unwrap();
+    db.update_entry(&e.id, EntryPatch { title: Some(Some("手修正".into())), ..Default::default() }).unwrap();
+    let err = db.undo_operation(None).unwrap_err();
+    assert_eq!(err.code(), "undo_conflict");
+    assert_eq!(err.details()["changed"][0]["table"], "TimeEntry");
+    assert_eq!(err.details()["changed"][0]["key"], e.id.as_str());
+    assert_eq!(db.entry(&e.id).unwrap().unwrap().title.as_deref(), Some("手修正"));
+    assert!(db.operations(10).unwrap()[0].undone_at.is_none());
+}
+
+#[test]
+fn undo_twice_is_rejected() {
+    let (_d, mut db) = db();
+    let e = one_entry(&mut db);
+    let (_, op) = rename(&mut db, &e.id, "AI").unwrap();
+    db.undo_operation(Some(op.id)).unwrap();
+    assert_eq!(code(db.undo_operation(Some(op.id))), "already_undone");
+    assert_eq!(code(db.undo_operation(Some(op.id + 100))), "not_found");
+}
+
+#[test]
+fn undo_without_id_takes_latest_not_undone() {
+    let (_d, mut db) = db();
+    let e = one_entry(&mut db);
+    let (_, a) = rename(&mut db, &e.id, "a").unwrap();
+    let (_, b) = rename(&mut db, &e.id, "b").unwrap();
+    assert_eq!(db.undo_operation(None).unwrap().operation.id, b.id);
+    assert_eq!(db.undo_operation(None).unwrap().operation.id, a.id);
+    assert_eq!(db.entry(&e.id).unwrap().unwrap().title.as_deref(), Some("旧"));
+    assert_eq!(code(db.undo_operation(None)), "nothing_to_undo");
+}
