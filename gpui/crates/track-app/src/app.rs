@@ -158,6 +158,16 @@ impl TrackApp {
         }
         let state = cx.new(|_| AppState::new(data));
         state.update(cx, |s, cx| s.load(cx));
+        // Dev/screenshots: TRACK_GPUI_SETTINGS=<calendar|reports|projects|ai|backup> opens settings too.
+        if let Some(section) = std::env::var("TRACK_GPUI_SETTINGS").ok().and_then(|k| crate::settings::SettingsSection::from_key(&k)) {
+            let state = state.clone();
+            cx.defer(move |cx| {
+                crate::settings::open_settings(state, cx);
+                if let Some((_, view)) = crate::settings::settings_window(cx) {
+                    view.update(cx, |v, cx| v.show(section, cx));
+                }
+            });
+        }
         Self::with_state(state, window, cx)
     }
 

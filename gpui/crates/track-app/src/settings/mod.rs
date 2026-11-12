@@ -9,6 +9,10 @@ use gpui::{
 };
 use gpui_component::{Icon, IconName, Root};
 
+pub mod calendar;
+pub mod form;
+pub mod reports;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsSection {
     Calendar,
@@ -40,6 +44,10 @@ impl SettingsSection {
         }
     }
 
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.key() == key)
+    }
+
     fn key(self) -> &'static str {
         match self {
             Self::Calendar => "calendar",
@@ -64,17 +72,29 @@ impl SettingsSection {
 pub struct SettingsWindow {
     pub state: Entity<AppState>,
     pub section: SettingsSection,
+    /// Section views, created the first time each is shown.
+    pub calendar: Option<Entity<calendar::CalendarSettings>>,
+    pub reports: Option<Entity<reports::ReportSettings>>,
 }
 
 impl SettingsWindow {
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
         cx.observe(&state, |_, _, cx| cx.notify()).detach();
-        SettingsWindow { state, section: SettingsSection::Calendar }
+        SettingsWindow { state, section: SettingsSection::Calendar, calendar: None, reports: None }
     }
 
     pub fn show(&mut self, section: SettingsSection, cx: &mut Context<Self>) {
         self.section = section;
         cx.notify();
+    }
+
+    fn section_view(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<gpui::AnyView> {
+        let state = self.state.clone();
+        match self.section {
+            SettingsSection::Calendar => Some(self.calendar.get_or_insert_with(|| cx.new(|cx| calendar::CalendarSettings::new(state, cx))).clone().into()),
+            SettingsSection::Reports => Some(self.reports.get_or_insert_with(|| cx.new(|cx| reports::ReportSettings::new(state, window, cx))).clone().into()),
+            _ => None,
+        }
     }
 
     fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -111,7 +131,8 @@ impl SettingsWindow {
 }
 
 impl Render for SettingsWindow {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let content = self.section_view(window, cx);
         div()
             .id("settings-window")
             .size_full()
@@ -130,7 +151,8 @@ impl Render for SettingsWindow {
                     .px_8()
                     .pt(px(44.))
                     .pb_8()
-                    .child(div().text_xl().font_weight(FontWeight::SEMIBOLD).mb_6().child(self.section.label())),
+                    .child(div().text_xl().font_weight(FontWeight::SEMIBOLD).mb_6().child(self.section.label()))
+                    .children(content),
             )
     }
 }
