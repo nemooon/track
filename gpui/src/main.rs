@@ -24,7 +24,12 @@ fn main() {
         actions::bind_keys(cx);
         actions::set_menus(cx);
         cx.on_action(|_: &actions::Quit, cx| cx.quit());
-        let bounds = Bounds::centered(None, size(px(1200.), px(800.)), cx);
+        // Dev/measurement: TRACK_GPUI_WINDOW=1440x900 sets the initial window size.
+        let (w, h) = std::env::var("TRACK_GPUI_WINDOW")
+            .ok()
+            .and_then(|v| v.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?))))
+            .unwrap_or((1200., 800.));
+        let bounds = Bounds::centered(None, size(px(w), px(h)), cx);
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
