@@ -2,7 +2,13 @@
 use super::form::{self, Actions};
 use crate::app::AppState;
 use crate::ui::theme::*;
-use gpui::{AppContext, Context, Entity, IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled, Window, div, px};
+use super::format_editor::{self, CloseEditor, FormatEditor};
+use gpui::{
+    AppContext, Context, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
+    Subscription, Window, div, prelude::FluentBuilder, px,
+};
+use track_core::model::{ReportCopyFormat, SettingsPatch};
+use track_core::report::copy::report_copy_format_uses_ai;
 use gpui_component::input::{Textarea, TextareaState};
 
 pub struct ReportSettings {
@@ -12,6 +18,10 @@ pub struct ReportSettings {
     save_error: Option<String>,
     /// The saved value last put into the editor; differs from the editor once the user types.
     shown: String,
+    /// The format being edited, replacing the list (Tauri navigates to /report-formats/:id).
+    pub editing: Option<Entity<FormatEditor>>,
+    _editing_sub: Option<Subscription>,
+    adding: bool,
 }
 
 impl ReportSettings {
@@ -30,7 +40,7 @@ impl ReportSettings {
             }
         })
         .detach();
-        ReportSettings { state, template, saving: false, save_error: None, shown: saved_copy }
+        ReportSettings { state, template, saving: false, save_error: None, shown: saved_copy, editing: None, _editing_sub: None, adding: false }
     }
 
     fn saved_template(state: &Entity<AppState>, cx: &gpui::App) -> String {
@@ -43,6 +53,46 @@ impl ReportSettings {
         self.template.update(cx, |t, cx| t.set_value(saved, window, cx));
         self.save_error = None;
         cx.notify();
+    }
+
+    fn formats(&self, cx: &gpui::App) -> Vec<ReportCopyFormat> {
+        self.state.read(cx).data.as_ref().map(|d| d.settings.report_copy_formats.clone()).unwrap_or_default()
+    }
+
+    fn open_format(&mut self, format: ReportCopyFormat, window: &mut Window, cx: &mut Context<Self>) {
+        let state = self.state.clone();
+        let editor = cx.new(|cx| FormatEditor::new(state, format, window, cx));
+        self._editing_sub = Some(cx.subscribe(&editor, |this, _, _: &CloseEditor, cx| {
+            this.editing = None;
+            this._editing_sub = None;
+            cx.notify();
+        }));
+        self.editing = Some(editor);
+        cx.notify();
+    }
+
+    /// Like Tauri: the new format is saved first, then opened.
+    fn add_format(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let mut formats = self.formats(cx);
+        if formats.len() >= 20 || self.adding {
+            return;
+        }
+        let new = format_editor::new_format();
+        formats.push(new.clone());
+        self.adding = true;
+        let task = self.state.update(cx, |s, cx| s.save_settings(SettingsPatch { report_copy_formats: Some(formats), ..Default::default() }, cx));
+        cx.spawn_in(window, async move |this, cx| {
+            let result = task.await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.adding = false;
+                match result {
+                    Ok(_) => this.open_format(new, window, cx),
+                    Err(e) => this.save_error = Some(e.message),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn save(&mut self, cx: &mut Context<Self>) {
@@ -71,12 +121,53 @@ impl ReportSettings {
 
 impl Render for ReportSettings {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if let Some(editor) = &self.editing {
+            return div().child(editor.clone());
+        }
+        let formats = self.formats(cx);
+        let rows = formats.iter().enumerate().map(|(i, f)| {
+            let id = format!("format-row-{i}");
+            let sel = id.clone();
+            let open = f.clone();
+            let ai = report_copy_format_uses_ai(f);
+            div()
+                .id(SharedString::from(id))
+                .debug_selector(move || sel.clone())
+                .flex()
+                .items_center()
+                .gap_3()
+                .px_5()
+                .py_3()
+                .border_b_1()
+                .border_color(n100())
+                .cursor_pointer()
+                .hover(|s| s.bg(n50()))
+                .child(div().flex_1().text_sm().font_weight(FontWeight::MEDIUM).child(if f.name.is_empty() { "名前未設定".to_string() } else { f.name.clone() }))
+                .child(
+                    div()
+                        .px_2()
+                        .rounded_md()
+                        .text_xs()
+                        .when(ai, |d| d.bg(gpui::rgb(0xede9fe)).text_color(gpui::rgb(0x6d28d9)))
+                        .when(!ai, |d| d.bg(n100()).text_color(n600()))
+                        .child(if ai { "AI使用" } else { "AIなし" }),
+                )
+                .child(div().text_xs().text_color(n500()).child(format!("{}列 · {}", f.columns.len(), if f.delimiter == "comma" { "CSV" } else { "TSV" })))
+                .on_click(cx.listener(move |this, _, w, cx| this.open_format(open.clone(), w, cx)))
+        });
+        let can_add = formats.len() < 20 && !self.adding;
+        let formats_card = form::card("出力フォーマット", "フォーマットを選択すると、専用の編集画面を開きます。")
+            .children(rows)
+            .child(div().px_5().py_3().child(form::button("format-add", "出力フォーマットを追加", false, can_add).when(can_add, |d| {
+                d.on_click(cx.listener(|this, _, w, cx| this.add_format(w, cx)))
+            })));
         let value = self.template.read(cx).value().to_string();
         let saved = Self::saved_template(&self.state, cx);
         let dirty = value != saved;
         let error = if value.trim().is_empty() { Some("テンプレートを入力してください".to_string()) } else { self.save_error.clone() };
         let can_save = dirty && error.is_none() && !self.saving;
         div()
+            .child(formats_card)
             .child(
                 form::card("週報テンプレート", "AIが週の工数をまとめる際の出力構成を設定します。").child(form::row(
                     "出力テンプレート",

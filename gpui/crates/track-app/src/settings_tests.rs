@@ -14,8 +14,20 @@ pub fn settings_cx(cx: &mut VisualTestContext) -> (VisualTestContext, Entity<Set
     (VisualTestContext::from_window(handle, cx), view)
 }
 
+/// Clicks `selector`, first scrolling it into view when it lies below the (1080px) test viewport.
 pub fn click(cx: &mut VisualTestContext, selector: &'static str) {
-    let b = cx.debug_bounds(selector).unwrap_or_else(|| panic!("{selector} not rendered"));
+    let mut b = cx.debug_bounds(selector).unwrap_or_else(|| panic!("{selector} not rendered"));
+    let height = cx.update(|w, _| w.viewport_size().height);
+    if b.top() < gpui::px(0.) || b.bottom() > height - gpui::px(20.) {
+        let dy = b.center().y - height / 2.;
+        cx.simulate_event(gpui::ScrollEvent {
+            position: gpui::point(gpui::px(500.), gpui::px(300.)),
+            delta: gpui::ScrollDelta::Pixels(gpui::point(gpui::px(0.), -dy)),
+            ..Default::default()
+        });
+        cx.run_until_parked();
+        b = cx.debug_bounds(selector).unwrap_or_else(|| panic!("{selector} not rendered after scrolling"));
+    }
     cx.simulate_click(b.center(), Modifiers::none());
 }
 
@@ -246,4 +258,97 @@ fn tag_crud(cx: &mut TestAppContext) {
     click(&mut scx, "tag-delete-confirm");
     wait_io(&mut scx);
     assert!(f.db().tags().unwrap().iter().all(|t| t.id != tag.id));
+}
+
+fn format_editor(view: &Entity<SettingsWindow>, scx: &mut VisualTestContext) -> Entity<crate::settings::format_editor::FormatEditor> {
+    view.read_with(scx, |v, cx| v.reports.as_ref().unwrap().read(cx).editing.clone().expect("format editor open"))
+}
+
+fn set_input(scx: &mut VisualTestContext, input: &Entity<gpui_component::input::InputState>, text: &str) {
+    scx.update(|w, cx| input.update(cx, |i, cx| i.set_value(text.to_string(), w, cx)));
+    scx.run_until_parked();
+}
+
+fn saved_formats(f: &crate::testing::Fixture) -> Vec<track_core::model::ReportCopyFormat> {
+    f.db().settings().unwrap().report_copy_formats
+}
+
+#[gpui::test]
+fn add_format_and_edit_columns(cx: &mut TestAppContext) {
+    use track_core::model::{ReportCopyColumn, ReportCopyField, ReportDurationFormat};
+    let (app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, view) = open_section(cx, "settings-nav-reports");
+    assert!(scx.debug_bounds("format-row-0").is_some(), "the default 標準 format is listed");
+    click(&mut scx, "format-add");
+    wait_io(&mut scx);
+    assert_eq!(saved_formats(&f).len(), 2, "added right away, like Tauri");
+    let ed = format_editor(&view, &mut scx);
+    let name = ed.read_with(&scx, |e, _| e.name.clone());
+    assert_eq!(name.read_with(&scx, |n, _| n.value().to_string()), "新しい出力形式");
+    set_input(&mut scx, &name, "月末報告");
+    click(&mut scx, "add-column-entryCount");
+    click(&mut scx, "add-column-ai");
+    click(&mut scx, "column-up-4");
+    click(&mut scx, "duration-format-1-decimal");
+    click(&mut scx, "delimiter-comma");
+    click(&mut scx, "format-save");
+    wait_io(&mut scx);
+    wait_io(cx);
+    let saved = saved_formats(&f).into_iter().find(|x| x.name == "月末報告").expect("saved");
+    assert_eq!(saved.delimiter, "comma");
+    let kinds: Vec<String> = saved
+        .columns
+        .iter()
+        .map(|c| match c {
+            ReportCopyColumn::Field { field, .. } => format!("{field:?}"),
+            ReportCopyColumn::Ai { label, .. } => format!("ai:{label}"),
+            ReportCopyColumn::Blank { .. } => "blank".into(),
+        })
+        .collect();
+    assert_eq!(kinds, vec!["Category", "Duration", "Percentage", "ai:AI生成項目", "EntryCount"]);
+    assert!(matches!(saved.columns[1], ReportCopyColumn::Field { field: ReportCopyField::Duration, duration_format: Some(ReportDurationFormat::Decimal), .. }));
+    let in_main = app.read_with(cx, |a, cx| a.state.read(cx).data.as_ref().map(|d| d.settings.report_copy_formats.iter().any(|x| x.name == "月末報告")));
+    assert_eq!(in_main, Some(true), "custom output sees the new format");
+}
+
+#[gpui::test]
+fn delete_format_keeps_at_least_one(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, view) = open_section(cx, "settings-nav-reports");
+    click(&mut scx, "format-row-0");
+    scx.run_until_parked();
+    click(&mut scx, "format-delete");
+    assert!(scx.debug_bounds("format-delete-confirm").is_none(), "the last format cannot be deleted");
+    click(&mut scx, "format-back");
+    click(&mut scx, "format-add");
+    wait_io(&mut scx);
+    assert_eq!(saved_formats(&f).len(), 2);
+    let _ = format_editor(&view, &mut scx);
+    click(&mut scx, "format-delete");
+    click(&mut scx, "format-delete-confirm");
+    wait_io(&mut scx);
+    assert_eq!(saved_formats(&f).len(), 1);
+    assert_eq!(saved_formats(&f)[0].name, "標準");
+    assert!(view.read_with(&scx, |v, cx| v.reports.as_ref().unwrap().read(cx).editing.is_none()), "back to the list");
+}
+
+#[gpui::test]
+fn format_validation_blocks_save(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, view) = open_section(cx, "settings-nav-reports");
+    click(&mut scx, "format-row-0");
+    scx.run_until_parked();
+    let ed = format_editor(&view, &mut scx);
+    let name = ed.read_with(&scx, |e, _| e.name.clone());
+    set_input(&mut scx, &name, "  ");
+    assert!(scx.debug_bounds("format-error").is_some(), "出力フォーマットの名前を入力してください");
+    click(&mut scx, "format-save");
+    wait_io(&mut scx);
+    assert_eq!(saved_formats(&f)[0].name, "標準");
+    for i in (0..3).rev() {
+        let sel = Box::leak(format!("column-remove-{i}").into_boxed_str());
+        click(&mut scx, sel);
+    }
+    set_input(&mut scx, &name, "x");
+    assert!(scx.debug_bounds("format-error").is_some(), "項目を1つ以上追加してください");
 }

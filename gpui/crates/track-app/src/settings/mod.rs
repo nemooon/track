@@ -11,6 +11,7 @@ use gpui_component::{Icon, IconName, Root};
 
 pub mod calendar;
 pub mod form;
+pub mod format_editor;
 pub mod projects;
 pub mod reports;
 
@@ -94,7 +95,15 @@ impl SettingsWindow {
         let state = self.state.clone();
         match self.section {
             SettingsSection::Calendar => Some(self.calendar.get_or_insert_with(|| cx.new(|cx| calendar::CalendarSettings::new(state, cx))).clone().into()),
-            SettingsSection::Reports => Some(self.reports.get_or_insert_with(|| cx.new(|cx| reports::ReportSettings::new(state, window, cx))).clone().into()),
+            SettingsSection::Reports => {
+                if self.reports.is_none() {
+                    let r = cx.new(|cx| reports::ReportSettings::new(state, window, cx));
+                    // Opening/closing a format editor changes the page (and resets the scroll).
+                    cx.observe(&r, |_, _, cx| cx.notify()).detach();
+                    self.reports = Some(r);
+                }
+                self.reports.clone().map(Into::into)
+            }
             SettingsSection::Projects => Some(self.projects.get_or_insert_with(|| cx.new(|cx| projects::ProjectSettings::new(state, cx))).clone().into()),
             _ => None,
         }
@@ -136,6 +145,7 @@ impl SettingsWindow {
 impl Render for SettingsWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let content = self.section_view(window, cx);
+        let editing_format = self.reports.as_ref().is_some_and(|r| r.read(cx).editing.is_some());
         div()
             .id("settings-window")
             .size_full()
@@ -146,7 +156,8 @@ impl Render for SettingsWindow {
             .child(self.render_sidebar(cx))
             .child(
                 div()
-                    .id("settings-content")
+                    // A new id per page starts it scrolled to the top (Tauri navigates between pages).
+                    .id(gpui::SharedString::from(format!("settings-content-{}-{}", self.section.key(), editing_format)))
                     .flex_1()
                     .min_w_0()
                     .h_full()
