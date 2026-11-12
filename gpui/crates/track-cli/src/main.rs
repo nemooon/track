@@ -8,19 +8,21 @@ use track_core::model::NewEntry;
 use track_core::prepare::{self, PrepareEnv, entry_summary, jst_iso, parse_ms, QUARTER_MS};
 use track_core::{CoreError, Db};
 
+mod edit;
+
 type Result<T> = std::result::Result<T, CoreError>;
 
-fn fail<T>(code: &'static str, message: &str) -> Result<T> {
+pub(crate) fn fail<T>(code: &'static str, message: &str) -> Result<T> {
     Err(CoreError::code_msg(code, message))
 }
 
 /// First occurrence of `name` followed by its value (`option` in the TS CLI).
-fn option<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
+pub(crate) fn option<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).map(String::as_str)
 }
 
 /// Every value given for a repeatable flag.
-fn options<'a>(args: &'a [String], name: &str) -> Vec<&'a str> {
+pub(crate) fn options<'a>(args: &'a [String], name: &str) -> Vec<&'a str> {
     args.iter().enumerate().filter(|(_, a)| *a == name).filter_map(|(i, _)| args.get(i + 1)).map(String::as_str).collect()
 }
 
@@ -39,7 +41,27 @@ fn usage() -> &'static str {
                    [--break-minutes <分>] --confirmed [--allow-overlap]
                    [--source codex|claude --session-id <ID> --request-id <UUID>]
 
+  track-cli search [--project-id <ID>|none] [--query <語>] [--from <ISO日時>] [--to <ISO日時>] [--limit <N>]
+  track-cli update --id <ID> [--id ...] [--project-id <ID>|--no-project] [--title <T>]
+                   [--note <N>|--clear-note] [--tag-id <ID> ...|--clear-tags]
+                   [--start <ISO日時>] [--end <ISO日時>] [--break-minutes <分>]
+                   [--confirmed] [--source codex|claude]
+  track-cli delete --id <ID> [--id ...] --confirmed [--source codex|claude]
+  track-cli clients | tags | projects [--all]
+  track-cli client create --name <名前> --confirmed
+  track-cli client update --id <ID> [--name <名前>] [--archived true|false]
+  track-cli project create --client-id <ID> --name <名前> [--color <#RRGGBB>] [--tag-id <ID> ...] --confirmed
+  track-cli project update --id <ID> [--client-id <ID>] [--name <名前>] [--color <#RRGGBB>]
+                           [--archived true|false] [--tag-id <ID> ...|--clear-tags]
+  track-cli tag create --name <名前> [--color <#RRGGBB>]
+  track-cli tag update --id <ID> [--name <名前>] [--color <#RRGGBB>]
+  track-cli tag delete --id <ID> --confirmed
+  track-cli history [--limit <N>]
+  track-cli undo [--id <操作ID>]
+
 createは利用者へ登録内容を提示し、明示的な確認を得た後に実行してください。
+updateは10件以上、deleteは常に、クライアント・プロジェクトの作成とタグの削除は常に--confirmedが必要です。
+書き込みは操作として記録され、undoで取り消せます（取り消しはAIの操作だけ）。
 DBは$TRACK_DATA_DIR（既定 ~/.track）のtrack.dbを直接読み書きします。Trackアプリを起動しておく必要はありません。"
 }
 
@@ -109,7 +131,7 @@ fn create(db: &mut Db, args: &[String]) -> Result<Value> {
         break_minutes,
         ..Default::default()
     };
-    let created = match request_id {
+    let (created, op) = match request_id {
         Some(rid) => {
             let reg = AiRegistrationInput {
                 request_id: rid.to_string(),
@@ -117,11 +139,15 @@ fn create(db: &mut Db, args: &[String]) -> Result<Value> {
                 session_id: session_id.unwrap().to_string(),
                 allow_overlap,
             };
-            db.create_ai_entry(entry, reg)?.0
+            let (e, _, op) = db.record_ai_entry(source.unwrap(), entry, reg)?;
+            (e, op)
         }
-        None => db.create_entry(entry)?,
+        None => {
+            let (e, op) = db.op_create_entry("cli", entry)?;
+            (e, Some(op))
+        }
     };
-    Ok(json!({ "created": entry_summary(&created) }))
+    Ok(json!({ "created": entry_summary(&created), "operation": op }))
 }
 
 fn prepare_cmd(db: &Db, args: &[String]) -> Result<Value> {
@@ -151,13 +177,23 @@ fn run(args: &[String]) -> Result<Output> {
         return Ok(Output::Text(usage()));
     };
     let rest = &args[1..];
-    if !matches!(command, "status" | "projects" | "list" | "prepare" | "create") {
+    if !matches!(command, "status" | "projects" | "list" | "prepare" | "create" | "search" | "update" | "delete" | "clients" | "tags" | "client" | "project" | "tag" | "history" | "undo") {
         return fail("invalid_command", &format!("未対応のコマンドです: {command}"));
     }
     let mut db = open_db()?;
     let value = match command {
         "status" => json!({ "connected": true, "dbPath": db.path, "projectCount": db.projects(false)?.len() }),
-        "projects" => json!({ "projects": db.projects(false)? }),
+        "projects" => json!({ "projects": db.projects(rest.iter().any(|a| a == "--all"))? }),
+        "clients" => json!({ "clients": db.clients()? }),
+        "tags" => json!({ "tags": db.tags()? }),
+        "search" => edit::search(&db, rest)?,
+        "update" => edit::update(&mut db, rest)?,
+        "delete" => edit::delete(&mut db, rest)?,
+        "client" => edit::client(&mut db, rest)?,
+        "project" => edit::project(&mut db, rest)?,
+        "tag" => edit::tag(&mut db, rest)?,
+        "history" => edit::history(&db, rest)?,
+        "undo" => edit::undo(&mut db, rest)?,
         "list" => {
             let from = option(rest, "--from").ok_or_else(|| CoreError::code_msg("invalid_input", "--fromが必要です。"))?;
             let to = option(rest, "--to").ok_or_else(|| CoreError::code_msg("invalid_input", "--toが必要です。"))?;
