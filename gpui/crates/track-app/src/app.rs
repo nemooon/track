@@ -22,7 +22,15 @@ pub struct AppData {
     pub config: AppConfig,
 }
 
+/// Emitted after `refresh_all` has re-read everything, so pages reload what they show.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StateEvent {
+    Reloaded,
+}
+
 pub struct AppState {
+    /// How many `refresh_all` rounds have finished (tests).
+    pub reloads: u64,
     pub api: DataClient,
     pub data: Option<AppData>,
     pub error: Option<String>,
@@ -37,7 +45,7 @@ impl AppState {
     }
 
     pub fn with_path(api: DataClient, persist_path: PathBuf) -> Self {
-        Self { api, data: None, error: None, loading: false, persist: PersistState::load(&persist_path), persist_path }
+        Self { reloads: 0, api, data: None, error: None, loading: false, persist: PersistState::load(&persist_path), persist_path }
     }
 
     pub fn update_persist(&mut self, f: impl FnOnce(&mut PersistState)) {
@@ -57,19 +65,51 @@ impl AppState {
         self.fetch(cx);
     }
 
-    fn fetch(&mut self, cx: &mut Context<Self>) {
-        let api = self.api.clone();
+    async fn read_all(api: DataClient) -> Result<AppData, crate::data::DataError> {
+        Ok(AppData {
+            projects: api.projects().await?,
+            clients: api.clients().await?,
+            tags: api.tags().await?,
+            settings: api.settings().await?,
+            config: api.config(),
+        })
+    }
+
+    /// After the settings window saved something: re-read reference data, settings and config,
+    /// then tell the pages to reload (same-connection writes do not change `data_version`).
+    pub fn refresh_all(&mut self, cx: &mut Context<Self>) {
+        let fut = Self::read_all(self.api.clone());
         cx.spawn(async move |this, cx| {
-            let result = async {
-                Ok::<_, crate::data::DataError>(AppData {
-                    projects: api.projects().await?,
-                    clients: api.clients().await?,
-                    tags: api.tags().await?,
-                    settings: api.settings().await?,
-                    config: api.config(),
-                })
+            let result = fut.await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(data) => this.data = Some(data),
+                    Err(e) => this.error = Some(e.message),
+                }
+                this.reloads += 1;
+                cx.emit(StateEvent::Reloaded);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Saves settings; on success everything is refreshed. The task resolves with the result.
+    pub fn save_settings(&mut self, patch: track_core::model::SettingsPatch, cx: &mut Context<Self>) -> gpui::Task<crate::data::DataResult<track_core::model::Settings>> {
+        let fut = self.api.update_settings(patch);
+        cx.spawn(async move |this, cx| {
+            let result = fut.await;
+            if result.is_ok() {
+                let _ = this.update(cx, |this, cx| this.refresh_all(cx));
             }
-            .await;
+            result
+        })
+    }
+
+    fn fetch(&mut self, cx: &mut Context<Self>) {
+        let fut = Self::read_all(self.api.clone());
+        cx.spawn(async move |this, cx| {
+            let result = fut.await;
             let _ = this.update(cx, |this, cx| {
                 this.loading = false;
                 match result {
@@ -82,6 +122,8 @@ impl AppState {
         .detach();
     }
 }
+
+impl gpui::EventEmitter<StateEvent> for AppState {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
@@ -121,6 +163,11 @@ impl TrackApp {
 
     pub fn with_state(state: Entity<AppState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         cx.observe(&state, |_, _, cx| cx.notify()).detach();
+        cx.subscribe(&state, |this, _, _: &StateEvent, cx| {
+            this.calendar.update(cx, |c, cx| c.reload(cx));
+            this.reports.update(cx, |r, cx| r.reload_if_shown(cx));
+        })
+        .detach();
         let calendar = cx.new(|cx| CalendarView::new(state.clone(), window, cx));
         let reports = cx.new(|cx| ReportsView::new(state.clone(), window, cx));
         let focus = cx.focus_handle();
@@ -229,6 +276,20 @@ impl TrackApp {
                     .child(tab("tab-calendar", "カレンダー", IconName::Calendar, Page::Calendar, self.page == Page::Calendar))
                     .child(tab("tab-reports", "レポート", IconName::ChartPie, Page::Reports, self.page == Page::Reports)),
             )
+            .child(
+                div()
+                    .id("open-settings")
+                    .debug_selector(|| "open-settings".into())
+                    .ml_auto()
+                    .p_1()
+                    .rounded_md()
+                    .cursor_pointer()
+                    .text_color(with_alpha(white(), 0.7))
+                    .hover(|s| s.text_color(white()).bg(with_alpha(white(), 0.1)))
+                    .child(Icon::new(IconName::Settings).size_4())
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .on_click(cx.listener(|this, _, _, cx| crate::settings::open_settings(this.state.clone(), cx))),
+            )
     }
 
     fn render_body(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -292,6 +353,7 @@ impl Render for TrackApp {
             .font_family(".SystemUIFont")
             .on_action(cx.listener(|this, _: &ShowCalendar, _, cx| this.show(Page::Calendar, cx)))
             .on_action(cx.listener(|this, _: &InstallIntegrations, w, cx| this.open_integrations(w, cx)))
+            .on_action(cx.listener(|this, _: &OpenSettings, _, cx| crate::settings::open_settings(this.state.clone(), cx)))
             .on_action(cx.listener(|this, _: &ShowReports, _, cx| this.show(Page::Reports, cx)))
             .on_action(cx.listener(|this, _: &PrevPeriod, w, cx| this.forward(crate::ui::date_nav::NavEvent::Prev, w, cx)))
             .on_action(cx.listener(|this, _: &NextPeriod, w, cx| this.forward(crate::ui::date_nav::NavEvent::Next, w, cx)))

@@ -162,6 +162,10 @@ impl DataClient {
         self.call("settings", |db| db.settings())
     }
 
+    pub fn update_settings(&self, patch: SettingsPatch) -> impl Future<Output = DataResult<Settings>> + Send + 'static {
+        self.call("update_settings", move |db| db.update_settings(patch))
+    }
+
     pub fn config(&self) -> AppConfig {
         track_core::config::load_config(&self.data_dir).app_config()
     }

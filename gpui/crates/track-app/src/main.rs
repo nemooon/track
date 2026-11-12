@@ -5,6 +5,7 @@ mod core;
 mod data;
 mod persist;
 mod reports;
+mod settings;
 mod ui;
 #[cfg(test)]
 mod testing;
@@ -14,6 +15,8 @@ mod app_tests;
 mod calendar_tests;
 #[cfg(test)]
 mod reports_tests;
+#[cfg(test)]
+mod settings_tests;
 
 use gpui::{App, AppContext, Bounds, Point, TitlebarOptions, WindowBounds, WindowOptions, px, size};
 use gpui_component::Root;
