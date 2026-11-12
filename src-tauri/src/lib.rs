@@ -525,6 +525,9 @@ async fn install_update(expected_version: String) -> Result<(), String> {
 
 #[tauri::command]
 fn restart_track(app: tauri::AppHandle) {
+    // restart()はメインスレッドから呼ばれるとRunEvent::Exitを経由せずにexit(0)するため、
+    // Exitイベントでのstop_sidecarが走らない。先に止めないと古いsidecarが親なしで残る。
+    stop_sidecar(&app);
     app.restart();
 }
 
