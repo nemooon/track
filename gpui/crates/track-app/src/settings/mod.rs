@@ -9,6 +9,7 @@ use gpui::{
 };
 use gpui_component::{Icon, IconName, Root};
 
+pub mod ai;
 pub mod calendar;
 pub mod form;
 pub mod format_editor;
@@ -78,12 +79,13 @@ pub struct SettingsWindow {
     pub calendar: Option<Entity<calendar::CalendarSettings>>,
     pub reports: Option<Entity<reports::ReportSettings>>,
     pub projects: Option<Entity<projects::ProjectSettings>>,
+    pub ai: Option<Entity<ai::AiSettings>>,
 }
 
 impl SettingsWindow {
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
         cx.observe(&state, |_, _, cx| cx.notify()).detach();
-        SettingsWindow { state, section: SettingsSection::Calendar, calendar: None, reports: None, projects: None }
+        SettingsWindow { state, section: SettingsSection::Calendar, calendar: None, reports: None, projects: None, ai: None }
     }
 
     pub fn show(&mut self, section: SettingsSection, cx: &mut Context<Self>) {
@@ -105,6 +107,7 @@ impl SettingsWindow {
                 self.reports.clone().map(Into::into)
             }
             SettingsSection::Projects => Some(self.projects.get_or_insert_with(|| cx.new(|cx| projects::ProjectSettings::new(state, cx))).clone().into()),
+            SettingsSection::Ai => Some(self.ai.get_or_insert_with(|| cx.new(|cx| ai::AiSettings::new(state, window, cx))).clone().into()),
             _ => None,
         }
     }

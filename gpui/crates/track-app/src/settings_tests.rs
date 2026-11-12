@@ -352,3 +352,78 @@ fn format_validation_blocks_save(cx: &mut TestAppContext) {
     set_input(&mut scx, &name, "x");
     assert!(scx.debug_bounds("format-error").is_some(), "項目を1つ以上追加してください");
 }
+
+fn ai_section(cx: &mut VisualTestContext) -> (VisualTestContext, Entity<crate::settings::ai::AiSettings>) {
+    let (scx, view) = open_section(cx, "settings-nav-ai");
+    let a = view.read_with(&scx, |v, _| v.ai.clone().expect("ai section"));
+    (scx, a)
+}
+
+fn config_json(f: &crate::testing::Fixture) -> serde_json::Value {
+    serde_json::from_str(&std::fs::read_to_string(f.dir.join("config.json")).unwrap()).unwrap()
+}
+
+#[gpui::test]
+fn switch_provider_and_save_config(cx: &mut TestAppContext) {
+    let (app, cx, f) = open_app_db(cx, |_| {});
+    std::fs::write(f.dir.join("config.json"), r#"{"futureKey":1}"#).unwrap();
+    let (mut scx, a) = ai_section(cx);
+    click(&mut scx, "ai-provider-custom-command");
+    let (exe, args) = a.read_with(&scx, |a, _| (a.command_executable.clone(), a.command_args.clone()));
+    set_input(&mut scx, &exe, "/bin/cat");
+    scx.update(|w, cx| args.update(cx, |t, cx| t.set_value("-a\n\n -b ", w, cx)));
+    scx.run_until_parked();
+    click(&mut scx, "ai-save");
+    wait_io(&mut scx);
+    wait_io(cx);
+    let v = config_json(&f);
+    assert_eq!(v["aiProvider"], "custom-command");
+    assert_eq!(v["aiCommandExecutable"], "/bin/cat");
+    assert_eq!(v["aiCommandArgs"], serde_json::json!(["-a", "-b"]));
+    assert_eq!(v["futureKey"], 1, "unknown keys survive");
+    assert_eq!(app.read_with(cx, |a, cx| a.state.read(cx).data.as_ref().map(|d| d.config.ai_provider.clone())), Some("custom-command".into()));
+}
+
+#[gpui::test]
+fn custom_command_requires_executable(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, _a) = ai_section(cx);
+    click(&mut scx, "ai-provider-custom-command");
+    assert!(scx.debug_bounds("ai-error").is_some(), "実行するコマンドを指定してください");
+    click(&mut scx, "ai-save");
+    wait_io(&mut scx);
+    assert!(!f.dir.join("config.json").exists() || config_json(&f)["aiProvider"] != "custom-command");
+}
+
+#[gpui::test]
+fn status_reflects_saved_config(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    std::fs::write(f.dir.join("config.json"), r#"{"aiProvider":"custom-command","aiCommandExecutable":"/bin/cat"}"#).unwrap();
+    let (mut scx, a) = ai_section(cx);
+    wait_io(&mut scx);
+    let status = a.read_with(&scx, |a, _| a.status.clone()).expect("status loaded");
+    assert!(status.available);
+    assert_eq!(status.detail, "標準入力でプロンプトを渡します（/bin/cat）。");
+    assert!(scx.debug_bounds("ai-status").is_some());
+}
+
+#[gpui::test]
+fn codex_model_candidates_fill_the_model(cx: &mut TestAppContext) {
+    use std::os::unix::fs::PermissionsExt;
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let exe = f.dir.join("codex");
+    std::fs::write(
+        &exe,
+        "#!/bin/sh\nread a\necho '{\"id\":0,\"result\":{}}'\nread b\nread c\necho '{\"id\":1,\"result\":{\"data\":[{\"model\":\"gpt-x\",\"displayName\":\"GPT X\"}]}}'\nsleep 5\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::write(f.dir.join("config.json"), serde_json::json!({"aiProvider": "codex", "aiCodexExecutable": exe}).to_string()).unwrap();
+    let (mut scx, a) = ai_section(cx);
+    for _ in 0..5 {
+        wait_io(&mut scx);
+    }
+    click(&mut scx, "codex-model-0");
+    let model = a.read_with(&scx, |a, _| a.codex_model.clone());
+    assert_eq!(model.read_with(&scx, |m, _| m.value().to_string()), "gpt-x");
+}

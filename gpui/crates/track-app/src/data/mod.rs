@@ -198,6 +198,16 @@ impl DataClient {
         self.call("update_settings", move |db| db.update_settings(patch))
     }
 
+    /// Saves `config.json` (off the UI thread; the DB is not involved).
+    pub fn save_config(&self, patch: track_core::config::ConfigPatch) -> impl Future<Output = DataResult<track_core::config::Config>> + Send + 'static {
+        let dir = self.data_dir.clone();
+        self.call("save_config", move |_| track_core::config::save_config(&dir, patch))
+    }
+
+    pub fn full_config(&self) -> track_core::config::Config {
+        track_core::config::load_config(&self.data_dir)
+    }
+
     pub fn config(&self) -> AppConfig {
         track_core::config::load_config(&self.data_dir).app_config()
     }
