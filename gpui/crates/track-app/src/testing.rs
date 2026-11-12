@@ -15,7 +15,7 @@ pub fn fake_data() -> AppData {
         clients: vec![client],
         tags: vec![tag],
         settings: Settings { work_start: 600, work_end: 1110, work_days: vec![1, 2, 3, 4, 5], weekly_report_template: "{{期間}} {{合計時間}}".into(), report_copy_formats: vec![] },
-        config: AppConfig { ai_provider: "codex".into() },
+        config: AppConfig { ai_provider: "codex".into(), ..Default::default() },
     }
 }
 

@@ -4,6 +4,9 @@ pub mod error;
 pub mod guard;
 pub mod ids;
 pub mod migrate;
+pub mod model;
+pub mod repo;
+pub mod validate;
 pub mod time;
 
 pub use db::Db;
