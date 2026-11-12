@@ -44,6 +44,22 @@ CLI はアプリを起動していなくても使えるので、終了時にも�
 文面は `integrations/` のものを元に、`$HOME/.track-gpui/runtime.json` を読み、`TRACK_DATA_DIR="$HOME/.track-gpui"` を付けて CLI を呼ぶよう書き換えてある。
 本採用時は `ui/integrations_dialog.rs` の `DEV_NAMES` を外し、本来の名前に戻す。
 
+### AI からの編集と取り消し
+
+スキルには記録に加えて、登録済み工数の修正・付け替え・削除と、クライアント・プロジェクト・タグの作成・変更の手順が入る（GPUI 版だけの節。共有の `integrations/` は変えない）。
+
+```bash
+track-cli search --project-id <ID> --from <ISO> --to <ISO>      # 対象を集める
+track-cli update --id <ID> --id <ID> --project-id <ID> --source codex
+track-cli history                                               # AI の操作一覧
+track-cli undo --id <操作ID>                                    # 取り消し
+```
+
+- 確認が要る操作（`--confirmed` が無いと `confirmation_required`）: 工数 10 件以上の変更、工数の削除、クライアント・プロジェクトの作成、タグの削除
+- 書き込みは 1 コマンドごとに `AiOperation` テーブル（`database/migrations/0016_ai_operation.sql`）へ変更前後の行と一緒に残る。直近 100 件・30 日を保持
+- 取り消しは、その操作のあとで行が変わっていれば `undo_conflict` で止まる（部分的には戻さない）
+- アプリは AI の操作を検知すると本体の上に「AI が N 件変更しました［元に戻す］」を出す
+
 ## 設定
 
 `⌘,`、メニュー「Track → 設定…」、ヘッダー右の歯車で別ウインドウの設定を開く。項目は Tauri 版と同じ
