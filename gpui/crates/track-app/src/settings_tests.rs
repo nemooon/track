@@ -427,3 +427,65 @@ fn codex_model_candidates_fill_the_model(cx: &mut TestAppContext) {
     let model = a.read_with(&scx, |a, _| a.codex_model.clone());
     assert_eq!(model.read_with(&scx, |m, _| m.value().to_string()), "gpt-x");
 }
+
+fn snapshots(f: &crate::testing::Fixture) -> Vec<track_core::backup::SnapshotInfo> {
+    track_core::backup::list_snapshots(&f.dir.join("exports"))
+}
+
+#[gpui::test]
+fn auto_backup_runs_on_start(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    wait_io(cx);
+    let s = snapshots(&f);
+    assert_eq!(s.len(), 1);
+    assert!(s[0].auto && s[0].name.starts_with("track-auto-"));
+}
+
+#[gpui::test]
+fn backup_now_lists_snapshot(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    wait_io(cx);
+    let (mut scx, _view) = open_section(cx, "settings-nav-backup");
+    assert!(scx.debug_bounds("backup-row-0").is_some(), "the automatic one is listed");
+    click(&mut scx, "backup-now");
+    wait_io(&mut scx);
+    assert_eq!(snapshots(&f).iter().filter(|s| !s.auto).count(), 1);
+    assert!(scx.debug_bounds("backup-row-1").is_some());
+    assert!(scx.debug_bounds("backup-latest").is_some(), "最新");
+}
+
+#[gpui::test]
+fn restore_from_settings_reloads_main_window(cx: &mut TestAppContext) {
+    use crate::testing::{insert_entry, local};
+    let today = chrono::Local::now().date_naive();
+    let (app, cx, f) = open_app_db(cx, |db| insert_entry(db, "a", local(today, 10, 0), local(today, 11, 0), Some("p1"), "前"));
+    wait_io(cx);
+    let (mut scx, _view) = open_section(cx, "settings-nav-backup");
+    click(&mut scx, "backup-now");
+    wait_io(&mut scx);
+    insert_entry(&f.db(), "b", local(today, 12, 0), local(today, 13, 0), Some("p1"), "後");
+    click(&mut scx, "backup-restore-0");
+    click(&mut scx, "backup-restore-confirm");
+    wait_io(&mut scx);
+    wait_io(cx);
+    let titles: Vec<String> = f.db().entries(local(today, 0, 0), local(today, 23, 0)).unwrap().into_iter().filter_map(|e| e.title).collect();
+    assert_eq!(titles, vec!["前".to_string()]);
+    assert!(snapshots(&f).iter().filter(|s| !s.auto).count() >= 2, "the state before restoring was saved too");
+    let in_main = app.read_with(cx, |a, cx| (a.calendar.read(cx).cache.get("a").is_some(), a.calendar.read(cx).cache.get("b").is_some()));
+    assert_eq!(in_main, (true, false), "the calendar shows the restored data");
+}
+
+#[gpui::test]
+fn export_dir_outside_dev_root_shows_error(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, view) = open_section(cx, "settings-nav-backup");
+    let b = view.read_with(&scx, |v, _| v.backup.clone().expect("backup section"));
+    let dir = b.read_with(&scx, |b, _| b.export_dir.clone());
+    let outside = tempfile::tempdir().unwrap();
+    set_input(&mut scx, &dir, &outside.path().join("bk").to_string_lossy());
+    click(&mut scx, "backup-save");
+    wait_io(&mut scx);
+    assert!(scx.debug_bounds("backup-error").is_some());
+    assert!(!outside.path().join("bk").exists());
+    assert!(!f.dir.join("config.json").exists() || !std::fs::read_to_string(f.dir.join("config.json")).unwrap().contains("bk"));
+}

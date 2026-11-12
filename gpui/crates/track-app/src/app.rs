@@ -141,6 +141,7 @@ pub struct TrackApp {
     pub integrations_home: PathBuf,
     pub integrations: Option<Entity<crate::ui::integrations_dialog::IntegrationsDialog>>,
     _watcher: gpui::Task<()>,
+    _backups: gpui::Task<()>,
 }
 
 /// How often the DB is checked for writes by other processes (track-cli, AI agents).
@@ -185,6 +186,7 @@ impl TrackApp {
         // Dev convenience: TRACK_GPUI_PAGE=reports opens the Reports screen first.
         let page = if std::env::var("TRACK_GPUI_PAGE").as_deref() == Ok("reports") { Page::Reports } else { Page::Calendar };
         let watcher = Self::watch_external_changes(state.clone(), calendar.clone(), reports.clone(), cx);
+        let backups = Self::auto_backup(state.read(cx).api.clone(), cx);
         Self {
             state,
             page,
@@ -194,7 +196,19 @@ impl TrackApp {
             integrations_home: dirs::home_dir().unwrap_or_default(),
             integrations: None,
             _watcher: watcher,
+            _backups: backups,
         }
+    }
+
+    /// The automatic backups the Tauri app's server used to take: at start and every hour, a
+    /// snapshot when the newest automatic one is older than `backupIntervalHours`.
+    fn auto_backup(api: DataClient, cx: &mut Context<Self>) -> gpui::Task<()> {
+        cx.spawn(async move |_, cx| loop {
+            if let Err(e) = api.maybe_auto_backup().await {
+                eprintln!("自動バックアップに失敗しました: {}", e.message);
+            }
+            cx.background_executor().timer(std::time::Duration::from_secs(60 * 60)).await;
+        })
     }
 
     /// Polls `PRAGMA data_version`, which changes only when another connection commits,

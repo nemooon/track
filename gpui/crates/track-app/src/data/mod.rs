@@ -43,6 +43,9 @@ type Job = Box<dyn FnOnce(Result<&mut Db, &DataError>) + Send>;
 pub struct DataClient {
     tx: mpsc::Sender<Job>,
     pub data_dir: PathBuf,
+    /// Backups may only be written and restored under this folder while the dev guard is on
+    /// (`~/.track-gpui`; tests use their temp data dir).
+    pub dev_root: PathBuf,
     /// Test hook: operations named here fail with `test_failure`.
     failing: Arc<Mutex<HashSet<&'static str>>>,
 }
@@ -56,16 +59,16 @@ impl DataClient {
     /// Opens `data_dir` behind the development guard.
     pub fn open_guarded(data_dir: &Path) -> Self {
         let guard = dev_guard(data_dir).err().map(DataError::from);
-        Self::start(data_dir.to_path_buf(), guard)
+        Self::start(data_dir.to_path_buf(), track_core::guard::allowed_root(), guard)
     }
 
     /// Opens `data_dir` without the development guard (tests use temp dirs).
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn open_unguarded(data_dir: &Path) -> Self {
-        Self::start(data_dir.to_path_buf(), None)
+        Self::start(data_dir.to_path_buf(), data_dir.to_path_buf(), None)
     }
 
-    fn start(data_dir: PathBuf, preset_error: Option<DataError>) -> Self {
+    fn start(data_dir: PathBuf, dev_root: PathBuf, preset_error: Option<DataError>) -> Self {
         let (tx, rx) = mpsc::channel::<Job>();
         let dir = data_dir.clone();
         std::thread::Builder::new()
@@ -83,7 +86,7 @@ impl DataClient {
                 }
             })
             .expect("db thread");
-        DataClient { tx, data_dir, failing: Arc::default() }
+        DataClient { tx, data_dir, dev_root, failing: Arc::default() }
     }
 
     /// Runs `f` on the DB thread. A closed DB (open failure, guard) answers every call with that error.
@@ -200,8 +203,29 @@ impl DataClient {
 
     /// Saves `config.json` (off the UI thread; the DB is not involved).
     pub fn save_config(&self, patch: track_core::config::ConfigPatch) -> impl Future<Output = DataResult<track_core::config::Config>> + Send + 'static {
-        let dir = self.data_dir.clone();
-        self.call("save_config", move |_| track_core::config::save_config(&dir, patch))
+        let (dir, root) = (self.data_dir.clone(), self.dev_root.clone());
+        self.call("save_config", move |_| track_core::config::save_config_in(&dir, patch, &root))
+    }
+
+    /// Snapshots in the configured backup folder, newest first.
+    pub fn snapshots(&self) -> Vec<track_core::backup::SnapshotInfo> {
+        track_core::backup::list_snapshots(&self.full_config().export_dir)
+    }
+
+    pub fn backup_now(&self) -> impl Future<Output = DataResult<track_core::backup::SnapshotInfo>> + Send + 'static {
+        let (dir, root) = (self.full_config().export_dir, self.dev_root.clone());
+        self.call("backup_now", move |db| db.snapshot(&dir, false, &root))
+    }
+
+    pub fn maybe_auto_backup(&self) -> impl Future<Output = DataResult<Option<track_core::backup::SnapshotInfo>>> + Send + 'static {
+        let (cfg, root) = (self.full_config(), self.dev_root.clone());
+        self.call("maybe_auto_backup", move |db| db.maybe_auto_backup(&cfg, &root))
+    }
+
+    /// Replaces the DB with `path` on the DB thread (the current DB is saved first).
+    pub fn restore(&self, path: PathBuf) -> impl Future<Output = DataResult<track_core::backup::RestoreResult>> + Send + 'static {
+        let (dir, root) = (self.full_config().export_dir, self.dev_root.clone());
+        self.call("restore", move |db| db.restore(&path, &dir, &root))
     }
 
     pub fn full_config(&self) -> track_core::config::Config {
