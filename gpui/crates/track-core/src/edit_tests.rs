@@ -139,3 +139,37 @@ fn tag_operations_round_trip() {
     let (p, _) = db.op_update_project("codex", &p.id, ProjectPatch { color: Some("#3b82f6".into()), ..Default::default() }).unwrap();
     assert_eq!(p.color, "#3b82f6");
 }
+
+#[test]
+fn undo_of_tag_create_conflicts_when_tag_was_used_later() {
+    let (_d, mut db) = db();
+    let (t, op) = db.op_create_tag("codex", "green", "#22c55e").unwrap();
+    let e = entry(&mut db, None, 8, "a");
+    db.update_entry(&e.id, EntryPatch { tag_ids: Some(vec![t.id.clone()]), ..Default::default() }).unwrap();
+    let err = db.undo_operation(Some(op.id)).unwrap_err();
+    assert_eq!(err.code(), "undo_conflict");
+    assert_eq!(err.details()["changed"][0]["table"], "TagOnEntry");
+    assert_eq!(db.entry(&e.id).unwrap().unwrap().tags.len(), 1, "the later tagging survives");
+}
+
+#[test]
+fn undo_of_client_create_conflicts_when_projects_were_added() {
+    let (_d, mut db) = db();
+    let (c, op) = db.op_create_client("codex", "Newco").unwrap();
+    let p = db.create_project(&c.id, "手で追加", "#ef4444").unwrap();
+    let err = db.undo_operation(Some(op.id)).unwrap_err();
+    assert_eq!(err.code(), "undo_conflict");
+    assert_eq!(err.details()["changed"][0]["table"], "Project");
+    assert!(db.project(&p).is_ok(), "the project is not cascade-deleted");
+}
+
+#[test]
+fn undo_of_project_create_conflicts_when_entries_moved_onto_it() {
+    let (_d, mut db) = db();
+    let (c, _) = db.op_create_client("codex", "Newco").unwrap();
+    let (p, op) = db.op_create_project("codex", &c.id, "N1", "#22c55e", &[]).unwrap();
+    entry(&mut db, Some(&p.id), 8, "a");
+    let err = db.undo_operation(Some(op.id)).unwrap_err();
+    assert_eq!(err.code(), "undo_conflict", "not a raw foreign-key error");
+    assert_eq!(err.details()["changed"][0]["table"], "TimeEntry");
+}

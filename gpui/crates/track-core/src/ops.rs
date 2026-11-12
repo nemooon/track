@@ -219,6 +219,17 @@ fn key_of(table: Table, row: &Row) -> String {
     }
 }
 
+/// Tables (and their primary keys) whose rows point at a row of `table`.
+fn dependents(table: &str) -> &'static [(&'static str, &'static str, &'static str)] {
+    match table {
+        "Client" => &[("Project", "clientId", "id")],
+        "Project" => &[("TimeEntry", "projectId", "id"), ("TagOnProject", "projectId", "id"), ("Note", "projectId", "id")],
+        "Tag" => &[("TagOnEntry", "tagId", "id"), ("TagOnProject", "tagId", "id")],
+        "TimeEntry" => &[("TagOnEntry", "entryId", "id"), ("AiRegistration", "entryId", "requestId")],
+        _ => &[],
+    }
+}
+
 fn find<'a>(rows: &'a [Row], table: Table, key: &str) -> Option<&'a Row> {
     rows.iter().find(|r| key_of(table, r) == key)
 }
@@ -275,6 +286,28 @@ impl Db {
                 }
             }
             current.push(now);
+        }
+        // Rows this undo deletes (created by the operation) must not have gained dependents
+        // since: a cascade would silently remove them, a RESTRICT would fail the undo.
+        let mut deleting: Vec<(&'static str, String)> = Vec::new();
+        for (c, now) in changes.iter().zip(&current) {
+            for r in now {
+                let k = key_of(c.table, r);
+                if find(&c.before, c.table, &k).is_none() {
+                    deleting.push((c.table.name(), k));
+                }
+            }
+        }
+        for (table, key) in &deleting {
+            for (dep, column, pk) in dependents(table) {
+                let mut st = self.conn().prepare(&format!(r#"SELECT "{pk}" FROM "{dep}" WHERE "{column}" = ?1"#))?;
+                let keys: Vec<String> = st.query_map([key], |r| r.get::<_, String>(0))?.collect::<std::result::Result<_, _>>()?;
+                for k in keys {
+                    if !deleting.iter().any(|(t, d)| t == dep && *d == k) {
+                        changed.push(serde_json::json!({ "table": dep, "key": k }));
+                    }
+                }
+            }
         }
         if !changed.is_empty() {
             return Err(CoreError::with_details(
