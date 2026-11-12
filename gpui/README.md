@@ -1,0 +1,29 @@
+# Track GPUI 試作
+
+カレンダーとレポートを GPUI（Zed の Rust UI フレームワーク）で作り直す試作。既存の Bun API に HTTP でつなぐ。
+設計: `docs/superpowers/specs/2026-11-12-gpui-prototype-design.md`
+
+## 必要なもの
+
+- Rust 1.98.1（`rust-toolchain.toml` で固定。rustup が自動で入れる）
+- Xcode 本体は不要（`runtime_shaders` でシェーダーを実行時にコンパイルする）
+- Bun（API サーバー用、リポジトリ直下の `npm run local`）
+
+## 起動
+
+本物の `~/.track/` を触らないよう、コピーした DB を使う。
+
+```bash
+gpui/scripts/prepare-db.sh            # ~/.track-gpui に DB と config.json をコピー（--force で作り直し）
+TRACK_DATA_DIR=~/.track-gpui npm run local   # 別端末で API を起動（127.0.0.1:8787）
+cd gpui && cargo run
+```
+
+`prepare-db.sh` はコピーした `config.json` の `exportDir` を `~/.track-gpui/exports` に書き換える。
+API サーバーの自動バックアップが本物のバックアップを上書き・削除しないようにするため。
+
+接続先のポートは環境変数 `TRACK_PORT` で変えられる。
+
+## 開発用
+
+- `scripts/winshot.sh out.png` — 試作アプリのウインドウだけをスクリーンショットする
