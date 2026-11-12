@@ -16,6 +16,9 @@ pub struct AiRegistrationInput {
     pub allow_overlap: bool,
 }
 
+/// A registered interval: (`recordedFrom`, `recordedUntil`).
+pub type Coverage = (Option<DateTime<Utc>>, DateTime<Utc>);
+
 fn js_iso(t: DateTime<Utc>) -> String {
     t.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
 }
@@ -127,7 +130,7 @@ impl Db {
     }
 
     /// All registered intervals for a session, oldest `recordedUntil` first (`coverage=1`).
-    pub fn ai_coverage(&self, source: &str, session_id: &str) -> Result<Vec<(Option<DateTime<Utc>>, DateTime<Utc>)>> {
+    pub fn ai_coverage(&self, source: &str, session_id: &str) -> Result<Vec<Coverage>> {
         let mut st = self.conn().prepare(
             r#"SELECT recordedFrom, recordedUntil FROM "AiRegistration" WHERE source = ?1 AND sessionId = ?2 ORDER BY recordedUntil ASC"#,
         )?;
