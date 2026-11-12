@@ -36,6 +36,12 @@ impl Db {
         &mut self.conn
     }
 
+    /// Lets go of the database file (the connection becomes an in-memory one) so it can be replaced.
+    pub(crate) fn release_file(&mut self) -> Result<()> {
+        self.conn = Connection::open_in_memory()?;
+        Ok(())
+    }
+
     pub fn ensure_writable(&self) -> Result<()> {
         if self.read_only {
             Err(CoreError::code_msg("schema_too_new", "DB がこのバージョンより新しい形式です。Track を更新してください。"))

@@ -1,6 +1,7 @@
 //! Shared core for the Track GPUI app and CLI: SQLite storage, validation, reports, AI.
 pub mod ai;
 pub mod ai_registration;
+pub mod backup;
 pub mod config;
 pub mod dates;
 pub mod db;
@@ -28,3 +29,5 @@ mod reports_tests;
 mod integrations_tests;
 #[cfg(test)]
 mod config_tests;
+#[cfg(test)]
+mod backup_tests;
