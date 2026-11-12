@@ -9,6 +9,7 @@ pub mod migrate;
 pub mod model;
 pub mod report;
 pub mod repo;
+pub mod reports;
 pub mod validate;
 pub mod time;
 
@@ -16,3 +17,5 @@ pub use db::Db;
 pub use error::CoreError;
 #[cfg(test)]
 mod db_tests;
+#[cfg(test)]
+mod reports_tests;
