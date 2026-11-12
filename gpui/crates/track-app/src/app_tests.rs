@@ -115,3 +115,33 @@ fn failed_child_rows_do_not_stay_loading(cx: &mut TestAppContext) {
     let state = app.read_with(cx, |a, cx| a.reports.read(cx).children.get("project:p1").cloned());
     assert!(matches!(state, Some(crate::reports::Children::Failed(_))), "{state:?}");
 }
+
+#[gpui::test]
+fn external_write_triggers_reload(cx: &mut TestAppContext) {
+    use crate::testing::{insert_entry, local, open_app_db, wait_io};
+    let (app, cx, fixture) = open_app_db(cx, |_| {}, "http://127.0.0.1:9/api");
+    wait_io(cx);
+    let today = Local::now().date_naive();
+    assert!(app.read_with(cx, |a, cx| a.calendar.read(cx).cache.get("ext").is_none()));
+    // Another process (track-cli, AI) writes through its own connection.
+    let other = fixture.db();
+    insert_entry(&other, "ext", local(today, 10, 0), local(today, 11, 0), Some("p1"), "外部で登録");
+    other
+        .conn()
+        .execute(r##"INSERT INTO "Project"(id, clientId, name, color, createdAt) VALUES ('p3', 'c1', 'Gamma', '#000000', '2026-11-12T00:00:00.000+00:00')"##, [])
+        .unwrap();
+    let mut seen = false;
+    for _ in 0..30 {
+        cx.executor().advance_clock(std::time::Duration::from_millis(100));
+        cx.run_until_parked();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        if app.read_with(cx, |a, cx| a.calendar.read(cx).cache.get("ext").is_some()) {
+            seen = true;
+            break;
+        }
+    }
+    assert!(seen, "external entry appears within 3 seconds");
+    wait_io(cx);
+    let projects = app.read_with(cx, |a, cx| a.state.read(cx).data.as_ref().map(|d| d.projects.iter().any(|p| p.id == "p3")));
+    assert_eq!(projects, Some(true), "reference data is reloaded too");
+}

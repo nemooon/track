@@ -49,6 +49,15 @@ impl AppState {
         self.loading = true;
         self.error = None;
         cx.notify();
+        self.fetch(cx);
+    }
+
+    /// Re-reads reference data in place (no loading state), e.g. after an external write.
+    pub fn refresh(&mut self, cx: &mut Context<Self>) {
+        self.fetch(cx);
+    }
+
+    fn fetch(&mut self, cx: &mut Context<Self>) {
         let api = self.api.clone();
         cx.spawn(async move |this, cx| {
             let result = async {
@@ -86,7 +95,11 @@ pub struct TrackApp {
     pub calendar: Entity<CalendarView>,
     pub reports: Entity<ReportsView>,
     focus: FocusHandle,
+    _watcher: gpui::Task<()>,
 }
+
+/// How often the DB is checked for writes by other processes (track-cli, AI agents).
+const EXTERNAL_POLL: std::time::Duration = std::time::Duration::from_secs(1);
 
 impl TrackApp {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -103,7 +116,36 @@ impl TrackApp {
         focus.focus(window, cx);
         // Dev convenience: TRACK_GPUI_PAGE=reports opens the Reports screen first.
         let page = if std::env::var("TRACK_GPUI_PAGE").as_deref() == Ok("reports") { Page::Reports } else { Page::Calendar };
-        Self { state, page, calendar, reports, focus }
+        let watcher = Self::watch_external_changes(state.clone(), calendar.clone(), reports.clone(), cx);
+        Self { state, page, calendar, reports, focus, _watcher: watcher }
+    }
+
+    /// Polls `PRAGMA data_version`, which changes only when another connection commits,
+    /// and reloads reference data plus whatever each page is showing.
+    fn watch_external_changes(
+        state: Entity<AppState>,
+        calendar: Entity<CalendarView>,
+        reports: Entity<ReportsView>,
+        cx: &mut Context<Self>,
+    ) -> gpui::Task<()> {
+        let api = state.read(cx).api.clone();
+        cx.spawn(async move |_, cx| {
+            // Baseline first, so a write right after startup is not mistaken for it.
+            let mut last = api.data_version().await.ok();
+            loop {
+                cx.background_executor().timer(EXTERNAL_POLL).await;
+                let Ok(v) = api.data_version().await else { continue };
+                if last.is_some_and(|l| l != v) {
+                    // The task belongs to TrackApp, so it stops when the window goes away.
+                    cx.update(|cx| {
+                        state.update(cx, |s, cx| s.refresh(cx));
+                        calendar.update(cx, |c, cx| c.reload(cx));
+                        reports.update(cx, |r, cx| r.reload_if_shown(cx));
+                    });
+                }
+                last = Some(v);
+            }
+        })
     }
 
     fn show(&mut self, page: Page, cx: &mut Context<Self>) {
