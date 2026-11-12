@@ -58,6 +58,16 @@ pub struct TimeEntry {
     pub break_minutes: i64,
 }
 
+/// `PATCH /api/settings`
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SettingsPatch {
+    pub work_start: Option<i64>,
+    pub work_end: Option<i64>,
+    pub work_days: Option<Vec<u32>>,
+    pub weekly_report_template: Option<String>,
+    pub report_copy_formats: Option<Vec<ReportCopyFormat>>,
+}
+
 /// `PATCH /api/clients/:id`
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ClientPatch {
