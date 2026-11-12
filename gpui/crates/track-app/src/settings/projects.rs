@@ -72,6 +72,8 @@ fn random_color() -> String {
 
 impl ProjectSettings {
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
+        // Restores and outside writes (CLI, AI) re-read everything; follow them.
+        cx.subscribe(&state, |this, _, _: &crate::app::StateEvent, cx| this.reload(cx)).detach();
         let mut s = ProjectSettings { state, clients: vec![], projects: vec![], tags: vec![], editor: None, deleting_tag: None, error: None };
         s.reload(cx);
         s
@@ -90,6 +92,15 @@ impl ProjectSettings {
                         c.sort_by_key(|x| x.archived);
                         p.sort_by_key(|x| x.archived);
                         (this.clients, this.projects, this.tags) = (c, p, t);
+                        // An editor for something that no longer exists (e.g. after a restore) closes.
+                        let gone = this.editor.as_ref().and_then(|e| e.id.as_ref().map(|id| (e.kind, id.clone()))).is_some_and(|(kind, id)| match kind {
+                            EditKind::Client => !this.clients.iter().any(|x| x.id == id),
+                            EditKind::Project => !this.projects.iter().any(|x| x.id == id),
+                            EditKind::Tag => !this.tags.iter().any(|x| x.id == id),
+                        });
+                        if gone {
+                            this.editor = None;
+                        }
                     }
                     Err(e) => this.error = Some(e.message),
                 }

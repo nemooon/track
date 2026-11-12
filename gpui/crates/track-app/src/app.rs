@@ -60,11 +60,6 @@ impl AppState {
         self.fetch(cx);
     }
 
-    /// Re-reads reference data in place (no loading state), e.g. after an external write.
-    pub fn refresh(&mut self, cx: &mut Context<Self>) {
-        self.fetch(cx);
-    }
-
     async fn read_all(api: DataClient) -> Result<AppData, crate::data::DataError> {
         Ok(AppData {
             projects: api.projects().await?,
@@ -185,7 +180,7 @@ impl TrackApp {
         focus.focus(window, cx);
         // Dev convenience: TRACK_GPUI_PAGE=reports opens the Reports screen first.
         let page = if std::env::var("TRACK_GPUI_PAGE").as_deref() == Ok("reports") { Page::Reports } else { Page::Calendar };
-        let watcher = Self::watch_external_changes(state.clone(), calendar.clone(), reports.clone(), cx);
+        let watcher = Self::watch_external_changes(state.clone(), cx);
         let backups = Self::auto_backup(state.read(cx).api.clone(), cx);
         Self {
             state,
@@ -213,12 +208,8 @@ impl TrackApp {
 
     /// Polls `PRAGMA data_version`, which changes only when another connection commits,
     /// and reloads reference data plus whatever each page is showing.
-    fn watch_external_changes(
-        state: Entity<AppState>,
-        calendar: Entity<CalendarView>,
-        reports: Entity<ReportsView>,
-        cx: &mut Context<Self>,
-    ) -> gpui::Task<()> {
+    /// Pages and the settings window reload through `StateEvent::Reloaded`.
+    fn watch_external_changes(state: Entity<AppState>, cx: &mut Context<Self>) -> gpui::Task<()> {
         let api = state.read(cx).api.clone();
         cx.spawn(async move |_, cx| {
             // Baseline first, so a write right after startup is not mistaken for it.
@@ -228,11 +219,7 @@ impl TrackApp {
                 let Ok(v) = api.data_version().await else { continue };
                 if last.is_some_and(|l| l != v) {
                     // The task belongs to TrackApp, so it stops when the window goes away.
-                    cx.update(|cx| {
-                        state.update(cx, |s, cx| s.refresh(cx));
-                        calendar.update(cx, |c, cx| c.reload(cx));
-                        reports.update(cx, |r, cx| r.reload_if_shown(cx));
-                    });
+                    cx.update(|cx| state.update(cx, |s, cx| s.refresh_all(cx)));
                 }
                 last = Some(v);
             }

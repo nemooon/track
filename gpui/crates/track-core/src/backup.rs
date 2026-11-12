@@ -91,10 +91,33 @@ pub fn validate_snapshot(path: &Path) -> std::result::Result<SnapshotCounts, Str
     Ok(counts)
 }
 
+/// Copies `source` next to `target`, drops the stale `-wal`/`-shm` and renames it into place.
+fn replace_file(source: &Path, target: &Path) -> Result<()> {
+    let staged = target.with_extension("db.restore-tmp");
+    let _ = std::fs::remove_file(&staged);
+    std::fs::copy(source, &staged)?;
+    let result = (|| -> std::io::Result<()> {
+        // A stale WAL would not match the new main file.
+        for ext in ["-wal", "-shm"] {
+            let side = PathBuf::from(format!("{}{ext}", target.display()));
+            if side.exists() {
+                std::fs::remove_file(side)?;
+            }
+        }
+        std::fs::rename(&staged, target)
+    })();
+    let _ = std::fs::remove_file(&staged);
+    Ok(result?)
+}
+
 impl Db {
     /// Writes `track-{auto|backup}-YYYYMMDD-HHMMSS[-n].db` (local time) into `dir`.
     pub fn snapshot(&self, dir: &Path, auto: bool, dev_root: &Path) -> Result<SnapshotInfo> {
         dev_guard_dir(dir, dev_root)?;
+        if self.released {
+            // Never back up (or prune around) an empty stand-in for the real DB.
+            return Err(CoreError::code_msg("db_unavailable", "データベースを開けていないため、バックアップできません。"));
+        }
         std::fs::create_dir_all(dir)?;
         let prefix = if auto { AUTO_PREFIX } else { MANUAL_PREFIX };
         let stamp = Local::now().format("%Y%m%d-%H%M%S").to_string();
@@ -136,23 +159,22 @@ impl Db {
         let safety = self.snapshot(safety_dir, false, dev_root)?;
         let target = self.path.clone();
         let data_dir = target.parent().map(Path::to_path_buf).unwrap_or_default();
-        let staged = target.with_extension("db.restore-tmp");
-        let _ = std::fs::remove_file(&staged);
-        std::fs::copy(path, &staged)?;
         self.release_file()?;
-        let swap = (|| -> std::io::Result<()> {
-            // A stale WAL would not match the new main file.
-            for ext in ["-wal", "-shm"] {
-                let side = PathBuf::from(format!("{}{ext}", target.display()));
-                if side.exists() {
-                    std::fs::remove_file(side)?;
-                }
-            }
-            std::fs::rename(&staged, &target)
-        })();
-        let _ = std::fs::remove_file(&staged);
+        let swap = replace_file(path, &target);
         // Reopen whatever is in place now (and run the migrations an old snapshot needs).
-        *self = Db::open(&data_dir)?;
+        match Db::open(&data_dir) {
+            Ok(db) => *self = db,
+            Err(e) => {
+                // The snapshot cannot be opened: put the data from just before the restore back.
+                replace_file(&safety.path, &target)?;
+                *self = Db::open(&data_dir)?;
+                return Err(CoreError::with_details(
+                    "restore_failed",
+                    format!("復元したデータを開けなかったため、復元前の状態に戻しました（{e}）。"),
+                    serde_json::json!({ "safetyBackup": safety.path }),
+                ));
+            }
+        }
         swap?;
         Ok(RestoreResult { safety, migrated: self.applied_now.clone(), counts })
     }

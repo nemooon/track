@@ -9,6 +9,8 @@ pub struct Db {
     /// The DB has migrations this binary does not know: never write.
     pub read_only: bool,
     pub applied_now: Vec<String>,
+    /// The file was let go for a restore; the connection is a throwaway in-memory one.
+    pub released: bool,
 }
 
 impl Db {
@@ -21,7 +23,7 @@ impl Db {
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.query_row("PRAGMA journal_mode = WAL", [], |_| Ok(()))?;
         let state = migrate::run(&conn)?;
-        let db = Db { conn, path, read_only: !state.unknown.is_empty(), applied_now: state.applied_now };
+        let db = Db { conn, path, read_only: !state.unknown.is_empty(), applied_now: state.applied_now, released: false };
         if !db.read_only {
             db.ensure_settings_row()?;
         }
@@ -37,8 +39,9 @@ impl Db {
     }
 
     /// Lets go of the database file (the connection becomes an in-memory one) so it can be replaced.
-    pub(crate) fn release_file(&mut self) -> Result<()> {
+    pub fn release_file(&mut self) -> Result<()> {
         self.conn = Connection::open_in_memory()?;
+        self.released = true;
         Ok(())
     }
 

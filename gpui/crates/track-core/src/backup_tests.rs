@@ -140,3 +140,34 @@ fn backup_dir_outside_dev_root_is_rejected() {
     assert_eq!(db.restore(&outside.path().join("track-auto-x.db"), &root.path().join("exports"), root.path()).unwrap_err().code(), "dev_guard");
     assert!(outside.path().join("track-auto-x.db").exists(), "nothing pruned or touched outside");
 }
+
+#[test]
+fn failed_reopen_rolls_back_to_the_safety_backup() {
+    let (root, mut db, dir) = setup();
+    add(&mut db, "いまのデータ");
+    std::fs::create_dir_all(&dir).unwrap();
+    // An old snapshot that passes validation but whose 0008 migration fails ("Settings" already exists).
+    let bad = dir.join("track-backup-20250101-000000.db");
+    {
+        let c = rusqlite::Connection::open(&bad).unwrap();
+        c.execute_batch(r#"CREATE TABLE "_local_migrations" ("name" TEXT NOT NULL PRIMARY KEY, "appliedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP);"#).unwrap();
+        for (name, sql) in &crate::migrate::MIGRATIONS[..7] {
+            c.execute_batch(sql).unwrap();
+            c.execute(r#"INSERT INTO "_local_migrations"(name) VALUES (?1)"#, [name]).unwrap();
+        }
+        c.execute_batch(r#"CREATE TABLE "Settings" ("id" TEXT)"#).unwrap();
+    }
+    assert!(validate_snapshot(&bad).is_ok());
+    assert!(db.restore(&bad, &dir, root.path()).is_err());
+    assert_eq!(titles(&db), vec!["いまのデータ".to_string()], "rolled back to the data from before the restore");
+    add(&mut db, "書ける");
+    assert!(db.snapshot(&dir, true, root.path()).is_ok(), "file-backed again");
+}
+
+#[test]
+fn released_connection_refuses_snapshots() {
+    let (root, mut db, dir) = setup();
+    db.release_file().unwrap();
+    assert_eq!(db.snapshot(&dir, true, root.path()).unwrap_err().code(), "db_unavailable");
+    assert!(list_snapshots(&dir).is_empty());
+}

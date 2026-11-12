@@ -489,3 +489,17 @@ fn export_dir_outside_dev_root_shows_error(cx: &mut TestAppContext) {
     assert!(!outside.path().join("bk").exists());
     assert!(!f.dir.join("config.json").exists() || !std::fs::read_to_string(f.dir.join("config.json")).unwrap().contains("bk"));
 }
+
+#[gpui::test]
+fn projects_section_follows_outside_changes(cx: &mut TestAppContext) {
+    let (app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    let mut db = f.db();
+    let c = db.create_client("外部クライアント").unwrap();
+    db.create_project(&c, "外部案件", "#000000").unwrap();
+    let state = app.read_with(cx, |a, _| a.state.clone());
+    state.update(cx, |s, cx| s.refresh_all(cx));
+    wait_io(cx);
+    wait_io(&mut scx);
+    assert!(p.read_with(&scx, |p, _| p.projects.iter().any(|x| x.name == "外部案件")), "the cached section re-reads after a reload");
+}
