@@ -77,7 +77,6 @@ pub fn render_block(entry: &TimeEntry, selected: bool, ghost: bool, hovered_id: 
         .py_1()
         .text_xs()
         .shadow(shadows)
-        .when(selected, |d| d.relative())
         .when(ghost, |d| d.opacity(0.6))
         .cursor(if ghost { gpui::CursorStyle::ClosedHand } else { gpui::CursorStyle::OpenHand })
         .child(div().absolute().left_0().top(px(6.)).bottom(px(6.)).w(px(3.)).rounded_r_full().bg(accent))

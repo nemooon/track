@@ -1,5 +1,7 @@
+mod edit_dialog;
 mod entry_block;
 mod grid;
+mod picker;
 
 use crate::api::{EntryPatch, NewEntry, TimeEntry};
 use crate::app::AppState;
@@ -10,11 +12,13 @@ use crate::core::layout::{day_total_minutes, entries_for_day, entry_span_minutes
 use crate::core::time::{DAY_MINUTES, DayCount, effective_day_count, format_duration_calendar, step_days, visible_days, weekday_ja};
 use crate::ui::{controls, date_nav::{self, DateNav, HasDateNav, NavEvent, NavKind}, theme::*};
 use chrono::{Datelike, Duration, Local, NaiveDate, Timelike};
+use edit_dialog::{EditEvent, EditForm};
 use entry_block::{BlockGeometry, lane_slot, render_block};
+use picker::{PICKER_WIDTH, PickerEvent, ProjectPicker};
 use gpui::{
-    AnyElement, App, Bounds, Context, Entity, FocusHandle, Focusable, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
+    AnyElement, App, AppContext, Bounds, Context, Entity, FocusHandle, Focusable, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
     MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollHandle,
-    StatefulInteractiveElement, Styled, Task, Window, canvas, div, point, prelude::FluentBuilder, px,
+    StatefulInteractiveElement, Styled, Subscription, Task, Window, anchored, canvas, deferred, div, point, prelude::FluentBuilder, px,
 };
 use gpui_component::{WindowExt, button::Button, notification::Notification};
 use std::cell::RefCell;
@@ -28,6 +32,8 @@ pub struct CalendarView {
     pub cache: EntryCache,
     pub drag: DragState,
     pub editing: Option<String>,
+    pub picker: Option<(Entity<ProjectPicker>, Subscription)>,
+    edit_sub: Option<Subscription>,
     focus: FocusHandle,
     rendered_days: Vec<NaiveDate>,
     reload_blocked: bool,
@@ -61,6 +67,8 @@ impl CalendarView {
             cache: EntryCache::default(),
             drag: DragState::Idle,
             editing: None,
+            picker: None,
+            edit_sub: None,
             focus: cx.focus_handle(),
             rendered_days: Vec::new(),
             reload_blocked: false,
@@ -346,10 +354,10 @@ impl CalendarView {
                             cx.stop_propagation();
                             this.begin_move(&id_down, ev.position, w, cx);
                         }))
-                        .on_click(cx.listener(move |this, ev: &gpui::ClickEvent, _, cx| {
+                        .on_click(cx.listener(move |this, ev: &gpui::ClickEvent, w, cx| {
                             this.selected = Some(id_click.clone());
                             if ev.click_count() >= 2 {
-                                this.editing = Some(id_click.clone());
+                                this.open_edit(&id_click, w, cx);
                             }
                             cx.notify();
                         }))
@@ -414,8 +422,7 @@ impl CalendarView {
             .on_mouse_down(MouseButton::Left, cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
                 this.selected = None;
                 if matches!(this.drag, DragState::Picking { .. }) {
-                    this.drag = DragState::Idle;
-                    cx.notify();
+                    this.close_picker(cx);
                     return;
                 }
                 if let Some(m) = this.pointer_minutes(day_index, ev.position, cx) {
@@ -530,6 +537,7 @@ impl CalendarView {
             DragState::Creating { .. } => {
                 if let Some(p) = interaction::finish_create(&drag) {
                     self.drag = p;
+                    self.open_picker(window, cx);
                 }
             }
             DragState::Moving { id, day_index, start_min, duration, orig_day_index, orig_start_min, .. } => {
@@ -669,8 +677,7 @@ impl CalendarView {
 
     fn on_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         if matches!(self.drag, DragState::Picking { .. }) && ev.keystroke.key == "escape" {
-            self.drag = DragState::Idle;
-            cx.notify();
+            self.close_picker(cx);
             return;
         }
         // Only when the calendar itself has focus (not a text field inside a popover/dialog).
@@ -695,6 +702,96 @@ impl CalendarView {
             }
             _ => {}
         }
+    }
+}
+
+impl CalendarView {
+    fn open_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let state = self.state.read(cx);
+        let Some(data) = state.data.clone() else { return };
+        let api = state.api.clone();
+        let picker = cx.new(|cx| ProjectPicker::new(data.projects.clone(), data.tags.clone(), api, window, cx));
+        let sub = cx.subscribe_in(&picker, window, |this, _, ev: &PickerEvent, window, cx| {
+            match ev.clone() {
+                PickerEvent::Submit { project_id, title, note, tag_ids } => {
+                    if let DragState::Picking { day_index, start_min, end_min } = this.drag {
+                        if let Some(day) = this.rendered_days.get(day_index).copied() {
+                            let body = NewEntry {
+                                project_id,
+                                start: at_minutes(day, start_min).to_utc(),
+                                end: at_minutes(day, end_min).to_utc(),
+                                title: (!title.is_empty()).then_some(title),
+                                note: (!note.is_empty()).then_some(note),
+                                tag_ids,
+                                ..Default::default()
+                            };
+                            this.create(body, window, cx);
+                        }
+                    }
+                    this.close_picker(cx);
+                    this.focus.focus(window, cx);
+                }
+                PickerEvent::Cancel => {
+                    this.close_picker(cx);
+                    this.focus.focus(window, cx);
+                }
+            }
+        });
+        self.picker = Some((picker, sub));
+        cx.notify();
+    }
+
+    fn close_picker(&mut self, cx: &mut Context<Self>) {
+        self.picker = None;
+        if matches!(self.drag, DragState::Picking { .. }) {
+            self.drag = DragState::Idle;
+        }
+        cx.notify();
+    }
+
+    /// Picker anchor: horizontally centred on the column, 4px below the selection.
+    fn picker_position(&self, cx: &App) -> Option<Point<Pixels>> {
+        let DragState::Picking { day_index, end_min, .. } = self.drag else { return None };
+        let b = self.column_bounds.borrow().get(day_index).copied()?;
+        Some(point(b.origin.x + b.size.width / 2. - px(PICKER_WIDTH / 2.), b.origin.y + px(minutes_to_y(end_min, self.hour_px(cx)) + 4.)))
+    }
+
+    pub fn open_edit(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(entry) = self.cache.get(id).cloned() else { return };
+        let Some(data) = self.state.read(cx).data.clone() else { return };
+        self.editing = Some(id.to_string());
+        let form = cx.new(|cx| EditForm::new(entry, data.projects.clone(), data.tags.clone(), window, cx));
+        self.edit_sub = Some(cx.subscribe_in(&form, window, |this, _, ev: &EditEvent, window, cx| {
+            match ev.clone() {
+                EditEvent::Save(id, patch) => {
+                    let snapshot = this.cache.snapshot();
+                    this.commit_patch(&id, patch, snapshot, window, cx);
+                }
+                EditEvent::Delete(id) => this.delete(&id, window, cx),
+                EditEvent::Cancel => {}
+            }
+            this.editing = None;
+            window.close_dialog(cx);
+            this.focus.focus(window, cx);
+        }));
+        let weak = cx.weak_entity();
+        let first = std::cell::Cell::new(true);
+        window.open_dialog(cx, move |dialog, window, cx| {
+            // open_dialog focuses the dialog shell; move focus to the title once per opening.
+            if first.replace(false) {
+                let title = form.read(cx).title_state();
+                title.update(cx, |s, cx| s.focus(window, cx));
+            }
+            let weak = weak.clone();
+            dialog
+                .title("予定を編集")
+                .w(px(512.))
+                .child(form.clone())
+                .on_close(move |_, _, cx| {
+                    let _ = weak.update(cx, |this, _| this.editing = None);
+                })
+        });
+        cx.notify();
     }
 }
 
@@ -734,6 +831,9 @@ impl Render for CalendarView {
         self.window = Some(window.window_handle());
         let (rendered, ghost) = self.rendered_entries();
         let columns: Vec<AnyElement> = days.iter().enumerate().map(|(i, &d)| self.render_column(i, d, &rendered, ghost.as_deref(), hour_px, cx)).collect();
+        let picker_overlay = self.picker.as_ref().zip(self.picker_position(cx)).map(|((p, _), pos)| {
+            deferred(anchored().position(pos).snap_to_window_with_margin(px(8.)).child(p.clone())).with_priority(5)
+        });
         div()
             .id("calendar-root")
             .track_focus(&self.focus)
@@ -756,5 +856,6 @@ impl Render for CalendarView {
                     .track_scroll(&self.scroll)
                     .child(div().flex().items_start().child(self.render_gutter(hour_px)).child(div().flex_1().flex().items_start().children(columns))),
             )
+            .children(picker_overlay)
     }
 }

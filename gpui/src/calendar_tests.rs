@@ -1,5 +1,5 @@
 use crate::core::interaction::DragState;
-use crate::testing::{entry, fake_data, hanging_server, open_app_with};
+use crate::testing::{entry, fake_data, hanging_server, open_app_with, stub_server};
 use chrono::{Local, NaiveDate, TimeZone};
 use gpui::{Modifiers, MouseButton, TestAppContext, point, px};
 
@@ -126,4 +126,116 @@ fn delete_restores_entry_when_server_fails(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("backspace");
     wait_io(cx);
     assert!(app.read_with(cx, |a, cx| a.calendar.read(cx).cache.get("a").is_some()));
+}
+
+
+fn click(cx: &mut gpui::VisualTestContext, selector: &'static str) {
+    let b = cx.debug_bounds(selector).unwrap_or_else(|| panic!("{selector} not rendered"));
+    cx.simulate_click(b.center(), Modifiers::none());
+}
+
+fn titles_stub() -> (String, std::sync::Arc<std::sync::Mutex<Vec<crate::testing::Recorded>>>) {
+    stub_server(|method, path| match (method, path) {
+        ("GET", "/api/entries/titles") => (200, r#"["定例会議","定例レビュー","設計"]"#.into()),
+        _ => (500, r#"{"error":"stub"}"#.into()),
+    })
+}
+
+fn last_body(log: &std::sync::Arc<std::sync::Mutex<Vec<crate::testing::Recorded>>>, method: &str) -> serde_json::Value {
+    let rec = log.lock().unwrap().iter().rev().find(|r| r.method == method).cloned().expect("request recorded");
+    serde_json::from_str(&rec.body).unwrap()
+}
+
+fn drag_create_one_hour(cx: &mut gpui::VisualTestContext) {
+    let b = cx.debug_bounds("entry-a").expect("entry block");
+    let start = point(b.center().x, b.origin.y + px(96. * 3.)); // 10:00 entry → 13:xx area
+    cx.simulate_mouse_down(start, MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_move(point(start.x, start.y + px(96.)), Some(MouseButton::Left), Modifiers::none());
+    cx.simulate_mouse_up(point(start.x, start.y + px(96.)), MouseButton::Left, Modifiers::none());
+}
+
+#[gpui::test]
+fn picker_creates_entry_with_project_title_and_locked_tag(cx: &mut TestAppContext) {
+    let (base, log) = titles_stub();
+    let (app, cx) = setup_with(cx, base);
+    drag_create_one_hour(cx);
+    assert!(cx.debug_bounds("project-picker").is_some(), "picker shown");
+    click(cx, "project-p1");
+    wait_io(cx); // titles
+    cx.simulate_input("定例");
+    cx.simulate_keystrokes("down enter"); // first suggestion → 定例会議
+    cx.simulate_keystrokes("cmd-enter");
+    wait_io(cx);
+    let body = last_body(&log, "POST");
+    assert_eq!(body["projectId"], "p1");
+    assert_eq!(body["title"], "定例会議");
+    assert_eq!(body["tagIds"], serde_json::json!(["t1"])); // Alpha's project tag is locked on
+    let (s, e) = (body["start"].as_str().unwrap(), body["end"].as_str().unwrap());
+    let dur = chrono::DateTime::parse_from_rfc3339(e).unwrap() - chrono::DateTime::parse_from_rfc3339(s).unwrap();
+    assert_eq!(dur.num_minutes(), 60);
+    assert!(app.read_with(cx, |a, cx| a.calendar.read(cx).picker.is_none()));
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).drag.clone()), DragState::Idle);
+}
+
+#[gpui::test]
+fn picker_ignores_enter_while_ime_is_composing(cx: &mut TestAppContext) {
+    // The composing text 「てい」 prefixes a suggestion, so without the guard Enter would accept it.
+    let (base, log) = stub_server(|method, path| match (method, path) {
+        ("GET", "/api/entries/titles") => (200, r#"["ていれい会議","設計"]"#.into()),
+        _ => (500, r#"{"error":"stub"}"#.into()),
+    });
+    let (app, cx) = setup_with(cx, base);
+    drag_create_one_hour(cx);
+    click(cx, "project-none");
+    wait_io(cx);
+    cx.simulate_keystrokes("down"); // highlight first suggestion
+    // Start an IME composition (marked text) and press Enter: it must not pick the suggestion.
+    let picker = app.read_with(cx, |a, cx| a.calendar.read(cx).picker.as_ref().unwrap().0.clone());
+    let title = picker.read_with(cx, |p, _| p.title_state());
+    cx.update(|window, cx| {
+        use gpui::EntityInputHandler;
+        title.update(cx, |s, cx| s.replace_and_mark_text_in_range(None, "てい", None, window, cx));
+    });
+    cx.simulate_keystrokes("enter");
+    cx.simulate_keystrokes("cmd-enter");
+    wait_io(cx);
+    let body = last_body(&log, "POST");
+    assert_ne!(body.get("title").and_then(|t| t.as_str()), Some("ていれい会議"));
+}
+
+#[gpui::test]
+fn picker_escape_cancels(cx: &mut TestAppContext) {
+    let (base, _log) = titles_stub();
+    let (app, cx) = setup_with(cx, base);
+    drag_create_one_hour(cx);
+    cx.simulate_keystrokes("escape");
+    assert!(app.read_with(cx, |a, cx| a.calendar.read(cx).picker.is_none()));
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).drag.clone()), DragState::Idle);
+}
+
+#[gpui::test]
+fn edit_dialog_saves_patch(cx: &mut TestAppContext) {
+    let (base, log) = titles_stub();
+    let (app, cx) = setup_with(cx, base);
+    let b = cx.debug_bounds("entry-a").expect("entry block");
+    cx.simulate_click(b.center(), Modifiers::none());
+    assert_eq!(cx.debug_bounds("entry-a"), Some(b), "selecting must not change the block's geometry");
+    cx.simulate_mouse_move(b.center(), None, Modifiers::none());
+    cx.simulate_event(gpui::MouseDownEvent { button: MouseButton::Left, position: b.center(), modifiers: Modifiers::none(), click_count: 2, first_mouse: false });
+    cx.simulate_event(gpui::MouseUpEvent { button: MouseButton::Left, position: b.center(), modifiers: Modifiers::none(), click_count: 2 });
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).editing.clone()), Some("a".into()));
+    cx.simulate_keystrokes("cmd-a");
+    cx.simulate_input("新タイトル");
+    // switch project to Beta: its locked tags are none, existing tags kept
+    click(cx, "edit-project-button");
+    click(cx, "project-p2");
+    click(cx, "edit-save");
+    wait_io(cx);
+    let body = last_body(&log, "PATCH");
+    assert_eq!(body["title"], "新タイトル");
+    assert_eq!(body["projectId"], "p2");
+    assert_eq!(body["note"], serde_json::Value::Null);
+    assert_eq!(body["breakMinutes"], 0);
+    assert_eq!(chrono::DateTime::parse_from_rfc3339(body["start"].as_str().unwrap()).unwrap(), Local.with_ymd_and_hms(2026, 11, 12, 10, 0, 0).unwrap());
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).editing.clone()), None);
 }

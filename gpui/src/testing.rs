@@ -46,6 +46,8 @@ pub fn hanging_server() -> String {
 }
 
 pub fn open_app_with(cx: &mut TestAppContext, base: String) -> (Entity<TrackApp>, &mut VisualTestContext) {
+    // Requests run on the API client's tokio runtime, outside the deterministic scheduler.
+    cx.executor().allow_parking();
     cx.update(|cx| {
         gpui_component::init(cx);
         crate::actions::bind_keys(cx);
@@ -66,4 +68,49 @@ pub fn open_app_with(cx: &mut TestAppContext, base: String) -> (Entity<TrackApp>
     });
     let view = slot.borrow().clone().unwrap();
     (view, vcx)
+}
+
+#[derive(Debug, Clone)]
+pub struct Recorded {
+    pub method: String,
+    pub path: String,
+    pub body: String,
+}
+
+/// Minimal HTTP stub: answers each request with `route(method, path)` and records it.
+pub fn stub_server(route: impl Fn(&str, &str) -> (u16, String) + Send + Sync + 'static) -> (String, std::sync::Arc<std::sync::Mutex<Vec<Recorded>>>) {
+    use std::io::{BufRead, BufReader, Read, Write};
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = l.local_addr().unwrap().port();
+    let log: std::sync::Arc<std::sync::Mutex<Vec<Recorded>>> = Default::default();
+    let log2 = log.clone();
+    std::thread::spawn(move || {
+        for stream in l.incoming().flatten() {
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut line = String::new();
+            if reader.read_line(&mut line).is_err() {
+                continue;
+            }
+            let mut parts = line.split_whitespace();
+            let (method, path) = (parts.next().unwrap_or("").to_string(), parts.next().unwrap_or("").to_string());
+            let mut len = 0usize;
+            loop {
+                let mut h = String::new();
+                if reader.read_line(&mut h).is_err() || h == "\r\n" || h.is_empty() {
+                    break;
+                }
+                if let Some(v) = h.to_ascii_lowercase().strip_prefix("content-length:") {
+                    len = v.trim().parse().unwrap_or(0);
+                }
+            }
+            let mut body = vec![0; len];
+            let _ = reader.read_exact(&mut body);
+            let path_only = path.split('?').next().unwrap_or("").to_string();
+            log2.lock().unwrap().push(Recorded { method: method.clone(), path: path.clone(), body: String::from_utf8_lossy(&body).into() });
+            let (status, resp) = route(&method, &path_only);
+            let mut s = stream;
+            let _ = write!(s, "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{resp}", resp.len());
+        }
+    });
+    (format!("http://127.0.0.1:{port}/api"), log)
 }
