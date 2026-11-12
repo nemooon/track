@@ -239,3 +239,21 @@ fn edit_dialog_saves_patch(cx: &mut TestAppContext) {
     assert_eq!(chrono::DateTime::parse_from_rfc3339(body["start"].as_str().unwrap()).unwrap(), Local.with_ymd_and_hms(2026, 11, 12, 10, 0, 0).unwrap());
     assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).editing.clone()), None);
 }
+
+#[gpui::test]
+fn changing_period_mid_drag_cancels_instead_of_saving_elsewhere(cx: &mut TestAppContext) {
+    let (base, log) = titles_stub();
+    let (app, cx) = setup_with(cx, base);
+    let b = cx.debug_bounds("entry-a").expect("entry block");
+    cx.simulate_mouse_down(b.center(), MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_move(point(b.center().x, b.center().y + px(48.)), Some(MouseButton::Left), Modifiers::none());
+    cx.simulate_keystrokes("cmd-]");
+    cx.simulate_mouse_up(point(b.center().x, b.center().y + px(48.)), MouseButton::Left, Modifiers::none());
+    wait_io(cx);
+    assert!(log.lock().unwrap().iter().all(|r| r.method != "PATCH"), "no save after navigating away");
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).drag.clone()), DragState::Idle);
+    let e = app.read_with(cx, |a, cx| a.calendar.read(cx).cache.get("a").cloned());
+    if let Some(e) = e {
+        assert_eq!(e.start, Local.with_ymd_and_hms(2026, 11, 12, 10, 0, 0).unwrap().to_utc());
+    }
+}

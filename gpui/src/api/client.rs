@@ -63,6 +63,17 @@ impl Utf8Chunks {
     }
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct Health {
+    pub db: String,
+}
+
+/// The prototype may only talk to a server whose DB lives under `~/.track-gpui`
+/// (see scripts/prepare-db.sh); the real `~/.track` must never be modified.
+pub fn is_copy_db(db_path: &str) -> bool {
+    db_path.contains("/.track-gpui/")
+}
+
 /// HTTP client for the local Bun API. All requests run on a dedicated tokio
 /// runtime; the returned futures can be awaited from GPUI's executor.
 #[derive(Clone)]
@@ -113,6 +124,12 @@ impl ApiClient {
 
     fn iso(d: DateTime<Utc>) -> String {
         d.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    }
+
+    /// `GET /health` (outside `/api`): `{ ok, db }` — the DB file the server is using.
+    pub fn health(&self) -> impl Future<Output = ApiResult<Health>> + Send + 'static {
+        let root = self.base.trim_end_matches("/api").to_string();
+        self.request(self.http.get(format!("{root}/health")))
     }
 
     pub fn entries(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> impl Future<Output = ApiResult<Vec<TimeEntry>>> + Send + 'static {
@@ -310,6 +327,8 @@ mod live_crud_tests {
     fn live_crud_roundtrip() {
         fn b<F: std::future::Future>(f: F) -> F::Output { futures::executor::block_on(f) }
         let api = ApiClient::from_env();
+        let db = b(api.health()).unwrap().db;
+        assert!(is_copy_db(&db), "refusing to write to {db}; start the API with TRACK_DATA_DIR=~/.track-gpui");
         let t = |h, m| Local.with_ymd_and_hms(2030, 1, 7, h, m, 0).unwrap().to_utc();
         let tag = b(api.tags()).unwrap().into_iter().next();
         let created = b(api.create_entry(NewEntry {

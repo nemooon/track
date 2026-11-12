@@ -46,6 +46,15 @@ pub fn hanging_server() -> String {
 }
 
 pub fn open_app_with(cx: &mut TestAppContext, base: String) -> (Entity<TrackApp>, &mut VisualTestContext) {
+    open_app_inner(cx, base, true)
+}
+
+/// Like `open_app_with`, but runs the real startup load (`AppState::load`) against `base`.
+pub fn open_app_loading(cx: &mut TestAppContext, base: String) -> (Entity<TrackApp>, &mut VisualTestContext) {
+    open_app_inner(cx, base, false)
+}
+
+fn open_app_inner(cx: &mut TestAppContext, base: String, prefilled: bool) -> (Entity<TrackApp>, &mut VisualTestContext) {
     // Requests run on the API client's tokio runtime, outside the deterministic scheduler.
     cx.executor().allow_parking();
     cx.update(|cx| {
@@ -59,9 +68,14 @@ pub fn open_app_with(cx: &mut TestAppContext, base: String) -> (Entity<TrackApp>
         let base = base.clone();
         let state = cx.new(|_| {
             let mut s = AppState::with_path(ApiClient::new(base.clone()), dir.join("p.json"));
-            s.data = Some(fake_data());
+            if prefilled {
+                s.data = Some(fake_data());
+            }
             s
         });
+        if !prefilled {
+            state.update(cx, |s, cx| s.load(cx));
+        }
         let view = cx.new(|cx| TrackApp::with_state(state, window, cx));
         *slot2.borrow_mut() = Some(view.clone());
         gpui_component::Root::new(view, window, cx)

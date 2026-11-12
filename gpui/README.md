@@ -8,6 +8,7 @@
 - Rust 1.98.1（`rust-toolchain.toml` で固定。rustup が自動で入れる）
 - Xcode 本体は不要（`runtime_shaders` でシェーダーを実行時にコンパイルする）
 - Bun（API サーバー用、リポジトリ直下の `npm run local`）
+- `sqlite3` と `python3`（`prepare-db.sh` が使う。macOS の Command Line Tools に含まれる）
 
 ## 起動
 
@@ -15,12 +16,16 @@
 
 ```bash
 gpui/scripts/prepare-db.sh            # ~/.track-gpui に DB と config.json をコピー（--force で作り直し）
-TRACK_DATA_DIR=~/.track-gpui npm run local   # 別端末で API を起動（127.0.0.1:8787）
+env -u TRACK_EXPORT_DIR TRACK_DATA_DIR=~/.track-gpui npm run local   # 別端末で API を起動（127.0.0.1:8787）
 cd gpui && cargo run
 ```
 
 `prepare-db.sh` はコピーした `config.json` の `exportDir` を `~/.track-gpui/exports` に書き換える。
 API サーバーの自動バックアップが本物のバックアップを上書き・削除しないようにするため。
+環境変数 `TRACK_EXPORT_DIR` は `exportDir` より優先されるので、起動コマンドで `env -u` で外している。
+
+試作アプリは起動時に API の `/health` が返す DB パスを確認し、`~/.track-gpui/` 以外なら読み込みを止めてエラーを出す。
+通常の `npm run local`（本物の `~/.track`）が 8787 番で動いたままでも、誤って本物を書き換えない。
 
 接続先のポートは環境変数 `TRACK_PORT` で変えられる。
 

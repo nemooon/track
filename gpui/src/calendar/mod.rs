@@ -30,6 +30,7 @@ pub struct CalendarView {
     pub day_count: DayCount,
     nav: DateNav,
     pub cache: EntryCache,
+    pub load_error: Option<String>,
     pub drag: DragState,
     pub editing: Option<String>,
     pub picker: Option<(Entity<ProjectPicker>, Subscription)>,
@@ -65,6 +66,7 @@ impl CalendarView {
             day_count: DayCount::Workdays,
             nav: DateNav::default(),
             cache: EntryCache::default(),
+            load_error: None,
             drag: DragState::Idle,
             editing: None,
             picker: None,
@@ -125,14 +127,20 @@ impl CalendarView {
         let api = self.state.read(cx).api.clone();
         let fut = api.entries(at_minutes(from, 0).to_utc(), at_minutes(to, 0).to_utc());
         self.load_task = Some(cx.spawn(async move |this, cx| {
-            if let Ok(entries) = fut.await {
-                let _ = this.update(cx, |this, cx| {
-                    if this.requested == Some((from, to)) {
+            let result = fut.await;
+            let _ = this.update(cx, |this, cx| {
+                if this.requested != Some((from, to)) {
+                    return;
+                }
+                match result {
+                    Ok(entries) => {
                         this.cache = EntryCache::new(entries);
-                        cx.notify();
+                        this.load_error = None;
                     }
-                });
-            }
+                    Err(e) => this.load_error = Some(e.message),
+                }
+                cx.notify();
+            });
         }));
     }
 
@@ -542,14 +550,12 @@ impl CalendarView {
                 }
             }
             DragState::Moving { id, day_index, start_min, duration, orig_day_index, orig_start_min, .. } => {
-                if (day_index, start_min) != (orig_day_index, orig_start_min) {
-                    let day = self.rendered_days[day_index];
+                if let (true, Some(&day)) = ((day_index, start_min) != (orig_day_index, orig_start_min), self.rendered_days.get(day_index)) {
                     self.commit_times(&id, at_minutes(day, start_min).to_utc(), at_minutes(day, start_min + duration).to_utc(), window, cx);
                 }
             }
             DragState::Resizing { id, day_index, start_min, end_min, orig, .. } => {
-                if (start_min, end_min) != orig {
-                    let day = self.rendered_days[day_index];
+                if let (true, Some(&day)) = ((start_min, end_min) != orig, self.rendered_days.get(day_index)) {
                     self.commit_times(&id, at_minutes(day, start_min).to_utc(), at_minutes(day, end_min).to_utc(), window, cx);
                 }
             }
@@ -807,6 +813,11 @@ impl HasDateNav for CalendarView {
     }
 
     fn on_nav(&mut self, ev: NavEvent, window: &mut Window, cx: &mut Context<Self>) {
+        // A drag or pending pick refers to column indexes of the current range: cancel it.
+        if self.drag != DragState::Idle {
+            self.picker = None;
+            self.drag = DragState::Idle;
+        }
         let step = step_days(self.effective(window));
         self.anchor = match ev {
             NavEvent::Prev => self.anchor - Duration::days(step),
@@ -846,6 +857,9 @@ impl Render for CalendarView {
             .flex()
             .flex_col()
             .child(self.render_toolbar(eff, window, cx))
+            .when_some(self.load_error.clone(), |d, msg| {
+                d.child(controls::error_banner("calendar-retry", &msg).on_click(cx.listener(|this, _, _, cx| this.reload(cx))))
+            })
             .child(self.render_day_header(&days, zoom_index, cx))
             .child(
                 div()

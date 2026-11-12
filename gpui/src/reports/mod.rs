@@ -32,6 +32,7 @@ pub type CustomOutputView = custom_output::CustomOutput;
 #[derive(Debug, Clone)]
 pub enum Children {
     Loading,
+    Failed(String),
     Loaded(Vec<ReportEntry>),
 }
 
@@ -46,6 +47,7 @@ pub struct ReportsView {
     nav: DateNav,
     pub data: Option<ReportResponse>,
     pub loading: bool,
+    pub error: Option<String>,
     requested: Option<ReportQuery>,
     load_task: Option<Task<()>>,
     pub children: HashMap<String, Children>,
@@ -77,6 +79,7 @@ impl ReportsView {
             nav: DateNav::default(),
             data: None,
             loading: false,
+            error: None,
             requested: None,
             load_task: None,
             children: HashMap::new(),
@@ -117,13 +120,17 @@ impl ReportsView {
                     return;
                 }
                 this.loading = false;
-                if let Ok(data) = result {
-                    if this.expand_all {
-                        for r in &data.rows {
-                            this.expanded.insert(row_path(this.group_by, &r.key));
+                match result {
+                    Ok(data) => {
+                        if this.expand_all {
+                            for r in &data.rows {
+                                this.expanded.insert(row_path(this.group_by, &r.key));
+                            }
                         }
+                        this.data = Some(data);
+                        this.error = None;
                     }
-                    this.data = Some(data);
+                    Err(e) => this.error = Some(e.message),
                 }
                 this.children.clear();
                 this.load_visible_children(cx);
@@ -166,8 +173,12 @@ impl ReportsView {
         cx.spawn(async move |this, cx| {
             let result = fut.await;
             let _ = this.update(cx, |this, cx| {
-                if let (Ok(r), Some(Children::Loading)) = (result, this.children.get(&path)) {
-                    this.children.insert(path, Children::Loaded(r.entries));
+                if let Some(Children::Loading) = this.children.get(&path) {
+                    let next = match result {
+                        Ok(r) => Children::Loaded(r.entries),
+                        Err(e) => Children::Failed(e.message),
+                    };
+                    this.children.insert(path, next);
                     cx.notify();
                 }
             });
@@ -673,6 +684,7 @@ impl ReportsView {
             let note_row = |text: &'static str| div().py_2().pl(px(32.)).px_3().text_xs().text_color(n400()).child(text).into_any_element();
             match self.children.get(&path) {
                 None | Some(Children::Loading) => body.push(note_row("読み込み中…")),
+                Some(Children::Failed(_)) => body.push(note_row("読み込みに失敗しました")),
                 Some(Children::Loaded(es)) if es.is_empty() => body.push(note_row("エントリがありません")),
                 Some(Children::Loaded(es)) if group_same => {
                     for g in group_entries_by_title(es) {
@@ -848,7 +860,9 @@ impl Render for ReportsView {
         let width = f32::from(window.viewport_size().width);
         let (wide, medium) = (width >= 1280., width >= 768.);
         let collapsed = self.state.read(cx).persist.summary_collapsed;
+        let error_banner = self.error.clone().map(|msg| controls::error_banner("reports-retry", &msg).on_click(cx.listener(|this, _, _, cx| this.reload(cx))));
         let body: AnyElement = match (&self.data, self.loading) {
+            (None, false) if self.error.is_some() => div().flex_1().into_any_element(),
             (None, _) | (_, true) => div().flex_1().flex().items_center().justify_center().text_sm().text_color(n400()).child("読み込み中…").into_any_element(),
             (Some(d), _) if d.rows.is_empty() => div().flex_1().flex().items_center().justify_center().text_color(n400()).child("この期間にデータがありません").into_any_element(),
             (Some(d), _) => {
@@ -879,7 +893,7 @@ impl Render for ReportsView {
             .flex_col()
             .overflow_hidden()
             .child(self.render_toolbar(cx))
-            .child(div().flex_1().min_h_0().flex().flex_col().bg(white()).child(self.render_filter_bar(cx)).child(body))
+            .child(div().flex_1().min_h_0().flex().flex_col().bg(white()).child(self.render_filter_bar(cx)).children(error_banner).child(body))
     }
 }
 

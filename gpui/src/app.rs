@@ -51,6 +51,13 @@ impl AppState {
         let api = self.api.clone();
         cx.spawn(async move |this, cx| {
             let result = async {
+                let health = api.health().await?;
+                if !crate::api::client::is_copy_db(&health.db) {
+                    return Err(crate::api::ApiError {
+                        status: None,
+                        message: format!("本物の DB に接続しています（{}）。TRACK_DATA_DIR=~/.track-gpui で起動した API に接続してください。", health.db),
+                    });
+                }
                 Ok::<_, crate::api::ApiError>(AppData {
                     projects: api.projects().await?,
                     clients: api.clients().await?,
@@ -109,12 +116,17 @@ impl TrackApp {
     /// ServerChangeListener.tsx: `/api/events` → refetch entries and reports.
     fn listen_server_changes(state: &Entity<AppState>, calendar: &Entity<CalendarView>, reports: &Entity<ReportsView>, cx: &mut Context<Self>) {
         let rx = state.read(cx).api.subscribe_events();
-        let (calendar, reports) = (calendar.downgrade(), reports.downgrade());
+        let (state, calendar, reports) = (state.downgrade(), calendar.downgrade(), reports.downgrade());
         cx.spawn(async move |_, cx| {
             while let Ok(ev) = rx.recv().await {
                 if ev.event != "track.connected" && ev.event != "entries.changed" {
                     continue;
                 }
+                let _ = state.update(cx, |s, cx| {
+                    if s.data.is_none() && !s.loading {
+                        s.load(cx);
+                    }
+                });
                 let _ = calendar.update(cx, |c, cx| c.reload(cx));
                 let _ = reports.update(cx, |r, cx| r.reload_if_shown(cx));
             }
