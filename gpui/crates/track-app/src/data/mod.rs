@@ -165,6 +165,18 @@ impl DataClient {
         self.call("settings", |db| db.settings())
     }
 
+    pub fn latest_operation_id(&self) -> impl Future<Output = DataResult<i64>> + Send + 'static {
+        self.call("latest_operation_id", |db| db.latest_operation_id())
+    }
+
+    pub fn operations_after(&self, id: i64) -> impl Future<Output = DataResult<Vec<track_core::ops::Operation>>> + Send + 'static {
+        self.call("operations_after", move |db| db.operations_after(id))
+    }
+
+    pub fn undo_operation(&self, id: i64) -> impl Future<Output = DataResult<track_core::ops::UndoResult>> + Send + 'static {
+        self.call("undo_operation", move |db| db.undo_operation(Some(id)))
+    }
+
     pub fn projects_all(&self) -> impl Future<Output = DataResult<Vec<Project>>> + Send + 'static {
         self.call("projects_all", |db| db.projects(true))
     }

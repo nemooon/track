@@ -174,3 +174,63 @@ fn db_job_panic_does_not_close_data_access() {
 fn futures_lite_block<T>(f: impl std::future::Future<Output = T>) -> T {
     gpui::block_on(f)
 }
+
+fn ai_rename(db: &mut track_core::Db, id: &str, title: &str) {
+    db.edit_entries("codex", &[id.to_string()], track_core::model::EntryPatch { title: Some(Some(title.into())), ..Default::default() }).unwrap();
+}
+
+fn refresh(app: &gpui::Entity<crate::app::TrackApp>, cx: &mut gpui::VisualTestContext) {
+    settle(cx);
+    app.update(cx, |a, cx| a.state.update(cx, |s, cx| s.refresh_all(cx)));
+    settle(cx);
+}
+
+fn seeded(cx: &mut TestAppContext, before_launch: bool) -> (gpui::Entity<crate::app::TrackApp>, &mut gpui::VisualTestContext, crate::testing::Fixture) {
+    crate::testing::open_app_db(cx, move |db| {
+        let t = Local::now().date_naive();
+        crate::testing::insert_entry(db, "a", crate::testing::local(t, 9, 0), crate::testing::local(t, 10, 0), None, "元");
+        if before_launch {
+            ai_rename(db, "a", "起動前");
+        }
+    })
+}
+
+#[gpui::test]
+fn ai_operation_shows_banner_and_undo_restores(cx: &mut TestAppContext) {
+    let (app, cx, f) = seeded(cx, false);
+    refresh(&app, cx);
+    assert!(cx.debug_bounds("ai-op-banner").is_none());
+    ai_rename(&mut f.db(), "a", "AI");
+    refresh(&app, cx);
+    assert!(cx.debug_bounds("ai-op-banner").is_some(), "banner after an AI operation");
+    let b = cx.debug_bounds("ai-op-undo").expect("undo button");
+    cx.simulate_click(b.center(), gpui::Modifiers::none());
+    settle(cx);
+    assert_eq!(f.db().entry("a").unwrap().unwrap().title.as_deref(), Some("元"));
+    assert!(cx.debug_bounds("ai-op-banner").is_none());
+}
+
+#[gpui::test]
+fn operations_before_launch_are_not_shown(cx: &mut TestAppContext) {
+    let (app, cx, _f) = seeded(cx, true);
+    refresh(&app, cx);
+    assert!(cx.debug_bounds("ai-op-banner").is_none());
+}
+
+#[gpui::test]
+fn undo_conflict_shows_error_in_banner(cx: &mut TestAppContext) {
+    let (app, cx, f) = seeded(cx, false);
+    refresh(&app, cx);
+    ai_rename(&mut f.db(), "a", "AI");
+    refresh(&app, cx);
+    f.db().update_entry("a", track_core::model::EntryPatch { title: Some(Some("手修正".into())), ..Default::default() }).unwrap();
+    let b = cx.debug_bounds("ai-op-undo").expect("undo button");
+    cx.simulate_click(b.center(), gpui::Modifiers::none());
+    settle(cx);
+    assert!(cx.debug_bounds("ai-op-error").is_some());
+    assert_eq!(f.db().entry("a").unwrap().unwrap().title.as_deref(), Some("手修正"));
+    let close = cx.debug_bounds("ai-op-close").expect("close");
+    cx.simulate_click(close.center(), gpui::Modifiers::none());
+    settle(cx);
+    assert!(cx.debug_bounds("ai-op-banner").is_none());
+}

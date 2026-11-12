@@ -14,8 +14,8 @@ use gpui_component::{Icon, IconName};
 use std::future::Future;
 use track_core::model::{Client, ClientPatch, Project, ProjectPatch, Tag, TagPatch};
 
-/// `PROJECT_COLORS` in src/client/lib/utils.ts.
-pub const COLORS: [&str; 10] = ["#ef4444", "#f97316", "#eab308", "#22c55e", "#06b6d4", "#3b82f6", "#6366f1", "#a855f7", "#ec4899", "#64748b"];
+/// `PROJECT_COLORS` in src/client/lib/utils.ts (shared with track-cli).
+pub use track_core::edit::PROJECT_COLORS as COLORS;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditKind {

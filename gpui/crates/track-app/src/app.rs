@@ -37,6 +37,18 @@ pub struct AppState {
     pub loading: bool,
     pub persist: PersistState,
     persist_path: PathBuf,
+    /// Newest AI operation already known; None until the startup baseline is read.
+    pub ops_seen: Option<i64>,
+    /// The AI operation offered for undo in the main window.
+    pub ai_op: Option<AiOpNotice>,
+}
+
+/// 「AI が N 件変更しました［元に戻す］」
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiOpNotice {
+    pub operation: track_core::ops::Operation,
+    pub error: Option<String>,
+    pub busy: bool,
 }
 
 impl AppState {
@@ -45,7 +57,7 @@ impl AppState {
     }
 
     pub fn with_path(api: DataClient, persist_path: PathBuf) -> Self {
-        Self { reloads: 0, api, data: None, error: None, loading: false, persist: PersistState::load(&persist_path), persist_path }
+        Self { reloads: 0, api, data: None, error: None, loading: false, persist: PersistState::load(&persist_path), persist_path, ops_seen: None, ai_op: None }
     }
 
     pub fn update_persist(&mut self, f: impl FnOnce(&mut PersistState)) {
@@ -74,12 +86,20 @@ impl AppState {
     /// then tell the pages to reload (same-connection writes do not change `data_version`).
     pub fn refresh_all(&mut self, cx: &mut Context<Self>) {
         let fut = Self::read_all(self.api.clone());
+        let ops = self.ops_seen.map(|seen| self.api.operations_after(seen));
         cx.spawn(async move |this, cx| {
             let result = fut.await;
+            let ops = match ops {
+                Some(f) => f.await.ok(),
+                None => None,
+            };
             let _ = this.update(cx, |this, cx| {
                 match result {
                     Ok(data) => this.data = Some(data),
                     Err(e) => this.error = Some(e.message),
+                }
+                if let Some(ops) = ops {
+                    this.note_operations(ops);
                 }
                 this.reloads += 1;
                 cx.emit(StateEvent::Reloaded);
@@ -87,6 +107,62 @@ impl AppState {
             });
         })
         .detach();
+    }
+
+    /// Startup baseline: operations made before the app opened are not offered for undo.
+    pub fn read_ops_baseline(&mut self, cx: &mut Context<Self>) {
+        let fut = self.api.latest_operation_id();
+        cx.spawn(async move |this, cx| {
+            if let Ok(id) = fut.await {
+                let _ = this.update(cx, |this, _| this.ops_seen = Some(this.ops_seen.unwrap_or(0).max(id)));
+            }
+        })
+        .detach();
+    }
+
+    /// New operations (newest first): the newest one not undone replaces the notice.
+    fn note_operations(&mut self, ops: Vec<track_core::ops::Operation>) {
+        if let Some(max) = ops.iter().map(|o| o.id).max() {
+            self.ops_seen = Some(self.ops_seen.unwrap_or(0).max(max));
+        }
+        if let Some(op) = ops.into_iter().find(|o| o.undone_at.is_none()) {
+            self.ai_op = Some(AiOpNotice { operation: op, error: None, busy: false });
+        }
+    }
+
+    pub fn undo_ai_op(&mut self, cx: &mut Context<Self>) {
+        let Some(notice) = self.ai_op.as_mut().filter(|n| !n.busy) else { return };
+        notice.busy = true;
+        notice.error = None;
+        let id = notice.operation.id;
+        let fut = self.api.undo_operation(id);
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            let result = fut.await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(_) => {
+                        if this.ai_op.as_ref().is_some_and(|n| n.operation.id == id) {
+                            this.ai_op = None;
+                        }
+                        this.refresh_all(cx);
+                    }
+                    Err(e) => {
+                        if let Some(n) = this.ai_op.as_mut().filter(|n| n.operation.id == id) {
+                            n.busy = false;
+                            n.error = Some(e.message);
+                        }
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    pub fn dismiss_ai_op(&mut self, cx: &mut Context<Self>) {
+        self.ai_op = None;
+        cx.notify();
     }
 
     /// Saves settings; on success everything is refreshed. The task resolves with the result.
@@ -180,6 +256,7 @@ impl TrackApp {
         focus.focus(window, cx);
         // Dev convenience: TRACK_GPUI_PAGE=reports opens the Reports screen first.
         let page = if std::env::var("TRACK_GPUI_PAGE").as_deref() == Ok("reports") { Page::Reports } else { Page::Calendar };
+        state.update(cx, |s, cx| s.read_ops_baseline(cx));
         let watcher = Self::watch_external_changes(state.clone(), cx);
         let backups = Self::auto_backup(state.read(cx).api.clone(), cx);
         Self {
@@ -372,6 +449,7 @@ impl Render for TrackApp {
             .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.calendar.update(cx, |c, cx| c.zoom(1, cx))))
             .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.calendar.update(cx, |c, cx| c.zoom(-1, cx))))
             .child(self.render_header(window, cx))
+            .children(crate::ui::ai_operation_banner::render(self.state.read(cx).ai_op.clone(), cx))
             .child(div().flex_1().min_h_0().flex().flex_col().child(self.render_body(cx)))
     }
 }
