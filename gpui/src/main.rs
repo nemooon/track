@@ -1,4 +1,5 @@
 mod api;
+mod core;
 use gpui::{App, AppContext, Bounds, Context, IntoElement, ParentElement, Render, Styled, Window, WindowBounds, WindowOptions, div, px, size};
 use gpui_component::Root;
 
