@@ -15,11 +15,13 @@ pub struct PersistState {
     pub group_same_titles: bool,
     /// `reports.summaryCollapsed`
     pub summary_collapsed: bool,
+    /// `reports.customOutputCache.v1`
+    pub output_cache: Vec<crate::core::report::cache::CachedOutput>,
 }
 
 impl Default for PersistState {
     fn default() -> Self {
-        Self { zoom_index: DEFAULT_ZOOM, reports_expanded: HashMap::new(), group_same_titles: false, summary_collapsed: false }
+        Self { zoom_index: DEFAULT_ZOOM, reports_expanded: HashMap::new(), group_same_titles: false, summary_collapsed: false, output_cache: Vec::new() }
     }
 }
 
