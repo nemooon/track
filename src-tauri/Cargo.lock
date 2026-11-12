@@ -4012,7 +4012,7 @@ dependencies = [
 
 [[package]]
 name = "track"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "log",
  "serde",
