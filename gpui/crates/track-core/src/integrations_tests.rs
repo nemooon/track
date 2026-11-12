@@ -97,3 +97,27 @@ fn refuses_to_overwrite_unrelated_files() {
     std::fs::write(dir.join("notes.txt"), "x").unwrap();
     assert!(install_integrations_in(home.path(), IntegrationKind::Codex, true).unwrap_err().to_string().contains("空ではないCodexスキルフォルダ"));
 }
+
+#[test]
+fn installed_texts_include_editing_section() {
+    let home = tempfile::tempdir().unwrap();
+    install_integrations_in(home.path(), IntegrationKind::Both, true).unwrap();
+    let skill = std::fs::read_to_string(home.path().join(".codex/skills/track-dev/SKILL.md")).unwrap();
+    let cmd = std::fs::read_to_string(home.path().join(".claude/commands/track-dev.md")).unwrap();
+    for text in [&skill, &cmd] {
+        assert!(text.contains("## 工数・プロジェクトの編集と取り消し"));
+        assert!(text.contains("TRACK_DATA_DIR=\"$HOME/.track-gpui\" \"$TRACK_CLI\" update"));
+        assert!(text.contains("TRACK_DATA_DIR=\"$HOME/.track-gpui\" \"$TRACK_CLI\" undo"));
+        assert!(text.contains("--confirmed"));
+        assert!(text.contains("付け替え"), "description mentions editing");
+    }
+    assert!(skill.contains("--source codex"));
+    assert!(cmd.contains("--source claude"));
+    let yaml = std::fs::read_to_string(home.path().join(".codex/skills/track-dev/agents/openai.yaml")).unwrap();
+    assert!(!yaml.contains("## 工数"), "not appended to the agent yaml");
+
+    let prod = tempfile::tempdir().unwrap();
+    install_integrations_in(prod.path(), IntegrationKind::Codex, false).unwrap();
+    let skill = std::fs::read_to_string(prod.path().join(".codex/skills/track/SKILL.md")).unwrap();
+    assert!(skill.contains("\"$TRACK_CLI\" undo") && !skill.contains(".track-gpui"));
+}

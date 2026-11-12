@@ -9,6 +9,26 @@ use std::path::{Path, PathBuf};
 const SKILL: &str = include_str!("../../../../integrations/codex/track/SKILL.md");
 const OPENAI_YAML: &str = include_str!("../../../../integrations/codex/track/agents/openai.yaml");
 const CLAUDE_COMMAND: &str = include_str!("../../../../integrations/claude/track.md");
+/// Editing and undo (GPUI only: the Tauri CLI has no such commands, so the shared texts stay as they are).
+const EDITING: &str = include_str!("integrations_edit.md");
+
+/// Appends the editing section for one AI tool.
+fn with_editing(text: &str, kind: IntegrationKind) -> String {
+    let (source, confirm) = match kind {
+        IntegrationKind::Claude => ("--source claude", "`AskUserQuestion`"),
+        _ => ("--source codex", "`functions.request_user_input_async`のOK／NGダイアログ"),
+    };
+    let text = text
+        .replace(
+            "description: \"Trackへ当日の会話から工数を記録する。",
+            "description: \"Trackへ当日の会話から工数を記録する。登録済み工数の修正・付け替え・削除、クライアント・プロジェクト・タグの作成と変更、AIの操作の取り消しも行う。",
+        )
+        .replace(
+            "description: Trackに、その日の会話すべてから未記録の工数を提案して記録する",
+            "description: Trackに、その日の会話すべてから未記録の工数を提案して記録する。登録済み工数の修正・付け替え・削除、クライアント・プロジェクト・タグの作成と変更、取り消しもできる",
+        );
+    format!("{}{}", text.trim_end(), EDITING.replace("<SOURCE>", source).replace("<CONFIRM>", confirm))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntegrationKind {
@@ -145,13 +165,13 @@ pub fn install_integrations_in(home: &Path, kind: IntegrationKind, dev: bool) ->
     let mut installed = Vec::new();
     if let Some(p) = codex {
         replace_symlink(&p)?;
-        write_atomic(&p.join("SKILL.md"), &adapt(SKILL, dev))?;
+        write_atomic(&p.join("SKILL.md"), &adapt(&with_editing(SKILL, IntegrationKind::Codex), dev))?;
         write_atomic(&p.join("agents/openai.yaml"), &adapt(OPENAI_YAML, dev))?;
         installed.push(p);
     }
     if let Some(p) = claude {
         replace_symlink(&p)?;
-        write_atomic(&p, &adapt(CLAUDE_COMMAND, dev))?;
+        write_atomic(&p, &adapt(&with_editing(CLAUDE_COMMAND, IntegrationKind::Claude), dev))?;
         installed.push(p);
     }
     if remove_legacy {
