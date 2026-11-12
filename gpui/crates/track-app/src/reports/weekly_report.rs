@@ -1,7 +1,8 @@
 //! 「週報」 dialog (ReportsPage.tsx generateWeeklyReport). The Markdown is edited as plain text.
 use super::custom_output::provider_label;
 use crate::api::ndjson::AiStreamEvent;
-use crate::api::{ApiClient, ReportQuery};
+use track_core::model::{ReportQuery};
+use crate::data::DataClient;
 use crate::app::AppState;
 use track_core::report::weekly::{build_weekly_report_prompt, period_label, replace_markdown_section};
 use crate::ui::theme::*;
@@ -17,7 +18,7 @@ use std::time::Duration;
 
 pub struct WeeklyReport {
     state: Entity<AppState>,
-    api: ApiClient,
+    api: DataClient,
     query: ReportQuery,
     anchor: NaiveDate,
     pub generating: bool,

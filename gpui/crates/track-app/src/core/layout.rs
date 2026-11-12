@@ -1,5 +1,5 @@
 use super::geometry::minutes_of_day;
-use crate::api::TimeEntry;
+use track_core::model::TimeEntry;
 use chrono::{Local, NaiveDate};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,7 +58,7 @@ pub fn day_total_minutes(entries: &[TimeEntry], day: NaiveDate) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::TimeEntry;
+    use track_core::model::TimeEntry;
     use chrono::{Local, NaiveDate, TimeZone};
 
     fn entry(id: &str, s: (u32, u32, u32), e: (u32, u32, u32), brk: i64) -> TimeEntry {

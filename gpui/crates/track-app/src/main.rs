@@ -3,6 +3,7 @@ mod api;
 mod app;
 mod calendar;
 mod core;
+mod data;
 mod persist;
 mod reports;
 mod ui;

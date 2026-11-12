@@ -1,6 +1,6 @@
 //! Calendar pointer state machine (WeekCalendar.tsx `interaction`), free of GPUI.
 use super::time::{DAY_MINUTES, SNAP_MIN};
-use crate::api::TimeEntry;
+use track_core::model::TimeEntry;
 use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

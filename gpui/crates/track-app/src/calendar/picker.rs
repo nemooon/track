@@ -1,5 +1,6 @@
 //! ProjectPickerPopover (create flow) and the shared project list used by the edit dialog.
-use crate::api::{ApiClient, Project, Tag};
+use track_core::model::{Project, Tag};
+use crate::data::DataClient;
 use crate::core::picking::{filter_projects, locked_tag_ids, merged_tag_ids, title_suggestions};
 use crate::ui::theme::*;
 use gpui::{
@@ -33,7 +34,7 @@ struct Picked {
 pub struct ProjectPicker {
     projects: Vec<Project>,
     tags: Vec<Tag>,
-    api: ApiClient,
+    api: DataClient,
     picked: Option<Picked>,
     query: Entity<InputState>,
     title: Entity<InputState>,
@@ -49,7 +50,7 @@ pub struct ProjectPicker {
 impl EventEmitter<PickerEvent> for ProjectPicker {}
 
 impl ProjectPicker {
-    pub fn new(projects: Vec<Project>, tags: Vec<Tag>, api: ApiClient, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(projects: Vec<Project>, tags: Vec<Tag>, api: DataClient, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let query = cx.new(|cx| InputState::new(window, cx).placeholder("プロジェクトを検索"));
         let title = cx.new(|cx| InputState::new(window, cx).placeholder("タイトル（例: 定例ミーティング）"));
         let note = cx.new(|cx| TextareaState::new(window, cx).placeholder("メモ（任意）").rows(2));

@@ -3,7 +3,7 @@ mod entry_block;
 mod grid;
 mod picker;
 
-use crate::api::{EntryPatch, NewEntry, TimeEntry};
+use track_core::model::{EntryPatch, NewEntry, TimeEntry};
 use crate::app::AppState;
 use crate::core::interaction::{self, DragState, Edge, EntryCache};
 use crate::core::geometry::{BUFFER_PX, GUTTER_PX, ZOOM_LEVELS, at_minutes, minutes_to_y, y_to_minutes};
@@ -37,7 +37,6 @@ pub struct CalendarView {
     edit_sub: Option<Subscription>,
     focus: FocusHandle,
     rendered_days: Vec<NaiveDate>,
-    reload_blocked: bool,
     window: Option<gpui::AnyWindowHandle>,
     requested: Option<(NaiveDate, NaiveDate)>,
     load_task: Option<Task<()>>,
@@ -73,7 +72,6 @@ impl CalendarView {
             edit_sub: None,
             focus: cx.focus_handle(),
             rendered_days: Vec::new(),
-            reload_blocked: false,
             window: None,
             requested: None,
             load_task: None,
@@ -85,12 +83,6 @@ impl CalendarView {
             initial_scroll_done: false,
             _ticker: ticker,
         }
-    }
-
-    #[cfg(test)]
-    pub fn block_reload_for_tests(&mut self) {
-        self.load_task = None;
-        self.reload_blocked = true;
     }
 
     #[cfg(test)]
@@ -121,9 +113,6 @@ impl CalendarView {
     /// Re-fetches `/entries` for the visible range.
     pub fn reload(&mut self, cx: &mut Context<Self>) {
         let Some((from, to)) = self.requested else { return };
-        if self.reload_blocked {
-            return;
-        }
         let api = self.state.read(cx).api.clone();
         let fut = api.entries(at_minutes(from, 0).to_utc(), at_minutes(to, 0).to_utc());
         self.load_task = Some(cx.spawn(async move |this, cx| {

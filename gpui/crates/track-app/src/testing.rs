@@ -1,8 +1,12 @@
-//! Headless UI test helpers (GPUI TestAppContext).
-use crate::api::*;
+//! Headless UI test helpers (GPUI TestAppContext) over a temporary SQLite DB.
+use crate::api::ApiClient;
 use crate::app::{AppData, AppState, TrackApp};
-use chrono::{Local, TimeZone};
+use crate::data::DataClient;
+use chrono::{DateTime, Local, NaiveDate, TimeZone, Utc};
 use gpui::{AppContext, Entity, TestAppContext, VisualTestContext};
+use std::path::{Path, PathBuf};
+use track_core::model::*;
+use track_core::{Db, time};
 
 pub fn fake_data() -> AppData {
     let client = Client { id: "c1".into(), name: "Acme".into(), archived: false };
@@ -27,53 +31,101 @@ pub fn entry(id: &str, day: u32, (sh, sm): (u32, u32), (eh, em): (u32, u32), pro
     }
 }
 
-/// Opens a TrackApp window whose API points at an unused port, with fake reference data loaded.
+pub fn local(day: NaiveDate, h: u32, m: u32) -> DateTime<Utc> {
+    Local.from_local_datetime(&day.and_hms_opt(h, m, 0).unwrap()).unwrap().to_utc()
+}
+
+/// The same reference data as `fake_data()`, with fixed ids: client c1 "Acme",
+/// project p1 "Alpha" (project tag t1 "定例"), project p2 "Beta".
+pub fn seed_reference(db: &mut Db) {
+    let now = time::now_db();
+    let c = db.conn();
+    c.execute(r#"INSERT INTO "Client"(id, name, createdAt) VALUES ('c1', 'Acme', ?1)"#, [&now]).unwrap();
+    c.execute(r##"INSERT INTO "Project"(id, clientId, name, color, createdAt) VALUES ('p1', 'c1', 'Alpha', '#3b82f6', ?1)"##, [&now]).unwrap();
+    c.execute(r##"INSERT INTO "Project"(id, clientId, name, color, createdAt) VALUES ('p2', 'c1', 'Beta', '#ef4444', ?1)"##, [&now]).unwrap();
+    c.execute(r##"INSERT INTO "Tag"(id, name, color, createdAt) VALUES ('t1', '定例', '#22c55e', ?1)"##, [&now]).unwrap();
+    c.execute(r#"INSERT INTO "TagOnProject"(id, tagId, projectId) VALUES ('tp1', 't1', 'p1')"#, []).unwrap();
+    c.execute(r#"UPDATE "Settings" SET weeklyReportTemplate = '{{期間}} {{合計時間}}'"#, []).unwrap();
+}
+
+/// Inserts an entry with a fixed id.
+pub fn insert_entry(db: &Db, id: &str, start: DateTime<Utc>, end: DateTime<Utc>, project: Option<&str>, title: &str) {
+    let now = time::now_db();
+    db.conn()
+        .execute(
+            r#"INSERT INTO "TimeEntry"(id, projectId, start, "end", title, breakMinutes, createdAt, updatedAt) VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?6)"#,
+            rusqlite::params![id, project, time::to_db(start), time::to_db(end), title, now],
+        )
+        .unwrap();
+}
+
+pub struct Fixture {
+    pub dir: PathBuf,
+    pub data: DataClient,
+}
+
+impl Fixture {
+    /// A second connection to inspect what the app wrote.
+    pub fn db(&self) -> Db {
+        Db::open(&self.dir).unwrap()
+    }
+}
+
+fn read_app_data(dir: &Path) -> AppData {
+    let db = Db::open(dir).unwrap();
+    AppData {
+        projects: db.projects(false).unwrap(),
+        clients: db.clients().unwrap(),
+        tags: db.tags().unwrap(),
+        settings: db.settings().unwrap(),
+        config: AppConfig { ai_provider: "codex".into(), ..Default::default() },
+    }
+}
+
+/// Opens a TrackApp over a fresh temp DB with the reference data (`seed_reference`) plus `seed`.
+/// AI generation goes to `ai_base` (a stub server or an unused port).
+pub fn open_app_db<'a>(cx: &'a mut TestAppContext, seed: impl FnOnce(&mut Db), ai_base: &str) -> (Entity<TrackApp>, &'a mut VisualTestContext, Fixture) {
+    let dir = tempfile::tempdir().unwrap().keep();
+    {
+        let mut db = Db::open(&dir).unwrap();
+        seed_reference(&mut db);
+        seed(&mut db);
+    }
+    let data = DataClient::open_unguarded(&dir, ApiClient::new(ai_base.to_string()));
+    let app_data = read_app_data(&dir);
+    let (app, vcx) = open_with(cx, data.clone(), dir.join("p.json"), Some(app_data));
+    (app, vcx, Fixture { dir, data })
+}
+
+/// Opens a TrackApp that runs the real startup load (`AppState::load`) through `data`.
+pub fn open_app_loading(cx: &mut TestAppContext, data: DataClient) -> (Entity<TrackApp>, &mut VisualTestContext) {
+    let dir = tempfile::tempdir().unwrap().keep();
+    open_with(cx, data, dir.join("p.json"), None)
+}
+
+/// Default: empty reference data, AI pointed at an unused port.
 pub fn open_app(cx: &mut TestAppContext) -> (Entity<TrackApp>, &mut VisualTestContext) {
-    open_app_with(cx, "http://127.0.0.1:9/api".into())
+    let (app, vcx, _f) = open_app_db(cx, |_| {}, "http://127.0.0.1:9/api");
+    (app, vcx)
 }
 
-/// A local server that accepts connections and never answers (requests stay pending).
-pub fn hanging_server() -> String {
-    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = l.local_addr().unwrap().port();
-    std::thread::spawn(move || {
-        let mut keep = Vec::new();
-        for s in l.incoming().flatten() {
-            keep.push(s);
-        }
-    });
-    format!("http://127.0.0.1:{port}/api")
-}
-
-pub fn open_app_with(cx: &mut TestAppContext, base: String) -> (Entity<TrackApp>, &mut VisualTestContext) {
-    open_app_inner(cx, base, true)
-}
-
-/// Like `open_app_with`, but runs the real startup load (`AppState::load`) against `base`.
-pub fn open_app_loading(cx: &mut TestAppContext, base: String) -> (Entity<TrackApp>, &mut VisualTestContext) {
-    open_app_inner(cx, base, false)
-}
-
-fn open_app_inner(cx: &mut TestAppContext, base: String, prefilled: bool) -> (Entity<TrackApp>, &mut VisualTestContext) {
-    // Requests run on the API client's tokio runtime, outside the deterministic scheduler.
+fn open_with(cx: &mut TestAppContext, data: DataClient, persist: PathBuf, preloaded: Option<AppData>) -> (Entity<TrackApp>, &mut VisualTestContext) {
+    // DB work runs on its own thread, outside the deterministic scheduler.
     cx.executor().allow_parking();
     cx.update(|cx| {
         gpui_component::init(cx);
         crate::actions::bind_keys(cx);
     });
-    let dir = tempfile::tempdir().unwrap().keep();
     let slot: std::rc::Rc<std::cell::RefCell<Option<Entity<TrackApp>>>> = Default::default();
     let slot2 = slot.clone();
     let (_root, vcx) = cx.add_window_view(move |window, cx| {
-        let base = base.clone();
+        let loaded = preloaded.is_some();
         let state = cx.new(|_| {
-            let mut s = AppState::with_path(ApiClient::new(base.clone()), dir.join("p.json"));
-            if prefilled {
-                s.data = Some(fake_data());
-            }
+            let mut s = AppState::with_path(data.clone(), persist.clone());
+            s.data = preloaded.clone();
             s
         });
-        if !prefilled {
+        if !loaded {
             state.update(cx, |s, cx| s.load(cx));
         }
         let view = cx.new(|cx| TrackApp::with_state(state, window, cx));
@@ -84,14 +136,23 @@ fn open_app_inner(cx: &mut TestAppContext, base: String, prefilled: bool) -> (En
     (view, vcx)
 }
 
+/// Let DB-thread and network results land.
+pub fn wait_io(cx: &mut VisualTestContext) {
+    for _ in 0..60 {
+        cx.run_until_parked();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // method kept for debugging stub traffic
 pub struct Recorded {
     pub method: String,
     pub path: String,
     pub body: String,
 }
 
-/// Minimal HTTP stub: answers each request with `route(method, path)` and records it.
+/// Minimal HTTP stub (used for the AI stream until track-core has providers).
 pub fn stub_server(route: impl Fn(&str, &str) -> (u16, String) + Send + Sync + 'static) -> (String, std::sync::Arc<std::sync::Mutex<Vec<Recorded>>>) {
     use std::io::{BufRead, BufReader, Read, Write};
     let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();

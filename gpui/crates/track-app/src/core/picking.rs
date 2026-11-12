@@ -1,5 +1,5 @@
 //! Pure helpers for ProjectPickerPopover / ProjectSelectPopover / EntryEditDialog.
-use crate::api::Project;
+use track_core::model::Project;
 
 /// Case-insensitive match on project or client name, grouped by client name in first-seen order.
 pub fn filter_projects<'a>(projects: &'a [Project], query: &str) -> Vec<(String, Vec<&'a Project>)> {

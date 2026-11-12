@@ -1,5 +1,5 @@
 //! EntryBlock.tsx: one time entry inside a day column.
-use crate::api::TimeEntry;
+use track_core::model::TimeEntry;
 use crate::core::geometry::minutes_to_y;
 use crate::core::time::format_duration_calendar;
 use crate::ui::theme::*;

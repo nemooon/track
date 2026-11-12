@@ -1,5 +1,6 @@
 //! 「カスタム出力」 dialog (ReportsPage.tsx createCustomOutput / copyAggregation).
-use crate::api::{ApiClient, GroupBy, ReportCopyFormat, ReportEntriesResponse, ReportQuery, ReportRange, ReportRow};
+use track_core::model::{GroupBy, ReportCopyFormat, ReportEntriesResponse, ReportQuery, ReportRange, ReportRow};
+use crate::data::DataClient;
 use crate::app::AppState;
 use crate::api::ndjson::AiStreamEvent;
 use track_core::report::aggregation::{AiAggregationRow, aggregate_ai_result, build_report_aggregation_prompt};
@@ -38,7 +39,7 @@ pub struct OutputContext {
 
 pub struct CustomOutput {
     state: Entity<AppState>,
-    api: ApiClient,
+    api: DataClient,
     ctx: OutputContext,
     formats: Vec<ReportCopyFormat>,
     pub selected: Option<String>,

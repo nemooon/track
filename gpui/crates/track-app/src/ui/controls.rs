@@ -60,7 +60,7 @@ pub fn error_banner(retry_id: &'static str, message: &str) -> Stateful<Div> {
         .border_color(gpui::rgb(0xfecaca))
         .text_xs()
         .text_color(red700())
-        .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child("サーバーに接続できません"))
+        .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child("データを読み込めません"))
         .child(div().flex_1().truncate().child(message.to_string()))
         .child(div().rounded_md().bg(n900()).text_color(white()).px_3().py_1().cursor_pointer().child("再試行"))
 }

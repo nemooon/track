@@ -1,5 +1,5 @@
 //! 集計サマリー: donut (recharts PieChart look-alike), legend, collapsed strip.
-use crate::api::{GroupBy, ReportRow};
+use track_core::model::{GroupBy, ReportRow};
 use track_core::report::view::{display_label, percent, row_color};
 use crate::core::time::format_duration_report;
 use crate::ui::theme::*;

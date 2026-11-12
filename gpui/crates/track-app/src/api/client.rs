@@ -1,12 +1,6 @@
 use super::ndjson::{AiStreamEvent, NdjsonParser};
-use super::sse::{SseEvent, SseParser};
-use super::types::*;
-use chrono::{DateTime, Utc};
 use futures::StreamExt;
-use serde::de::DeserializeOwned;
-use std::future::Future;
 use std::sync::Arc;
-use std::time::Duration;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ApiError {
@@ -27,9 +21,6 @@ impl ApiError {
         Self { status: Some(status), message }
     }
 
-    fn network(e: impl std::fmt::Display) -> Self {
-        Self { status: None, message: e.to_string() }
-    }
 }
 
 impl std::fmt::Display for ApiError {
@@ -63,31 +54,14 @@ impl Utf8Chunks {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct Health {
-    pub db: String,
-}
-
-/// The prototype may only talk to a server whose DB lives under `~/.track-gpui`
-/// (see scripts/prepare-db.sh); the real `~/.track` must never be modified.
-pub fn is_copy_db(db_path: &str) -> bool {
-    let Some(home) = dirs::home_dir() else { return false };
-    let copy_dir = home.join(".track-gpui");
-    let p = std::path::Path::new(db_path);
-    // Must be absolute: a literal "~/…" would be relative to the server's cwd.
-    p.is_absolute() && p.starts_with(&copy_dir)
-}
-
-/// HTTP client for the local Bun API. All requests run on a dedicated tokio
-/// runtime; the returned futures can be awaited from GPUI's executor.
+/// Temporary: AI generation still streams from the Bun server (`/api/ai/generate-stream`)
+/// until track-core has its own providers. Runs on a dedicated tokio runtime.
 #[derive(Clone)]
 pub struct ApiClient {
     base: Arc<str>,
     http: reqwest::Client,
     rt: Arc<tokio::runtime::Runtime>,
 }
-
-pub type ApiResult<T> = Result<T, ApiError>;
 
 impl ApiClient {
     pub fn new(base: String) -> Self {
@@ -105,120 +79,11 @@ impl ApiClient {
         Self::new(format!("http://127.0.0.1:{port}/api"))
     }
 
-    fn spawn<T: Send + 'static>(&self, fut: impl Future<Output = ApiResult<T>> + Send + 'static) -> impl Future<Output = ApiResult<T>> + Send + 'static {
-        let handle = self.rt.spawn(fut);
-        async move { handle.await.map_err(ApiError::network)? }
-    }
-
-    fn request<T: DeserializeOwned + Send + 'static>(&self, req: reqwest::RequestBuilder) -> impl Future<Output = ApiResult<T>> + Send + 'static {
-        self.spawn(async move {
-            let res = req.send().await.map_err(ApiError::network)?;
-            let status = res.status().as_u16();
-            let body = res.text().await.map_err(ApiError::network)?;
-            if !(200..300).contains(&status) {
-                return Err(ApiError::from_body(status, &body));
-            }
-            serde_json::from_str(&body).map_err(|e| ApiError { status: Some(status), message: format!("invalid response: {e}") })
-        })
-    }
-
-    fn url(&self, path: &str) -> String {
-        format!("{}{}", self.base, path)
-    }
-
-    fn iso(d: DateTime<Utc>) -> String {
-        d.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
-    }
-
-    /// `GET /health` (outside `/api`): `{ ok, db }` — the DB file the server is using.
-    pub fn health(&self) -> impl Future<Output = ApiResult<Health>> + Send + 'static {
-        let root = self.base.trim_end_matches("/api").to_string();
-        self.request(self.http.get(format!("{root}/health")))
-    }
-
-    pub fn entries(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> impl Future<Output = ApiResult<Vec<TimeEntry>>> + Send + 'static {
-        self.request(self.http.get(self.url("/entries")).query(&[("from", Self::iso(from)), ("to", Self::iso(to))]))
-    }
-
-    pub fn entry_titles(&self, project_id: Option<&str>) -> impl Future<Output = ApiResult<Vec<String>>> + Send + 'static {
-        self.request(self.http.get(self.url("/entries/titles")).query(&[("projectId", project_id.unwrap_or("none"))]))
-    }
-
-    pub fn create_entry(&self, body: NewEntry) -> impl Future<Output = ApiResult<TimeEntry>> + Send + 'static {
-        self.request(self.http.post(self.url("/entries")).json(&body))
-    }
-
-    pub fn update_entry(&self, id: &str, patch: EntryPatch) -> impl Future<Output = ApiResult<TimeEntry>> + Send + 'static {
-        self.request(self.http.patch(self.url(&format!("/entries/{id}"))).json(&patch))
-    }
-
-    pub fn delete_entry(&self, id: &str) -> impl Future<Output = ApiResult<serde_json::Value>> + Send + 'static {
-        self.request(self.http.delete(self.url(&format!("/entries/{id}"))))
-    }
-
-    pub fn projects(&self) -> impl Future<Output = ApiResult<Vec<Project>>> + Send + 'static {
-        self.request(self.http.get(self.url("/projects")))
-    }
-
-    pub fn clients(&self) -> impl Future<Output = ApiResult<Vec<Client>>> + Send + 'static {
-        self.request(self.http.get(self.url("/clients")))
-    }
-
-    pub fn tags(&self) -> impl Future<Output = ApiResult<Vec<Tag>>> + Send + 'static {
-        self.request(self.http.get(self.url("/tags")))
-    }
-
-    pub fn settings(&self) -> impl Future<Output = ApiResult<Settings>> + Send + 'static {
-        self.request(self.http.get(self.url("/settings")))
-    }
-
-    pub fn config(&self) -> impl Future<Output = ApiResult<AppConfig>> + Send + 'static {
-        self.request(self.http.get(self.url("/config")))
-    }
-
-    pub fn report(&self, q: &ReportQuery) -> impl Future<Output = ApiResult<ReportResponse>> + Send + 'static {
-        self.request(self.http.get(self.url("/reports")).query(&q.params(true)))
-    }
-
-    pub fn report_entries(&self, q: &ReportQuery) -> impl Future<Output = ApiResult<ReportEntriesResponse>> + Send + 'static {
-        self.request(self.http.get(self.url("/reports/entries")).query(&q.params(false)))
-    }
-
-    /// Subscribes to `/events` (SSE). Reconnects 1s after any disconnect.
-    /// The stream ends when the receiver is dropped.
-    pub fn subscribe_events(&self) -> async_channel::Receiver<SseEvent> {
-        let (tx, rx) = async_channel::unbounded();
-        let http = self.http.clone();
-        let url = self.url("/events");
-        self.rt.spawn(async move {
-            loop {
-                if tx.is_closed() {
-                    return;
-                }
-                if let Ok(res) = http.get(&url).send().await
-                    && res.status().is_success() {
-                        let mut parser = SseParser::default();
-                        let mut utf8 = Utf8Chunks::default();
-                        let mut stream = res.bytes_stream();
-                        while let Some(Ok(chunk)) = stream.next().await {
-                            for ev in parser.push(&utf8.push(&chunk)) {
-                                if tx.send(ev).await.is_err() {
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-        });
-        rx
-    }
-
     /// POST `/ai/generate-stream`, yielding NDJSON events. A transport
     /// failure is reported as a final `AiStreamEvent::Error`.
     pub fn generate_stream(&self, mode: &str, input: String) -> async_channel::Receiver<AiStreamEvent> {
         let (tx, rx) = async_channel::unbounded();
-        let req = self.http.post(self.url("/ai/generate-stream")).json(&serde_json::json!({ "mode": mode, "input": input }));
+        let req = self.http.post(format!("{}/ai/generate-stream", self.base)).json(&serde_json::json!({ "mode": mode, "input": input }));
         self.rt.spawn(async move {
             let res = match req.send().await {
                 Ok(r) => r,
@@ -279,88 +144,5 @@ mod utf8_tests {
         assert_eq!(d.push(&bytes[..2]), "");
         assert_eq!(d.push(&bytes[2..4]), "週");
         assert_eq!(d.push(&bytes[4..]), "報");
-    }
-}
-
-/// Runs against a live API: `cargo test live_api -- --ignored`
-#[cfg(test)]
-mod live_tests {
-    use super::*;
-    use chrono::{Duration as CDuration, Local, TimeZone};
-
-    #[test]
-    #[ignore]
-    fn live_api_deserializes_all_endpoints() {
-        let api = ApiClient::from_env();
-        fn b<F: std::future::Future>(f: F) -> F::Output { futures::executor::block_on(f) }
-        let now = Local::now();
-        let from = Local.from_local_datetime(&(now.date_naive() - CDuration::days(30)).and_hms_opt(0, 0, 0).unwrap()).unwrap();
-        let entries = b(api.entries(from.to_utc(), now.to_utc())).unwrap();
-        let projects = b(api.projects()).unwrap();
-        b(api.clients()).unwrap();
-        b(api.tags()).unwrap();
-        let settings = b(api.settings()).unwrap();
-        b(api.config()).unwrap();
-        b(api.entry_titles(None)).unwrap();
-        let q = ReportQuery {
-            range: ReportRange::Month,
-            anchor: now.to_utc(),
-            group_by: GroupBy::Tag,
-            client_ids: vec![],
-            project_ids: vec![],
-            tag_ids: vec![],
-        };
-        let report = b(api.report(&q)).unwrap();
-        let re = b(api.report_entries(&q)).unwrap();
-        println!(
-            "entries={} projects={} formats={} rows={} reportEntries={}",
-            entries.len(), projects.len(), settings.report_copy_formats.len(), report.rows.len(), re.entries.len()
-        );
-        assert!(!projects.is_empty());
-    }
-}
-
-/// Mutates the live (copy) DB: `cargo test live_crud -- --ignored`
-#[cfg(test)]
-mod live_crud_tests {
-    use super::*;
-    use chrono::{Local, TimeZone};
-
-    #[test]
-    #[ignore]
-    fn live_crud_roundtrip() {
-        fn b<F: std::future::Future>(f: F) -> F::Output { futures::executor::block_on(f) }
-        let api = ApiClient::from_env();
-        let db = b(api.health()).unwrap().db;
-        assert!(is_copy_db(&db), "refusing to write to {db}; start the API with TRACK_DATA_DIR=$HOME/.track-gpui");
-        let t = |h, m| Local.with_ymd_and_hms(2030, 1, 7, h, m, 0).unwrap().to_utc();
-        let tag = b(api.tags()).unwrap().into_iter().next();
-        let created = b(api.create_entry(NewEntry {
-            start: t(9, 0), end: t(10, 0), title: Some("gpui live test".into()),
-            tag_ids: tag.iter().map(|t| t.id.clone()).collect(), break_minutes: 15, ..Default::default()
-        })).unwrap();
-        assert_eq!(created.break_minutes, 15);
-        let moved = b(api.update_entry(&created.id, EntryPatch { start: Some(t(9, 30)), end: Some(t(10, 30)), ..Default::default() })).unwrap();
-        assert_eq!(moved.start, t(9, 30));
-        let cleared = b(api.update_entry(&created.id, EntryPatch { title: Some(None), note: Some(Some("memo".into())), project_id: Some(None), tag_ids: Some(vec![]), ..Default::default() })).unwrap();
-        assert_eq!((cleared.title, cleared.note.as_deref(), cleared.tags.len()), (None, Some("memo"), 0));
-        let err = b(api.update_entry(&created.id, EntryPatch { end: Some(t(9, 0) + chrono::Duration::days(2)), ..Default::default() })).unwrap_err();
-        println!("cross-day error: {}", err.message);
-        b(api.delete_entry(&created.id)).unwrap();
-    }
-}
-
-#[cfg(test)]
-mod copy_db_tests {
-    use super::*;
-
-    #[test]
-    fn copy_db_must_be_the_absolute_home_copy() {
-        let home = dirs::home_dir().unwrap();
-        assert!(is_copy_db(&home.join(".track-gpui/track.db").to_string_lossy()));
-        // a literal, unexpanded tilde resolves relative to the server's cwd: reject
-        assert!(!is_copy_db("~/.track-gpui/track.db"));
-        assert!(!is_copy_db("/tmp/x/.track-gpui/track.db"));
-        assert!(!is_copy_db(&home.join(".track/track.db").to_string_lossy()));
     }
 }

@@ -48,65 +48,41 @@ fn date_picker_selects_week(cx: &mut TestAppContext) {
     assert!(!app.read_with(cx, |a, cx| a.calendar.read(cx).nav_open()));
 }
 
-#[gpui::test]
-fn server_change_events_reload_both_screens(cx: &mut TestAppContext) {
-    let (base, log) = crate::testing::stub_server(|_, path| match path {
-        "/api/events" => (200, "event: entries.changed\ndata: {\"action\":\"created\"}\n\n".into()),
-        "/api/entries" => (200, "[]".into()),
-        "/api/reports" => (200, r#"{"rows":[],"totalMinutes":0,"range":{"from":"2026-11-07T15:00:00Z","to":"2026-11-14T15:00:00Z"}}"#.into()),
-        _ => (404, "{}".into()),
-    });
-    let (_app, cx) = crate::testing::open_app_with(cx, base);
-    cx.simulate_keystrokes("cmd-2 cmd-1");
-    let count = |path: &str| log.lock().unwrap().iter().filter(|r| r.path.starts_with(path) && r.path[path.len()..].starts_with('?')).count();
-    for _ in 0..150 {
-        cx.run_until_parked();
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-    // initial load + at least one event-driven reload (the stub stream closes, so it reconnects and fires again)
-    assert!(count("/api/entries") >= 2, "entries fetched {} times", count("/api/entries"));
-    assert!(count("/api/reports") >= 2, "reports fetched {} times", count("/api/reports"));
-}
-
-fn reference_stub(db: &'static str) -> String {
-    let (base, _) = crate::testing::stub_server(move |_, path| match path {
-        "/health" => (200, format!(r#"{{"ok":true,"db":"{db}"}}"#)),
-        "/api/projects" | "/api/clients" | "/api/tags" => (200, "[]".into()),
-        "/api/settings" => (200, r#"{"workStart":600,"workEnd":1110,"workDays":[1,2,3,4,5]}"#.into()),
-        "/api/config" => (200, r#"{"aiProvider":"codex"}"#.into()),
-        "/api/entries" => (200, "[]".into()),
-        _ => (404, "{}".into()),
-    });
-    base
-}
-
 fn settle(cx: &mut gpui::VisualTestContext) {
-    for _ in 0..80 {
-        cx.run_until_parked();
-        std::thread::sleep(std::time::Duration::from_millis(10));
+    crate::testing::wait_io(cx);
+}
+
+#[gpui::test]
+fn refuses_to_run_outside_the_copy_db(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let data = crate::data::DataClient::open_guarded(dir.path(), crate::api::ApiClient::new("http://127.0.0.1:9/api".into()));
+    let (app, cx) = crate::testing::open_app_loading(cx, data);
+    settle(cx);
+    let (loaded, err) = app.read_with(cx, |a, cx| (a.state.read(cx).data.is_some(), a.state.read(cx).error.clone()));
+    assert!(!loaded);
+    assert!(err.unwrap_or_default().contains(".track-gpui"));
+    assert!(!dir.path().join("track.db").exists(), "the guard must stop before creating a DB");
+}
+
+#[gpui::test]
+fn loads_reference_data_from_the_db(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let mut db = track_core::Db::open(dir.path()).unwrap();
+        crate::testing::seed_reference(&mut db);
     }
-}
-
-#[gpui::test]
-fn refuses_to_run_against_the_real_track_db(cx: &mut TestAppContext) {
-    let (app, cx) = crate::testing::open_app_loading(cx, reference_stub("/Users/someone/.track/track.db"));
+    let data = crate::data::DataClient::open_unguarded(dir.path(), crate::api::ApiClient::new("http://127.0.0.1:9/api".into()));
+    let (app, cx) = crate::testing::open_app_loading(cx, data);
     settle(cx);
-    let (data, err) = app.read_with(cx, |a, cx| (a.state.read(cx).data.is_some(), a.state.read(cx).error.clone()));
-    assert!(!data, "must not load reference data from the real DB");
-    assert!(err.unwrap_or_default().contains("/Users/someone/.track/track.db"));
-}
-
-#[gpui::test]
-fn loads_when_server_uses_the_copy_db(cx: &mut TestAppContext) {
-    let db: &'static str = Box::leak(dirs::home_dir().unwrap().join(".track-gpui/track.db").to_string_lossy().into_owned().into_boxed_str());
-    let (app, cx) = crate::testing::open_app_loading(cx, reference_stub(db));
-    settle(cx);
-    assert!(app.read_with(cx, |a, cx| a.state.read(cx).data.is_some()));
+    let names = app.read_with(cx, |a, cx| a.state.read(cx).data.as_ref().map(|d| d.projects.iter().map(|p| p.name.clone()).collect::<Vec<_>>()));
+    assert_eq!(names, Some(vec!["Alpha".to_string(), "Beta".to_string()]));
 }
 
 #[gpui::test]
 fn calendar_shows_error_when_entries_fail(cx: &mut TestAppContext) {
-    let (app, cx) = crate::testing::open_app_with(cx, "http://127.0.0.1:9/api".into());
+    let (app, cx, f) = crate::testing::open_app_db(cx, |_| {}, "http://127.0.0.1:9/api");
+    f.data.fail_ops(&["entries"]);
+    cx.simulate_keystrokes("cmd-]");
     settle(cx);
     assert!(app.read_with(cx, |a, cx| a.calendar.read(cx).load_error.is_some()));
     assert!(cx.debug_bounds("calendar-retry").is_some(), "retry button shown");
@@ -114,7 +90,8 @@ fn calendar_shows_error_when_entries_fail(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn reports_show_error_instead_of_loading_forever(cx: &mut TestAppContext) {
-    let (app, cx) = crate::testing::open_app_with(cx, "http://127.0.0.1:9/api".into());
+    let (app, cx, f) = crate::testing::open_app_db(cx, |_| {}, "http://127.0.0.1:9/api");
+    f.data.fail_ops(&["report"]);
     cx.simulate_keystrokes("cmd-2");
     settle(cx);
     assert!(app.read_with(cx, |a, cx| a.reports.read(cx).error.is_some()));
@@ -123,12 +100,13 @@ fn reports_show_error_instead_of_loading_forever(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn failed_child_rows_do_not_stay_loading(cx: &mut TestAppContext) {
-    let (base, _) = crate::testing::stub_server(|_, path| match path {
-        "/api/reports" => (200, r##"{"rows":[{"key":"p1","label":"A · B","color":"#3b82f6","totalMinutes":60}],"totalMinutes":60,"range":{"from":"2026-11-07T15:00:00Z","to":"2026-11-14T15:00:00Z"}}"##.into()),
-        "/api/entries" => (200, "[]".into()),
-        _ => (500, r#"{"error":"boom"}"#.into()),
-    });
-    let (app, cx) = crate::testing::open_app_with(cx, base);
+    let today = Local::now().date_naive();
+    let (app, cx, f) = crate::testing::open_app_db(
+        cx,
+        |db| crate::testing::insert_entry(db, "e1", crate::testing::local(today, 0, 0), crate::testing::local(today, 1, 0), Some("p1"), "x"),
+        "http://127.0.0.1:9/api",
+    );
+    f.data.fail_ops(&["report_entries"]);
     cx.simulate_keystrokes("cmd-2");
     settle(cx);
     let b = cx.debug_bounds("row-p1").expect("row");
@@ -136,27 +114,4 @@ fn failed_child_rows_do_not_stay_loading(cx: &mut TestAppContext) {
     settle(cx);
     let state = app.read_with(cx, |a, cx| a.reports.read(cx).children.get("project:p1").cloned());
     assert!(matches!(state, Some(crate::reports::Children::Failed(_))), "{state:?}");
-}
-
-#[gpui::test]
-fn reconnect_event_retries_startup_load(cx: &mut TestAppContext) {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    let health_calls = std::sync::Arc::new(AtomicUsize::new(0));
-    let hc = health_calls.clone();
-    let (base, _) = crate::testing::stub_server(move |_, path| match path {
-        // first startup check fails (server "not up yet"), later ones succeed
-        "/health" if hc.fetch_add(1, Ordering::SeqCst) == 0 => (503, "{}".into()),
-        "/health" => (200, format!(r#"{{"ok":true,"db":"{}"}}"#, dirs::home_dir().unwrap().join(".track-gpui/track.db").display())),
-        "/api/events" => (200, "event: track.connected\ndata: {}\n\n".into()),
-        "/api/projects" | "/api/clients" | "/api/tags" | "/api/entries" => (200, "[]".into()),
-        "/api/settings" => (200, r#"{"workStart":600,"workEnd":1110,"workDays":[1,2,3,4,5]}"#.into()),
-        "/api/config" => (200, r#"{"aiProvider":"codex"}"#.into()),
-        _ => (404, "{}".into()),
-    });
-    let (app, cx) = crate::testing::open_app_loading(cx, base);
-    for _ in 0..200 {
-        cx.run_until_parked();
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-    assert!(app.read_with(cx, |a, cx| a.state.read(cx).data.is_some()), "track.connected should retry the startup load");
 }

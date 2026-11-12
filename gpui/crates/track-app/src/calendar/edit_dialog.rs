@@ -1,6 +1,6 @@
 //! EntryEditDialog.tsx 「予定を編集」 form, shown inside a gpui-component Dialog.
 use super::picker::{project_list, tag_chip};
-use crate::api::{EntryPatch, Project, Tag, TimeEntry};
+use track_core::model::{EntryPatch, Project, Tag, TimeEntry};
 use crate::core::picking::{locked_tag_ids, merged_tag_ids};
 use crate::ui::theme::*;
 use chrono::{DateTime, Local, NaiveTime, TimeZone, Timelike, Utc};

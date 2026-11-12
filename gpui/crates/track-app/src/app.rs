@@ -1,5 +1,6 @@
 use crate::actions::*;
-use crate::api::{ApiClient, AppConfig, Client, Project, Settings, Tag};
+use crate::data::DataClient;
+use track_core::model::{AppConfig, Client, Project, Settings, Tag};
 use crate::calendar::CalendarView;
 use crate::persist::PersistState;
 use crate::reports::ReportsView;
@@ -22,7 +23,7 @@ pub struct AppData {
 }
 
 pub struct AppState {
-    pub api: ApiClient,
+    pub api: DataClient,
     pub data: Option<AppData>,
     pub error: Option<String>,
     pub loading: bool,
@@ -31,11 +32,11 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(api: ApiClient) -> Self {
+    pub fn new(api: DataClient) -> Self {
         Self::with_path(api, PersistState::default_path())
     }
 
-    pub fn with_path(api: ApiClient, persist_path: PathBuf) -> Self {
+    pub fn with_path(api: DataClient, persist_path: PathBuf) -> Self {
         Self { api, data: None, error: None, loading: false, persist: PersistState::load(&persist_path), persist_path }
     }
 
@@ -51,19 +52,12 @@ impl AppState {
         let api = self.api.clone();
         cx.spawn(async move |this, cx| {
             let result = async {
-                let health = api.health().await?;
-                if !crate::api::client::is_copy_db(&health.db) {
-                    return Err(crate::api::ApiError {
-                        status: None,
-                        message: format!("コピー DB（~/.track-gpui）以外に接続しています（{}）。TRACK_DATA_DIR=\"$HOME/.track-gpui\" で起動した API に接続してください。", health.db),
-                    });
-                }
-                Ok::<_, crate::api::ApiError>(AppData {
+                Ok::<_, crate::data::DataError>(AppData {
                     projects: api.projects().await?,
                     clients: api.clients().await?,
                     tags: api.tags().await?,
                     settings: api.settings().await?,
-                    config: api.config().await?,
+                    config: api.config(),
                 })
             }
             .await;
@@ -96,7 +90,7 @@ pub struct TrackApp {
 
 impl TrackApp {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let state = cx.new(|_| AppState::new(ApiClient::from_env()));
+        let state = cx.new(|_| AppState::new(DataClient::from_env()));
         state.update(cx, |s, cx| s.load(cx));
         Self::with_state(state, window, cx)
     }
@@ -107,31 +101,9 @@ impl TrackApp {
         let reports = cx.new(|cx| ReportsView::new(state.clone(), window, cx));
         let focus = cx.focus_handle();
         focus.focus(window, cx);
-        Self::listen_server_changes(&state, &calendar, &reports, cx);
         // Dev convenience: TRACK_GPUI_PAGE=reports opens the Reports screen first.
         let page = if std::env::var("TRACK_GPUI_PAGE").as_deref() == Ok("reports") { Page::Reports } else { Page::Calendar };
         Self { state, page, calendar, reports, focus }
-    }
-
-    /// ServerChangeListener.tsx: `/api/events` → refetch entries and reports.
-    fn listen_server_changes(state: &Entity<AppState>, calendar: &Entity<CalendarView>, reports: &Entity<ReportsView>, cx: &mut Context<Self>) {
-        let rx = state.read(cx).api.subscribe_events();
-        let (state, calendar, reports) = (state.downgrade(), calendar.downgrade(), reports.downgrade());
-        cx.spawn(async move |_, cx| {
-            while let Ok(ev) = rx.recv().await {
-                if ev.event != "track.connected" && ev.event != "entries.changed" {
-                    continue;
-                }
-                let _ = state.update(cx, |s, cx| {
-                    if s.data.is_none() && !s.loading {
-                        s.load(cx);
-                    }
-                });
-                let _ = calendar.update(cx, |c, cx| c.reload(cx));
-                let _ = reports.update(cx, |r, cx| r.reload_if_shown(cx));
-            }
-        })
-        .detach();
     }
 
     fn show(&mut self, page: Page, cx: &mut Context<Self>) {
@@ -206,7 +178,7 @@ impl TrackApp {
                 .text_color(n600())
                 .map(|d| match error {
                     Some(e) if !loading => d
-                        .child(div().font_weight(gpui::FontWeight::SEMIBOLD).text_color(n800()).child("サーバーに接続できません"))
+                        .child(div().font_weight(gpui::FontWeight::SEMIBOLD).text_color(n800()).child("データを読み込めません"))
                         .child(div().text_xs().text_color(n500()).child(e))
                         .child(
                             div()

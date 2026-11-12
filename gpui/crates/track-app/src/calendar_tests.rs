@@ -1,42 +1,59 @@
 use crate::core::interaction::DragState;
-use crate::testing::{entry, fake_data, hanging_server, open_app_with, stub_server};
+use crate::testing::{Fixture, insert_entry, open_app_db, wait_io};
 use chrono::{Local, NaiveDate, TimeZone};
 use gpui::{Modifiers, MouseButton, TestAppContext, point, px};
 
-fn wait_io(cx: &mut gpui::VisualTestContext) {
-    for _ in 0..100 {
-        cx.run_until_parked();
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
+fn day(d: u32) -> NaiveDate {
+    NaiveDate::from_ymd_opt(2026, 11, d).unwrap()
 }
 
-/// Opens the calendar on 2026-11-12 (Thu, 稼働日 view → Mon 9 .. Fri 13) with two entries.
-fn setup(cx: &mut TestAppContext) -> (gpui::Entity<crate::app::TrackApp>, &mut gpui::VisualTestContext) {
-    setup_with(cx, "http://127.0.0.1:9/api".into())
+fn at(d: u32, h: u32, m: u32) -> chrono::DateTime<chrono::Utc> {
+    Local.with_ymd_and_hms(2026, 11, d, h, m, 0).unwrap().to_utc()
 }
 
-fn setup_with(cx: &mut TestAppContext, base: String) -> (gpui::Entity<crate::app::TrackApp>, &mut gpui::VisualTestContext) {
-    cx.executor().allow_parking();
-    let (app, vcx) = open_app_with(cx, base);
-    let p = fake_data().projects[0].clone();
+/// Calendar on 2026-11-12 (Thu, 稼働日 → Mon 9 .. Fri 13) with entry "a" (10:00–11:00, Alpha).
+/// Older entries give the picker title suggestions: Alpha 「定例会議」(newest) 「定例レビュー」「設計」,
+/// no project 「ていれい会議」「設計」.
+fn setup(cx: &mut TestAppContext) -> (gpui::Entity<crate::app::TrackApp>, &mut gpui::VisualTestContext, Fixture) {
+    let (app, vcx, f) = open_app_db(
+        cx,
+        |db| {
+            insert_entry(db, "a", at(12, 10, 0), at(12, 11, 0), Some("p1"), "作業a");
+            insert_entry(db, "t3", local_day(2, 9), local_day(2, 10), Some("p1"), "設計");
+            insert_entry(db, "t2", local_day(3, 9), local_day(3, 10), Some("p1"), "定例レビュー");
+            insert_entry(db, "t1", local_day(4, 9), local_day(4, 10), Some("p1"), "定例会議");
+            insert_entry(db, "n2", local_day(2, 11), local_day(2, 12), None, "設計");
+            insert_entry(db, "n1", local_day(3, 11), local_day(3, 12), None, "ていれい会議");
+        },
+        "http://127.0.0.1:9/api",
+    );
     app.update(vcx, |a, cx| {
         a.calendar.update(cx, |c, cx| {
-            c.anchor = NaiveDate::from_ymd_opt(2026, 11, 12).unwrap();
-            c.cache = crate::core::interaction::EntryCache::new(vec![entry("a", 12, (10, 0), (11, 0), Some(&p))]);
+            c.anchor = day(12);
             cx.notify();
         })
     });
-    vcx.run_until_parked();
-    // keep the fetched (failing) load from overwriting the cache
-    app.update(vcx, |a, cx| a.calendar.update(cx, |c, _| c.block_reload_for_tests()));
-    (app, vcx)
+    wait_io(vcx);
+    (app, vcx, f)
+}
+
+fn local_day(d: u32, h: u32) -> chrono::DateTime<chrono::Utc> {
+    at(d, h, 0)
+}
+
+fn stored(f: &Fixture, id: &str) -> Option<track_core::model::TimeEntry> {
+    f.db().entry(id).unwrap()
+}
+
+fn click(cx: &mut gpui::VisualTestContext, selector: &'static str) {
+    let b = cx.debug_bounds(selector).unwrap_or_else(|| panic!("{selector} not rendered"));
+    cx.simulate_click(b.center(), Modifiers::none());
 }
 
 #[gpui::test]
 fn drag_on_empty_space_opens_picker_placeholder(cx: &mut TestAppContext) {
-    let (app, cx) = setup(cx);
+    let (app, cx, _f) = setup(cx);
     let b = cx.debug_bounds("entry-a").expect("entry block");
-    // Drag 1 hour on the same column well below the entry.
     let x = b.center().x;
     let start = point(x, b.origin.y + px(96. * 3.));
     cx.simulate_mouse_down(start, MouseButton::Left, Modifiers::none());
@@ -61,89 +78,77 @@ fn drag_entry_one_column_right_and_30_minutes_down(cx: &mut gpui::VisualTestCont
 }
 
 #[gpui::test]
-fn moving_entry_across_days_applies_immediately(cx: &mut TestAppContext) {
-    let (app, cx) = setup_with(cx, hanging_server());
+fn moving_entry_across_days_is_saved(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
     drag_entry_one_column_right_and_30_minutes_down(cx);
-    let e = app.read_with(cx, |a, cx| a.calendar.read(cx).cache.get("a").unwrap().clone());
-    assert_eq!(e.start, Local.with_ymd_and_hms(2026, 11, 13, 10, 30, 0).unwrap().to_utc());
-    assert_eq!(e.end, Local.with_ymd_and_hms(2026, 11, 13, 11, 30, 0).unwrap().to_utc());
+    wait_io(cx);
+    let e = stored(&f, "a").unwrap();
+    assert_eq!((e.start, e.end), (at(13, 10, 30), at(13, 11, 30)));
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).cache.get("a").map(|e| e.start)), Some(at(13, 10, 30)));
 }
 
 #[gpui::test]
-fn moving_entry_rolls_back_when_server_fails(cx: &mut TestAppContext) {
-    let (app, cx) = setup(cx);
+fn moving_entry_rolls_back_when_saving_fails(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
+    f.data.fail_ops(&["update_entry"]);
     drag_entry_one_column_right_and_30_minutes_down(cx);
     wait_io(cx);
-    let back = app.read_with(cx, |a, cx| a.calendar.read(cx).cache.get("a").unwrap().start);
-    assert_eq!(back, Local.with_ymd_and_hms(2026, 11, 12, 10, 0, 0).unwrap().to_utc());
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).cache.get("a").map(|e| e.start)), Some(at(12, 10, 0)));
+    assert_eq!(stored(&f, "a").unwrap().start, at(12, 10, 0));
 }
 
 #[gpui::test]
 fn arrow_keys_nudge_selected_entry(cx: &mut TestAppContext) {
-    let (app, cx) = setup_with(cx, hanging_server());
+    let (app, cx, f) = setup(cx);
     let b = cx.debug_bounds("entry-a").expect("entry block");
     cx.simulate_click(b.center(), Modifiers::none());
     assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).selected.clone()), Some("a".into()));
     cx.simulate_keystrokes("down");
-    let e = app.read_with(cx, |a, cx| a.calendar.read(cx).cache.get("a").unwrap().clone());
-    assert_eq!(e.start, Local.with_ymd_and_hms(2026, 11, 12, 10, 15, 0).unwrap().to_utc());
+    wait_io(cx);
+    assert_eq!(stored(&f, "a").unwrap().start, at(12, 10, 15));
     cx.simulate_keystrokes("shift-down");
-    let e = app.read_with(cx, |a, cx| a.calendar.read(cx).cache.get("a").unwrap().clone());
-    assert_eq!(e.end, Local.with_ymd_and_hms(2026, 11, 12, 11, 30, 0).unwrap().to_utc());
+    wait_io(cx);
+    assert_eq!(stored(&f, "a").unwrap().end, at(12, 11, 30));
     cx.simulate_keystrokes("escape");
     assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).selected.clone()), None);
 }
 
 #[gpui::test]
 fn resize_bottom_edge_extends_entry(cx: &mut TestAppContext) {
-    let (app, cx) = setup_with(cx, hanging_server());
+    let (_app, cx, f) = setup(cx);
     let b = cx.debug_bounds("entry-a").expect("entry block");
     let edge = point(b.center().x, b.origin.y + b.size.height - px(2.));
     cx.simulate_mouse_down(edge, MouseButton::Left, Modifiers::none());
     let to = point(edge.x, edge.y + px(48.));
     cx.simulate_mouse_move(to, Some(MouseButton::Left), Modifiers::none());
     cx.simulate_mouse_up(to, MouseButton::Left, Modifiers::none());
-    let e = app.read_with(cx, |a, cx| a.calendar.read(cx).cache.get("a").unwrap().clone());
-    assert_eq!(e.start, Local.with_ymd_and_hms(2026, 11, 12, 10, 0, 0).unwrap().to_utc());
-    assert_eq!(e.end, Local.with_ymd_and_hms(2026, 11, 12, 11, 30, 0).unwrap().to_utc());
+    wait_io(cx);
+    let e = stored(&f, "a").unwrap();
+    assert_eq!((e.start, e.end), (at(12, 10, 0), at(12, 11, 30)));
 }
 
 #[gpui::test]
-fn delete_key_removes_entry_optimistically(cx: &mut TestAppContext) {
-    let (app, cx) = setup_with(cx, hanging_server());
+fn delete_key_removes_entry(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
     let b = cx.debug_bounds("entry-a").expect("entry block");
     cx.simulate_click(b.center(), Modifiers::none());
     cx.simulate_keystrokes("backspace");
+    wait_io(cx);
+    assert!(stored(&f, "a").is_none());
     assert!(app.read_with(cx, |a, cx| a.calendar.read(cx).cache.get("a").is_none()));
     assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).selected.clone()), None);
 }
 
 #[gpui::test]
-fn delete_restores_entry_when_server_fails(cx: &mut TestAppContext) {
-    let (app, cx) = setup(cx);
+fn delete_restores_entry_when_saving_fails(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
+    f.data.fail_ops(&["delete_entry"]);
     let b = cx.debug_bounds("entry-a").expect("entry block");
     cx.simulate_click(b.center(), Modifiers::none());
     cx.simulate_keystrokes("backspace");
     wait_io(cx);
     assert!(app.read_with(cx, |a, cx| a.calendar.read(cx).cache.get("a").is_some()));
-}
-
-
-fn click(cx: &mut gpui::VisualTestContext, selector: &'static str) {
-    let b = cx.debug_bounds(selector).unwrap_or_else(|| panic!("{selector} not rendered"));
-    cx.simulate_click(b.center(), Modifiers::none());
-}
-
-fn titles_stub() -> (String, std::sync::Arc<std::sync::Mutex<Vec<crate::testing::Recorded>>>) {
-    stub_server(|method, path| match (method, path) {
-        ("GET", "/api/entries/titles") => (200, r#"["定例会議","定例レビュー","設計"]"#.into()),
-        _ => (500, r#"{"error":"stub"}"#.into()),
-    })
-}
-
-fn last_body(log: &std::sync::Arc<std::sync::Mutex<Vec<crate::testing::Recorded>>>, method: &str) -> serde_json::Value {
-    let rec = log.lock().unwrap().iter().rev().find(|r| r.method == method).cloned().expect("request recorded");
-    serde_json::from_str(&rec.body).unwrap()
+    assert!(stored(&f, "a").is_some());
 }
 
 fn drag_create_one_hour(cx: &mut gpui::VisualTestContext) {
@@ -154,10 +159,14 @@ fn drag_create_one_hour(cx: &mut gpui::VisualTestContext) {
     cx.simulate_mouse_up(point(start.x, start.y + px(96.)), MouseButton::Left, Modifiers::none());
 }
 
+/// Entries on the 12th other than the fixture's "a".
+fn created_on_12th(f: &Fixture) -> Vec<track_core::model::TimeEntry> {
+    f.db().entries(at(12, 0, 0), at(13, 0, 0)).unwrap().into_iter().filter(|e| e.id != "a").collect()
+}
+
 #[gpui::test]
 fn picker_creates_entry_with_project_title_and_locked_tag(cx: &mut TestAppContext) {
-    let (base, log) = titles_stub();
-    let (app, cx) = setup_with(cx, base);
+    let (app, cx, f) = setup(cx);
     drag_create_one_hour(cx);
     assert!(cx.debug_bounds("project-picker").is_some(), "picker shown");
     click(cx, "project-p1");
@@ -166,13 +175,13 @@ fn picker_creates_entry_with_project_title_and_locked_tag(cx: &mut TestAppContex
     cx.simulate_keystrokes("down enter"); // first suggestion → 定例会議
     cx.simulate_keystrokes("cmd-enter");
     wait_io(cx);
-    let body = last_body(&log, "POST");
-    assert_eq!(body["projectId"], "p1");
-    assert_eq!(body["title"], "定例会議");
-    assert_eq!(body["tagIds"], serde_json::json!(["t1"])); // Alpha's project tag is locked on
-    let (s, e) = (body["start"].as_str().unwrap(), body["end"].as_str().unwrap());
-    let dur = chrono::DateTime::parse_from_rfc3339(e).unwrap() - chrono::DateTime::parse_from_rfc3339(s).unwrap();
-    assert_eq!(dur.num_minutes(), 60);
+    let created = created_on_12th(&f);
+    assert_eq!(created.len(), 1);
+    let e = &created[0];
+    assert_eq!(e.project_id.as_deref(), Some("p1"));
+    assert_eq!(e.title.as_deref(), Some("定例会議"));
+    assert_eq!(e.tags.iter().map(|t| t.tag_id.as_str()).collect::<Vec<_>>(), vec!["t1"]); // Alpha's project tag is locked on
+    assert_eq!((e.end - e.start).num_minutes(), 60);
     assert!(app.read_with(cx, |a, cx| a.calendar.read(cx).picker.is_none()));
     assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).drag.clone()), DragState::Idle);
 }
@@ -180,16 +189,11 @@ fn picker_creates_entry_with_project_title_and_locked_tag(cx: &mut TestAppContex
 #[gpui::test]
 fn picker_ignores_enter_while_ime_is_composing(cx: &mut TestAppContext) {
     // The composing text 「てい」 prefixes a suggestion, so without the guard Enter would accept it.
-    let (base, log) = stub_server(|method, path| match (method, path) {
-        ("GET", "/api/entries/titles") => (200, r#"["ていれい会議","設計"]"#.into()),
-        _ => (500, r#"{"error":"stub"}"#.into()),
-    });
-    let (app, cx) = setup_with(cx, base);
+    let (app, cx, f) = setup(cx);
     drag_create_one_hour(cx);
     click(cx, "project-none");
     wait_io(cx);
     cx.simulate_keystrokes("down"); // highlight first suggestion
-    // Start an IME composition (marked text) and press Enter: it must not pick the suggestion.
     let picker = app.read_with(cx, |a, cx| a.calendar.read(cx).picker.as_ref().unwrap().0.clone());
     let title = picker.read_with(cx, |p, _| p.title_state());
     cx.update(|window, cx| {
@@ -199,14 +203,13 @@ fn picker_ignores_enter_while_ime_is_composing(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("enter");
     cx.simulate_keystrokes("cmd-enter");
     wait_io(cx);
-    let body = last_body(&log, "POST");
-    assert_ne!(body.get("title").and_then(|t| t.as_str()), Some("ていれい会議"));
+    let created = created_on_12th(&f);
+    assert!(created.iter().all(|e| e.title.as_deref() != Some("ていれい会議")), "{created:?}");
 }
 
 #[gpui::test]
 fn picker_escape_cancels(cx: &mut TestAppContext) {
-    let (base, _log) = titles_stub();
-    let (app, cx) = setup_with(cx, base);
+    let (app, cx, _f) = setup(cx);
     drag_create_one_hour(cx);
     cx.simulate_keystrokes("escape");
     assert!(app.read_with(cx, |a, cx| a.calendar.read(cx).picker.is_none()));
@@ -214,9 +217,8 @@ fn picker_escape_cancels(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn edit_dialog_saves_patch(cx: &mut TestAppContext) {
-    let (base, log) = titles_stub();
-    let (app, cx) = setup_with(cx, base);
+fn edit_dialog_saves_changes(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
     let b = cx.debug_bounds("entry-a").expect("entry block");
     cx.simulate_click(b.center(), Modifiers::none());
     assert_eq!(cx.debug_bounds("entry-a"), Some(b), "selecting must not change the block's geometry");
@@ -226,34 +228,27 @@ fn edit_dialog_saves_patch(cx: &mut TestAppContext) {
     assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).editing.clone()), Some("a".into()));
     cx.simulate_keystrokes("cmd-a");
     cx.simulate_input("新タイトル");
-    // switch project to Beta: its locked tags are none, existing tags kept
     click(cx, "edit-project-button");
     click(cx, "project-p2");
     click(cx, "edit-save");
     wait_io(cx);
-    let body = last_body(&log, "PATCH");
-    assert_eq!(body["title"], "新タイトル");
-    assert_eq!(body["projectId"], "p2");
-    assert_eq!(body["note"], serde_json::Value::Null);
-    assert_eq!(body["breakMinutes"], 0);
-    assert_eq!(chrono::DateTime::parse_from_rfc3339(body["start"].as_str().unwrap()).unwrap(), Local.with_ymd_and_hms(2026, 11, 12, 10, 0, 0).unwrap());
+    let e = stored(&f, "a").unwrap();
+    assert_eq!(e.title.as_deref(), Some("新タイトル"));
+    assert_eq!(e.project_id.as_deref(), Some("p2"));
+    assert_eq!((e.note.clone(), e.break_minutes, e.start), (None, 0, at(12, 10, 0)));
     assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).editing.clone()), None);
 }
 
 #[gpui::test]
 fn changing_period_mid_drag_cancels_instead_of_saving_elsewhere(cx: &mut TestAppContext) {
-    let (base, log) = titles_stub();
-    let (app, cx) = setup_with(cx, base);
+    let (app, cx, f) = setup(cx);
     let b = cx.debug_bounds("entry-a").expect("entry block");
     cx.simulate_mouse_down(b.center(), MouseButton::Left, Modifiers::none());
     cx.simulate_mouse_move(point(b.center().x, b.center().y + px(48.)), Some(MouseButton::Left), Modifiers::none());
     cx.simulate_keystrokes("cmd-]");
     cx.simulate_mouse_up(point(b.center().x, b.center().y + px(48.)), MouseButton::Left, Modifiers::none());
     wait_io(cx);
-    assert!(log.lock().unwrap().iter().all(|r| r.method != "PATCH"), "no save after navigating away");
     assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).drag.clone()), DragState::Idle);
-    let e = app.read_with(cx, |a, cx| a.calendar.read(cx).cache.get("a").cloned());
-    if let Some(e) = e {
-        assert_eq!(e.start, Local.with_ymd_and_hms(2026, 11, 12, 10, 0, 0).unwrap().to_utc());
-    }
+    let e = stored(&f, "a").unwrap();
+    assert_eq!((e.start, e.end), (at(12, 10, 0), at(12, 11, 0)), "no save after navigating away");
 }

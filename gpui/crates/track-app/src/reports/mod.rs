@@ -2,7 +2,7 @@ pub mod custom_output;
 mod summary;
 pub mod weekly_report;
 
-use crate::api::{GroupBy, ReportEntry, ReportQuery, ReportRange, ReportResponse};
+use track_core::model::{GroupBy, ReportEntry, ReportQuery, ReportRange, ReportResponse};
 use crate::app::AppState;
 use crate::core::geometry::at_minutes;
 use track_core::report::group::group_entries_by_title;
@@ -617,7 +617,7 @@ impl ReportsView {
                 div().child("時間").into_any_element(),
                 div().child("割合").into_any_element(),
             ));
-        let tag_pills = |tags: &[crate::api::Tag]| -> AnyElement {
+        let tag_pills = |tags: &[track_core::model::Tag]| -> AnyElement {
             if tags.is_empty() {
                 div().text_color(n300()).child("—").into_any_element()
             } else {
