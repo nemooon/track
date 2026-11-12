@@ -7,7 +7,17 @@ pub mod weekly;
 
 #[cfg(test)]
 pub(crate) mod fixtures {
-    use crate::api::*;
+    use crate::model::*;
+
+    /// Client "Acme" (c1) with projects Alpha (p1, tag t1) and Beta (p2).
+    pub fn projects() -> Vec<Project> {
+        let client = Client { id: "c1".into(), name: "Acme".into(), archived: false };
+        let tag = Tag { id: "t1".into(), name: "定例".into(), color: "#22c55e".into() };
+        vec![
+            Project { id: "p1".into(), client_id: "c1".into(), name: "Alpha".into(), color: "#3b82f6".into(), archived: false, client: client.clone(), tags: vec![TagLink { tag_id: "t1".into(), tag }] },
+            Project { id: "p2".into(), client_id: "c1".into(), name: "Beta".into(), color: "#ef4444".into(), archived: false, client, tags: vec![] },
+        ]
+    }
 
     pub fn col_field(id: &str, field: ReportCopyField) -> ReportCopyColumn {
         ReportCopyColumn::Field { id: id.into(), field, label: None, duration_format: None }

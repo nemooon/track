@@ -1,5 +1,5 @@
 //! Pure helpers behind the Reports screen (ReportsPage.tsx, ReportRow.tsx, FilterMultiSelect.tsx).
-use crate::api::{GroupBy, Project, ReportQuery};
+use crate::model::{GroupBy, Project, ReportQuery};
 
 pub const PALETTE: [&str; 10] = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16", "#f97316", "#6366f1"];
 
@@ -78,8 +78,8 @@ pub fn percent(part: i64, total: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::{GroupBy, ReportQuery, ReportRange};
-    use crate::testing::fake_data;
+    use crate::model::{GroupBy, ReportQuery, ReportRange};
+    use crate::report::fixtures::projects;
 
     fn opts() -> Vec<FilterOption> {
         vec![
@@ -104,7 +104,7 @@ mod tests {
 
     #[test]
     fn client_change_drops_unmatched_projects() {
-        let ps = fake_data().projects;
+        let ps = projects();
         assert_eq!(keep_projects_for_clients(&["p1".into(), "zz".into()], &["c1".into()], &ps), vec!["p1".to_string()]);
         assert!(keep_projects_for_clients(&["p1".into()], &["other".into()], &ps).is_empty());
         // clearing the client filter keeps project selections

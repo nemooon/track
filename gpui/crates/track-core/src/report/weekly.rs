@@ -1,7 +1,7 @@
 //! Weekly report prompt (ReportsPage.tsx buildWeeklyReportPrompt / replaceMarkdownSection / periodLabel).
 use super::copy::format_report_duration;
-use crate::api::{ReportDurationFormat, ReportEntriesResponse};
-use crate::core::time::week_start;
+use crate::model::{ReportDurationFormat, ReportEntriesResponse};
+use crate::dates::week_start;
 use chrono::{Datelike, Duration, NaiveDate};
 
 pub fn japanese_duration(m: i64) -> String {
@@ -106,8 +106,8 @@ pub fn replace_markdown_section(markdown: &str, heading: &str, body: &str) -> St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::ReportEntriesResponse;
-    use crate::core::report::fixtures::*;
+    use crate::model::ReportEntriesResponse;
+    use crate::report::fixtures::*;
 
     #[test]
     fn weekly_prompt_fills_placeholders_and_main_work() {

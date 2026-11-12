@@ -1,6 +1,6 @@
 //! reportOutputCache.ts — stored in PersistState instead of localStorage.
 use super::aggregation::AiAggregationRow;
-use crate::api::{GroupBy, ReportCopyFormat, ReportEntry, ReportRange, ReportRow};
+use crate::model::{GroupBy, ReportCopyFormat, ReportEntry, ReportRange, ReportRow};
 use serde::{Deserialize, Serialize};
 
 pub const MAX_CACHE_ITEMS: usize = 8;
@@ -69,9 +69,9 @@ pub fn save_output(cache: &mut Vec<CachedOutput>, entry: CachedOutput, now: i64)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::{GroupBy, ReportCopyField as F, ReportRange, ReportRow};
-    use crate::core::report::aggregation::AiAggregationRow;
-    use crate::core::report::fixtures::*;
+    use crate::model::{GroupBy, ReportCopyField as F, ReportRange, ReportRow};
+    use crate::report::aggregation::AiAggregationRow;
+    use crate::report::fixtures::*;
 
     fn input() -> CacheKeyInput {
         CacheKeyInput {

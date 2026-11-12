@@ -16,7 +16,7 @@ pub struct PersistState {
     /// `reports.summaryCollapsed`
     pub summary_collapsed: bool,
     /// `reports.customOutputCache.v1`
-    pub output_cache: Vec<crate::core::report::cache::CachedOutput>,
+    pub output_cache: Vec<track_core::report::cache::CachedOutput>,
 }
 
 impl Default for PersistState {

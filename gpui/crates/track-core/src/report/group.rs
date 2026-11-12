@@ -1,5 +1,5 @@
 //! groupEntriesByTitle (ReportRow.tsx) for the 「まとめる」 switch.
-use crate::api::{ReportEntry, ReportEntryProject, Tag};
+use crate::model::{ReportEntry, ReportEntryProject, Tag};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct GroupedEntry {
@@ -39,7 +39,7 @@ pub fn group_entries_by_title(entries: &[ReportEntry]) -> Vec<GroupedEntry> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::report::fixtures::*;
+    use crate::report::fixtures::*;
 
     #[test]
     fn group_same_titles_drops_mixed_project() {

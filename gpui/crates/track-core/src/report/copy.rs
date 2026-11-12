@@ -1,8 +1,8 @@
 //! reportCopy.ts
 use super::aggregation::AiAggregationRow;
-use crate::api::{ReportCopyColumn, ReportCopyField, ReportCopyFormat, ReportDurationFormat};
+use crate::model::{ReportCopyColumn, ReportCopyField, ReportCopyFormat, ReportDurationFormat};
 #[cfg(test)]
-use crate::api::ReportEntry;
+use crate::model::ReportEntry;
 #[cfg(test)]
 use chrono::Local;
 
@@ -144,11 +144,11 @@ pub fn build_aggregation_copy_text(rows: &[AiAggregationRow], total: i64, f: &Re
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::{ReportCopyColumn as C, ReportCopyField as F, ReportDurationFormat as D, Tag};
-    use crate::core::report::aggregation::AiAggregationRow;
-    use crate::core::report::fixtures::*;
+    use crate::model::{ReportCopyColumn as C, ReportCopyField as F, ReportDurationFormat as D, Tag};
+    use crate::report::aggregation::AiAggregationRow;
+    use crate::report::fixtures::*;
 
-    fn entry() -> crate::api::ReportEntry {
+    fn entry() -> crate::model::ReportEntry {
         let mut e = report_entry("entry-1", 90, Some("設計, レビュー"), Some(""), Some(("project-1", "Track", "社内")));
         e.tags = vec![Tag { id: "tag-1".into(), name: "開発".into(), color: "#000000".into() }];
         e

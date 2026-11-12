@@ -3,7 +3,7 @@ use super::custom_output::provider_label;
 use crate::api::ndjson::AiStreamEvent;
 use crate::api::{ApiClient, ReportQuery};
 use crate::app::AppState;
-use crate::core::report::weekly::{build_weekly_report_prompt, period_label, replace_markdown_section};
+use track_core::report::weekly::{build_weekly_report_prompt, period_label, replace_markdown_section};
 use crate::ui::theme::*;
 use chrono::NaiveDate;
 use gpui::{

@@ -2,11 +2,11 @@
 use crate::api::{ApiClient, GroupBy, ReportCopyFormat, ReportEntriesResponse, ReportQuery, ReportRange, ReportRow};
 use crate::app::AppState;
 use crate::api::ndjson::AiStreamEvent;
-use crate::core::report::aggregation::{AiAggregationRow, aggregate_ai_result, build_report_aggregation_prompt};
-use crate::core::report::cache::{CacheKeyInput, CachedOutput, load_output, output_cache_key, save_output};
-use crate::core::report::copy::{aggregation_column_value, build_aggregation_copy_text, report_copy_column_header, report_copy_format_uses_ai};
-use crate::core::report::view::{child_query, display_label};
-use crate::core::report::weekly::period_label;
+use track_core::report::aggregation::{AiAggregationRow, aggregate_ai_result, build_report_aggregation_prompt};
+use track_core::report::cache::{CacheKeyInput, CachedOutput, load_output, output_cache_key, save_output};
+use track_core::report::copy::{aggregation_column_value, build_aggregation_copy_text, report_copy_column_header, report_copy_format_uses_ai};
+use track_core::report::view::{child_query, display_label};
+use track_core::report::weekly::period_label;
 use crate::core::time::format_duration_report;
 use crate::ui::{date_nav::below, theme::*};
 use chrono::{Local, NaiveDate, TimeZone};

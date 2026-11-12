@@ -1,6 +1,6 @@
 //! reportAggregation.ts
 use super::copy::report_copy_column_header;
-use crate::api::{ReportCopyColumn, ReportCopyField, ReportCopyFormat, ReportEntriesResponse};
+use crate::model::{ReportCopyColumn, ReportCopyField, ReportCopyFormat, ReportEntriesResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -138,8 +138,8 @@ pub fn aggregate_ai_result(response: &str, data: &ReportEntriesResponse) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::{ReportCopyColumn as C, ReportCopyField as F, ReportEntriesResponse};
-    use crate::core::report::fixtures::*;
+    use crate::model::{ReportCopyColumn as C, ReportCopyField as F, ReportEntriesResponse};
+    use crate::report::fixtures::*;
 
     fn data() -> ReportEntriesResponse {
         ReportEntriesResponse {
