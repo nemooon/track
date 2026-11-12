@@ -93,8 +93,13 @@ pub fn render<V: HasDateNav>(nav: DateNav, anchor: NaiveDate, kind: NavKind, cx:
                 .on_click(cx.listener(|this, _, w, cx| this.on_nav(NavEvent::Today, w, cx))),
         )
         .when(nav.open, |d| {
-            d.child(deferred(anchored().snap_to_window_with_margin(px(8.)).child(picker(nav, anchor, kind, cx))).with_priority(10))
+            d.child(below(picker(nav, anchor, kind, cx)))
         })
+}
+
+/// Overlay anchored to the bottom-left of the parent (which must be `.relative()`).
+pub fn below(content: impl IntoElement) -> Div {
+    div().absolute().top_full().left_0().child(deferred(anchored().snap_to_window_with_margin(px(8.)).child(content)).with_priority(10))
 }
 
 fn close<V: HasDateNav>(this: &mut V, cx: &mut Context<V>) {
@@ -115,6 +120,7 @@ fn picker<V: HasDateNav>(nav: DateNav, value: NaiveDate, kind: NavKind, cx: &mut
     let today = Local::now().date_naive();
     let vm = nav.view_month;
     let shell = div()
+        .debug_selector(|| "date-picker".into())
         .mt_1()
         .w(px(268.))
         .rounded_lg()

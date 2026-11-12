@@ -27,3 +27,4 @@ API サーバーの自動バックアップが本物のバックアップを上�
 ## 開発用
 
 - `scripts/winshot.sh out.png` — 試作アプリのウインドウだけをスクリーンショットする
+- `TRACK_GPUI_PAGE=reports cargo run` — レポート画面から起動する

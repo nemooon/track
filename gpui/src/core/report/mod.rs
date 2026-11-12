@@ -2,6 +2,7 @@ pub mod aggregation;
 pub mod cache;
 pub mod copy;
 pub mod group;
+pub mod view;
 pub mod weekly;
 
 #[cfg(test)]

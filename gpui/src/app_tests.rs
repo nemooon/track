@@ -35,6 +35,9 @@ fn date_picker_selects_week(cx: &mut TestAppContext) {
     let label = cx.debug_bounds("nav-label").expect("label");
     cx.simulate_click(label.center(), gpui::Modifiers::none());
     assert!(app.read_with(cx, |a, cx| a.calendar.read(cx).nav_open()));
+    let popup = cx.debug_bounds("date-picker").expect("picker");
+    assert!(popup.origin.y >= label.origin.y + label.size.height, "picker opens below the label: {popup:?} vs {label:?}");
+    assert!((popup.origin.x - label.origin.x).abs() < gpui::px(80.), "picker is horizontally aligned with the navigator");
     // Calendar default (稼働日) uses the week picker; pick the week containing the 1st of this month.
     let first = Local::now().date_naive().with_day(1).unwrap();
     let ws = crate::core::time::week_start(first);

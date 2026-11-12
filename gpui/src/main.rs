@@ -13,6 +13,8 @@ mod testing;
 mod app_tests;
 #[cfg(test)]
 mod calendar_tests;
+#[cfg(test)]
+mod reports_tests;
 
 use gpui::{App, AppContext, Bounds, Point, TitlebarOptions, WindowBounds, WindowOptions, px, size};
 use gpui_component::Root;

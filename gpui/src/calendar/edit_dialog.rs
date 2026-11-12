@@ -209,8 +209,8 @@ impl Render for EditForm {
                                 this.select_open = false;
                                 cx.notify();
                             });
-                            d.child(
-                                deferred(
+                            d.relative().child(
+                                div().absolute().top_full().left_0().child(deferred(
                                     anchored().snap_to_window_with_margin(px(8.)).child(
                                         div()
                                             .id("project-select")
@@ -237,7 +237,7 @@ impl Render for EditForm {
                                             .child(project_list(&self.projects, &q, on_pick, cx)),
                                     ),
                                 )
-                                .with_priority(20),
+                                .with_priority(20)),
                             )
                         }),
                 ),

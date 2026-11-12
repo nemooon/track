@@ -100,7 +100,9 @@ impl TrackApp {
         let reports = cx.new(|cx| ReportsView::new(state.clone(), window, cx));
         let focus = cx.focus_handle();
         focus.focus(window, cx);
-        Self { state, page: Page::Calendar, calendar, reports, focus }
+        // Dev convenience: TRACK_GPUI_PAGE=reports opens the Reports screen first.
+        let page = if std::env::var("TRACK_GPUI_PAGE").as_deref() == Ok("reports") { Page::Reports } else { Page::Calendar };
+        Self { state, page, calendar, reports, focus }
     }
 
     fn show(&mut self, page: Page, cx: &mut Context<Self>) {
