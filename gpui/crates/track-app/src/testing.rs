@@ -1,5 +1,4 @@
 //! Headless UI test helpers (GPUI TestAppContext) over a temporary SQLite DB.
-use crate::api::ApiClient;
 use crate::app::{AppData, AppState, TrackApp};
 use crate::data::DataClient;
 use chrono::{DateTime, Local, NaiveDate, TimeZone, Utc};
@@ -83,15 +82,14 @@ fn read_app_data(dir: &Path) -> AppData {
 }
 
 /// Opens a TrackApp over a fresh temp DB with the reference data (`seed_reference`) plus `seed`.
-/// AI generation goes to `ai_base` (a stub server or an unused port).
-pub fn open_app_db<'a>(cx: &'a mut TestAppContext, seed: impl FnOnce(&mut Db), ai_base: &str) -> (Entity<TrackApp>, &'a mut VisualTestContext, Fixture) {
+pub fn open_app_db(cx: &mut TestAppContext, seed: impl FnOnce(&mut Db)) -> (Entity<TrackApp>, &mut VisualTestContext, Fixture) {
     let dir = tempfile::tempdir().unwrap().keep();
     {
         let mut db = Db::open(&dir).unwrap();
         seed_reference(&mut db);
         seed(&mut db);
     }
-    let data = DataClient::open_unguarded(&dir, ApiClient::new(ai_base.to_string()));
+    let data = DataClient::open_unguarded(&dir);
     let app_data = read_app_data(&dir);
     let (app, vcx) = open_with(cx, data.clone(), dir.join("p.json"), Some(app_data));
     (app, vcx, Fixture { dir, data })
@@ -105,7 +103,7 @@ pub fn open_app_loading(cx: &mut TestAppContext, data: DataClient) -> (Entity<Tr
 
 /// Default: empty reference data, AI pointed at an unused port.
 pub fn open_app(cx: &mut TestAppContext) -> (Entity<TrackApp>, &mut VisualTestContext) {
-    let (app, vcx, _f) = open_app_db(cx, |_| {}, "http://127.0.0.1:9/api");
+    let (app, vcx, _f) = open_app_db(cx, |_| {});
     (app, vcx)
 }
 
@@ -144,48 +142,14 @@ pub fn wait_io(cx: &mut VisualTestContext) {
     }
 }
 
-#[derive(Debug, Clone)]
-#[allow(dead_code)] // method kept for debugging stub traffic
-pub struct Recorded {
-    pub method: String,
-    pub path: String,
-    pub body: String,
-}
-
-/// Minimal HTTP stub (used for the AI stream until track-core has providers).
-pub fn stub_server(route: impl Fn(&str, &str) -> (u16, String) + Send + Sync + 'static) -> (String, std::sync::Arc<std::sync::Mutex<Vec<Recorded>>>) {
-    use std::io::{BufRead, BufReader, Read, Write};
-    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = l.local_addr().unwrap().port();
-    let log: std::sync::Arc<std::sync::Mutex<Vec<Recorded>>> = Default::default();
-    let log2 = log.clone();
-    std::thread::spawn(move || {
-        for stream in l.incoming().flatten() {
-            let mut reader = BufReader::new(stream.try_clone().unwrap());
-            let mut line = String::new();
-            if reader.read_line(&mut line).is_err() {
-                continue;
-            }
-            let mut parts = line.split_whitespace();
-            let (method, path) = (parts.next().unwrap_or("").to_string(), parts.next().unwrap_or("").to_string());
-            let mut len = 0usize;
-            loop {
-                let mut h = String::new();
-                if reader.read_line(&mut h).is_err() || h == "\r\n" || h.is_empty() {
-                    break;
-                }
-                if let Some(v) = h.to_ascii_lowercase().strip_prefix("content-length:") {
-                    len = v.trim().parse().unwrap_or(0);
-                }
-            }
-            let mut body = vec![0; len];
-            let _ = reader.read_exact(&mut body);
-            let path_only = path.split('?').next().unwrap_or("").to_string();
-            log2.lock().unwrap().push(Recorded { method: method.clone(), path: path.clone(), body: String::from_utf8_lossy(&body).into() });
-            let (status, resp) = route(&method, &path_only);
-            let mut s = stream;
-            let _ = write!(s, "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{resp}", resp.len());
-        }
-    });
-    (format!("http://127.0.0.1:{port}/api"), log)
+/// Points the app's AI at a custom command that records its stdin to `<dir>/ai-input.txt`
+/// and answers `text`.
+pub fn fake_ai(dir: &Path, text: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    let script = dir.join("fake-ai.sh");
+    std::fs::write(dir.join("ai-answer.txt"), text).unwrap();
+    std::fs::write(&script, "#!/bin/sh\nd=$(dirname \"$0\")\ncat > \"$d/ai-input.txt\"\ncat \"$d/ai-answer.txt\"\n").unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let config = serde_json::json!({ "aiProvider": "custom-command", "aiCommandExecutable": script });
+    std::fs::write(dir.join("config.json"), config.to_string()).unwrap();
 }

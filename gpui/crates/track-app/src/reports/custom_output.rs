@@ -2,7 +2,7 @@
 use track_core::model::{GroupBy, ReportCopyFormat, ReportEntriesResponse, ReportQuery, ReportRange, ReportRow};
 use crate::data::DataClient;
 use crate::app::AppState;
-use crate::api::ndjson::AiStreamEvent;
+use crate::data::AiStreamEvent;
 use track_core::report::aggregation::{AiAggregationRow, aggregate_ai_result, build_report_aggregation_prompt};
 use track_core::report::cache::{CacheKeyInput, CachedOutput, load_output, output_cache_key, save_output};
 use track_core::report::copy::{aggregation_column_value, build_aggregation_copy_text, report_copy_column_header, report_copy_format_uses_ai};
@@ -183,7 +183,7 @@ impl CustomOutput {
                 let entries = api.report_entries(&q).await.map_err(|e| e.message)?;
                 if uses_ai {
                     let prompt = build_report_aggregation_prompt(&entries, &format);
-                    let rx = api.generate_stream("report-aggregation", prompt);
+                    let rx = api.generate_stream(track_core::ai::AiMode::ReportAggregation, prompt);
                     let mut text = None;
                     while let Ok(ev) = rx.recv().await {
                         match ev {
@@ -195,7 +195,6 @@ impl CustomOutput {
                             }
                             AiStreamEvent::Result { text: t, .. } => text = Some(t),
                             AiStreamEvent::Error { message } => return Err(message),
-                            AiStreamEvent::Heartbeat => {}
                         }
                     }
                     let text = text.ok_or("AIの応答が途中で終了しました。")?;

@@ -1,5 +1,4 @@
 mod actions;
-mod api;
 mod app;
 mod calendar;
 mod core;

@@ -1,13 +1,21 @@
 //! Data access for the app: the SQLite DB through track-core, on a dedicated worker thread
 //! so the UI thread never blocks. Method names mirror the old HTTP client so views stay the same.
-use crate::api::ApiClient;
 use std::collections::HashSet;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, mpsc};
 use track_core::guard::{data_dir_from_env, dev_guard};
 use track_core::model::*;
+use track_core::ai::{AiMode, provider_from_config};
 use track_core::{CoreError, Db};
+
+/// What an AI generation reports while it runs.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AiStreamEvent {
+    Progress { kind: String, message: String },
+    Result { text: String, provider: String },
+    Error { message: String },
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DataError {
@@ -35,8 +43,6 @@ type Job = Box<dyn FnOnce(Result<&mut Db, &DataError>) + Send>;
 pub struct DataClient {
     tx: mpsc::Sender<Job>,
     pub data_dir: PathBuf,
-    /// AI generation still goes through the Bun server until track-core grows providers.
-    pub ai: ApiClient,
     /// Test hook: operations named here fail with `test_failure`.
     failing: Arc<Mutex<HashSet<&'static str>>>,
 }
@@ -44,22 +50,22 @@ pub struct DataClient {
 impl DataClient {
     /// Production: `TRACK_DATA_DIR` (default `~/.track`) behind the development guard.
     pub fn from_env() -> Self {
-        Self::open_guarded(&data_dir_from_env(), ApiClient::from_env())
+        Self::open_guarded(&data_dir_from_env())
     }
 
     /// Opens `data_dir` behind the development guard.
-    pub fn open_guarded(data_dir: &Path, ai: ApiClient) -> Self {
+    pub fn open_guarded(data_dir: &Path) -> Self {
         let guard = dev_guard(data_dir).err().map(DataError::from);
-        Self::start(data_dir.to_path_buf(), guard, ai)
+        Self::start(data_dir.to_path_buf(), guard)
     }
 
     /// Opens `data_dir` without the development guard (tests use temp dirs).
     #[cfg_attr(not(test), allow(dead_code))]
-    pub fn open_unguarded(data_dir: &Path, ai: ApiClient) -> Self {
-        Self::start(data_dir.to_path_buf(), None, ai)
+    pub fn open_unguarded(data_dir: &Path) -> Self {
+        Self::start(data_dir.to_path_buf(), None)
     }
 
-    fn start(data_dir: PathBuf, preset_error: Option<DataError>, ai: ApiClient) -> Self {
+    fn start(data_dir: PathBuf, preset_error: Option<DataError>) -> Self {
         let (tx, rx) = mpsc::channel::<Job>();
         let dir = data_dir.clone();
         std::thread::Builder::new()
@@ -77,7 +83,7 @@ impl DataClient {
                 }
             })
             .expect("db thread");
-        DataClient { tx, data_dir, ai, failing: Arc::default() }
+        DataClient { tx, data_dir, failing: Arc::default() }
     }
 
     /// Runs `f` on the DB thread. A closed DB (open failure, guard) answers every call with that error.
@@ -176,7 +182,23 @@ impl DataClient {
         self.call("data_version", |db| db.data_version())
     }
 
-    pub fn generate_stream(&self, mode: &str, input: String) -> async_channel::Receiver<crate::api::ndjson::AiStreamEvent> {
-        self.ai.generate_stream(mode, input)
+    /// Runs the configured AI provider on its own thread, streaming progress then one result or error.
+    pub fn generate_stream(&self, mode: AiMode, input: String) -> async_channel::Receiver<AiStreamEvent> {
+        let (tx, rx) = async_channel::unbounded();
+        let config = self.config();
+        std::thread::Builder::new()
+            .name("track-ai".into())
+            .spawn(move || {
+                let provider = provider_from_config(&config);
+                let result = provider.generate(mode, &input, &mut |p| {
+                    let _ = tx.send_blocking(AiStreamEvent::Progress { kind: p.kind.to_string(), message: p.message });
+                });
+                let _ = tx.send_blocking(match result {
+                    Ok(text) => AiStreamEvent::Result { text, provider: provider.id().to_string() },
+                    Err(e) => AiStreamEvent::Error { message: e.to_string() },
+                });
+            })
+            .expect("ai thread");
+        rx
     }
 }

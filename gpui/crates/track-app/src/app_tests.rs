@@ -55,7 +55,7 @@ fn settle(cx: &mut gpui::VisualTestContext) {
 #[gpui::test]
 fn refuses_to_run_outside_the_copy_db(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
-    let data = crate::data::DataClient::open_guarded(dir.path(), crate::api::ApiClient::new("http://127.0.0.1:9/api".into()));
+    let data = crate::data::DataClient::open_guarded(dir.path());
     let (app, cx) = crate::testing::open_app_loading(cx, data);
     settle(cx);
     let (loaded, err) = app.read_with(cx, |a, cx| (a.state.read(cx).data.is_some(), a.state.read(cx).error.clone()));
@@ -71,7 +71,7 @@ fn loads_reference_data_from_the_db(cx: &mut TestAppContext) {
         let mut db = track_core::Db::open(dir.path()).unwrap();
         crate::testing::seed_reference(&mut db);
     }
-    let data = crate::data::DataClient::open_unguarded(dir.path(), crate::api::ApiClient::new("http://127.0.0.1:9/api".into()));
+    let data = crate::data::DataClient::open_unguarded(dir.path());
     let (app, cx) = crate::testing::open_app_loading(cx, data);
     settle(cx);
     let names = app.read_with(cx, |a, cx| a.state.read(cx).data.as_ref().map(|d| d.projects.iter().map(|p| p.name.clone()).collect::<Vec<_>>()));
@@ -80,7 +80,7 @@ fn loads_reference_data_from_the_db(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn calendar_shows_error_when_entries_fail(cx: &mut TestAppContext) {
-    let (app, cx, f) = crate::testing::open_app_db(cx, |_| {}, "http://127.0.0.1:9/api");
+    let (app, cx, f) = crate::testing::open_app_db(cx, |_| {});
     f.data.fail_ops(&["entries"]);
     cx.simulate_keystrokes("cmd-]");
     settle(cx);
@@ -90,7 +90,7 @@ fn calendar_shows_error_when_entries_fail(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn reports_show_error_instead_of_loading_forever(cx: &mut TestAppContext) {
-    let (app, cx, f) = crate::testing::open_app_db(cx, |_| {}, "http://127.0.0.1:9/api");
+    let (app, cx, f) = crate::testing::open_app_db(cx, |_| {});
     f.data.fail_ops(&["report"]);
     cx.simulate_keystrokes("cmd-2");
     settle(cx);
@@ -104,7 +104,6 @@ fn failed_child_rows_do_not_stay_loading(cx: &mut TestAppContext) {
     let (app, cx, f) = crate::testing::open_app_db(
         cx,
         |db| crate::testing::insert_entry(db, "e1", crate::testing::local(today, 0, 0), crate::testing::local(today, 1, 0), Some("p1"), "x"),
-        "http://127.0.0.1:9/api",
     );
     f.data.fail_ops(&["report_entries"]);
     cx.simulate_keystrokes("cmd-2");
@@ -119,7 +118,7 @@ fn failed_child_rows_do_not_stay_loading(cx: &mut TestAppContext) {
 #[gpui::test]
 fn external_write_triggers_reload(cx: &mut TestAppContext) {
     use crate::testing::{insert_entry, local, open_app_db, wait_io};
-    let (app, cx, fixture) = open_app_db(cx, |_| {}, "http://127.0.0.1:9/api");
+    let (app, cx, fixture) = open_app_db(cx, |_| {});
     wait_io(cx);
     let today = Local::now().date_naive();
     assert!(app.read_with(cx, |a, cx| a.calendar.read(cx).cache.get("ext").is_none()));

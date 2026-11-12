@@ -25,7 +25,6 @@ fn setup(cx: &mut TestAppContext) -> (gpui::Entity<crate::app::TrackApp>, &mut g
             insert_entry(db, "n2", local_day(2, 11), local_day(2, 12), None, "設計");
             insert_entry(db, "n1", local_day(3, 11), local_day(3, 12), None, "ていれい会議");
         },
-        "http://127.0.0.1:9/api",
     );
     app.update(vcx, |a, cx| {
         a.calendar.update(cx, |c, cx| {

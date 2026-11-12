@@ -1,5 +1,5 @@
 use crate::reports::Children;
-use crate::testing::{Fixture, insert_entry, local, open_app_db, stub_server, wait_io};
+use crate::testing::{Fixture, fake_ai, insert_entry, local, open_app_db, wait_io};
 use chrono::Local;
 use gpui::{Modifiers, TestAppContext};
 use track_core::Db;
@@ -14,7 +14,7 @@ fn seed_week(db: &mut Db) {
 }
 
 fn setup(cx: &mut TestAppContext) -> (gpui::Entity<crate::app::TrackApp>, &mut gpui::VisualTestContext, Fixture) {
-    let (app, cx, f) = open_app_db(cx, seed_week, "http://127.0.0.1:9/api");
+    let (app, cx, f) = open_app_db(cx, seed_week);
     cx.simulate_keystrokes("cmd-2");
     wait_io(cx);
     (app, cx, f)
@@ -71,14 +71,7 @@ fn group_by_switch_and_same_titles_toggle(cx: &mut TestAppContext) {
     assert!(app.read_with(cx, |a, cx| a.state.read(cx).persist.group_same_titles));
 }
 
-fn ai_setup<'a>(cx: &'a mut TestAppContext, ai_text: &'static str) -> (gpui::Entity<crate::app::TrackApp>, &'a mut gpui::VisualTestContext, std::sync::Arc<std::sync::Mutex<Vec<crate::testing::Recorded>>>) {
-    let (base, log) = stub_server(move |_, path| match path {
-        "/api/ai/generate-stream" => {
-            let result = serde_json::json!({"type": "result", "text": ai_text, "provider": "codex"}).to_string();
-            (200, format!("{{\"type\":\"progress\",\"kind\":\"reasoning\",\"message\":\"分類中\"}}\n{{\"type\":\"heartbeat\"}}\n{result}\n"))
-        }
-        _ => (404, r#"{"error":"nf"}"#.into()),
-    });
+fn ai_setup<'a>(cx: &'a mut TestAppContext, ai_text: &'static str) -> (gpui::Entity<crate::app::TrackApp>, &'a mut gpui::VisualTestContext, Fixture) {
     let formats = serde_json::json!([
         {"id": "plain", "name": "標準", "target": "ai-aggregation", "delimiter": "tab", "includeHeader": true, "aiPrompt": "",
          "columns": [{"id": "c", "kind": "field", "field": "category"}, {"id": "n", "kind": "field", "field": "entryCount"}]},
@@ -86,7 +79,7 @@ fn ai_setup<'a>(cx: &'a mut TestAppContext, ai_text: &'static str) -> (gpui::Ent
          "columns": [{"id": "c", "kind": "field", "field": "category"}, {"id": "s", "kind": "field", "field": "summary"}]}
     ])
     .to_string();
-    let (app, cx, _f) = open_app_db(
+    let (app, cx, f) = open_app_db(
         cx,
         move |db| {
             seed_week(db);
@@ -94,11 +87,11 @@ fn ai_setup<'a>(cx: &'a mut TestAppContext, ai_text: &'static str) -> (gpui::Ent
                 .execute(r#"UPDATE "Settings" SET reportCopyFormats = ?1, weeklyReportTemplate = ?2"#, [formats.as_str(), "## 主な作業\n（ここ）\n\n## 課題\n- {{期間}}"])
                 .unwrap();
         },
-        &base,
     );
+    fake_ai(&f.dir, ai_text);
     cx.simulate_keystrokes("cmd-2");
     wait_io(cx);
-    (app, cx, log)
+    (app, cx, f)
 }
 
 fn output(app: &gpui::Entity<crate::app::TrackApp>, cx: &mut gpui::VisualTestContext) -> gpui::Entity<crate::reports::CustomOutputView> {
@@ -107,7 +100,7 @@ fn output(app: &gpui::Entity<crate::app::TrackApp>, cx: &mut gpui::VisualTestCon
 
 #[gpui::test]
 fn custom_output_without_ai_uses_report_rows_and_copies_tsv(cx: &mut TestAppContext) {
-    let (app, cx, _log) = ai_setup(cx, "");
+    let (app, cx, _f) = ai_setup(cx, "");
     click(cx, "output-open");
     wait_io(cx);
     click(cx, "output-create");
@@ -122,7 +115,7 @@ fn custom_output_without_ai_uses_report_rows_and_copies_tsv(cx: &mut TestAppCont
 
 #[gpui::test]
 fn custom_output_with_ai_streams_and_restores_from_cache(cx: &mut TestAppContext) {
-    let (app, cx, log) = ai_setup(cx, r#"{"groups":[{"label":"定例","summary":"会議","entryIds":["e1","e2"]}]}"#);
+    let (app, cx, f) = ai_setup(cx, r#"{"groups":[{"label":"定例","summary":"会議","entryIds":["e1","e2"]}]}"#);
     click(cx, "output-open");
     wait_io(cx);
     click(cx, "format-select");
@@ -132,10 +125,10 @@ fn custom_output_with_ai_streams_and_restores_from_cache(cx: &mut TestAppContext
     let out = output(&app, cx);
     let rows = out.read_with(cx, |o, _| o.result.clone());
     assert_eq!((rows[0].label.as_str(), rows[0].minutes, rows[0].summary.as_str()), ("定例", 90, "会議"));
-    let req = log.lock().unwrap().iter().find(|r| r.path == "/api/ai/generate-stream").cloned().expect("ai request");
-    let body: serde_json::Value = serde_json::from_str(&req.body).unwrap();
-    assert_eq!(body["mode"], "report-aggregation");
-    assert!(body["input"].as_str().unwrap().contains("目的別"));
+    // The configured command received the aggregation prompt on stdin.
+    let prompt = std::fs::read_to_string(f.dir.join("ai-input.txt")).expect("ai command ran");
+    assert!(prompt.starts_with("入力には、工数記録と集計の観点が含まれます。"));
+    assert!(prompt.contains("目的別"));
     // Re-open: the cached result for the same format and data is restored.
     cx.update(gpui_component::WindowExt::close_dialog);
     click(cx, "output-open");
@@ -150,7 +143,7 @@ fn custom_output_with_ai_streams_and_restores_from_cache(cx: &mut TestAppContext
 
 #[gpui::test]
 fn weekly_report_replaces_main_work_with_fixed_text(cx: &mut TestAppContext) {
-    let (app, cx, _log) = ai_setup(cx, "## 主な作業\n- AIの文章\n\n## 課題\n- なし");
+    let (app, cx, _f) = ai_setup(cx, "## 主な作業\n- AIの文章\n\n## 課題\n- なし");
     click(cx, "weekly-open");
     wait_io(cx);
     let weekly = app.read_with(cx, |a, cx| a.reports.read(cx).weekly.clone().unwrap());
@@ -162,7 +155,7 @@ fn weekly_report_replaces_main_work_with_fixed_text(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn weekly_report_requires_template(cx: &mut TestAppContext) {
-    let (app, cx, _log) = ai_setup(cx, "x");
+    let (app, cx, _f) = ai_setup(cx, "x");
     app.update(cx, |a, cx| a.state.update(cx, |s, _| s.data.as_mut().unwrap().settings.weekly_report_template = "  ".into()));
     click(cx, "weekly-open");
     wait_io(cx);

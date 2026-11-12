@@ -1,6 +1,6 @@
 //! 「週報」 dialog (ReportsPage.tsx generateWeeklyReport). The Markdown is edited as plain text.
 use super::custom_output::provider_label;
-use crate::api::ndjson::AiStreamEvent;
+use crate::data::AiStreamEvent;
 use track_core::model::{ReportQuery};
 use crate::data::DataClient;
 use crate::app::AppState;
@@ -59,7 +59,7 @@ impl WeeklyReport {
                     return Err("この週には週報に含める工数がありません。".into());
                 }
                 let (prompt, main_work) = build_weekly_report_prompt(&template, &period, &entries);
-                let rx = api.generate_stream("weekly-report", prompt);
+                let rx = api.generate_stream(track_core::ai::AiMode::WeeklyReport, prompt);
                 let mut text = None;
                 while let Ok(ev) = rx.recv().await {
                     match ev {
