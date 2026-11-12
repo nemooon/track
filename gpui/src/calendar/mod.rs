@@ -1,8 +1,9 @@
 mod entry_block;
 mod grid;
 
-use crate::api::TimeEntry;
+use crate::api::{EntryPatch, NewEntry, TimeEntry};
 use crate::app::AppState;
+use crate::core::interaction::{self, DragState, Edge, EntryCache};
 use crate::core::geometry::{BUFFER_PX, GUTTER_PX, ZOOM_LEVELS, at_minutes, minutes_to_y, y_to_minutes};
 use crate::core::holidays::holiday_name;
 use crate::core::layout::{day_total_minutes, entries_for_day, entry_span_minutes, layout_blocks};
@@ -11,9 +12,11 @@ use crate::ui::{controls, date_nav::{self, DateNav, HasDateNav, NavEvent, NavKin
 use chrono::{Datelike, Duration, Local, NaiveDate, Timelike};
 use entry_block::{BlockGeometry, lane_slot, render_block};
 use gpui::{
-    AnyElement, Bounds, Context, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, Pixels, Render,
-    ScrollHandle, StatefulInteractiveElement, Styled, Task, Window, canvas, div, point, prelude::FluentBuilder, px,
+    AnyElement, App, Bounds, Context, Entity, FocusHandle, Focusable, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollHandle,
+    StatefulInteractiveElement, Styled, Task, Window, canvas, div, point, prelude::FluentBuilder, px,
 };
+use gpui_component::{WindowExt, button::Button, notification::Notification};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -22,7 +25,13 @@ pub struct CalendarView {
     pub anchor: NaiveDate,
     pub day_count: DayCount,
     nav: DateNav,
-    pub entries: Vec<TimeEntry>,
+    pub cache: EntryCache,
+    pub drag: DragState,
+    pub editing: Option<String>,
+    focus: FocusHandle,
+    rendered_days: Vec<NaiveDate>,
+    reload_blocked: bool,
+    window: Option<gpui::AnyWindowHandle>,
     requested: Option<(NaiveDate, NaiveDate)>,
     load_task: Option<Task<()>>,
     pub selected: Option<String>,
@@ -49,7 +58,13 @@ impl CalendarView {
             anchor: Local::now().date_naive(),
             day_count: DayCount::Workdays,
             nav: DateNav::default(),
-            entries: Vec::new(),
+            cache: EntryCache::default(),
+            drag: DragState::Idle,
+            editing: None,
+            focus: cx.focus_handle(),
+            rendered_days: Vec::new(),
+            reload_blocked: false,
+            window: None,
             requested: None,
             load_task: None,
             selected: None,
@@ -60,6 +75,12 @@ impl CalendarView {
             initial_scroll_done: false,
             _ticker: ticker,
         }
+    }
+
+    #[cfg(test)]
+    pub fn block_reload_for_tests(&mut self) {
+        self.load_task = None;
+        self.reload_blocked = true;
     }
 
     pub fn nav_open(&self) -> bool {
@@ -89,13 +110,16 @@ impl CalendarView {
     /// Re-fetches `/entries` for the visible range.
     pub fn reload(&mut self, cx: &mut Context<Self>) {
         let Some((from, to)) = self.requested else { return };
+        if self.reload_blocked {
+            return;
+        }
         let api = self.state.read(cx).api.clone();
         let fut = api.entries(at_minutes(from, 0).to_utc(), at_minutes(to, 0).to_utc());
         self.load_task = Some(cx.spawn(async move |this, cx| {
             if let Ok(entries) = fut.await {
                 let _ = this.update(cx, |this, cx| {
                     if this.requested == Some((from, to)) {
-                        this.entries = entries;
+                        this.cache = EntryCache::new(entries);
                         cx.notify();
                     }
                 });
@@ -180,7 +204,7 @@ impl CalendarView {
                     .child(zoom_btn("zoom-in", "+", zoom_index == ZOOM_LEVELS.len() - 1, 1)),
             )
             .children(days.iter().map(|&d| {
-                let total = day_total_minutes(&self.entries, d);
+                let total = day_total_minutes(self.cache.entries(), d);
                 let holiday = holiday_name(d);
                 div()
                     .flex_1()
@@ -250,13 +274,13 @@ impl CalendarView {
             .when(hour_px >= 96., |d| d.children((0..24).map(|h| label(BUFFER_PX + h as f32 * hour_px + hour_px / 2., format!("{h:02}:30"), true))))
     }
 
-    fn render_column(&self, day_index: usize, day: NaiveDate, hour_px: f32, cx: &mut Context<Self>) -> AnyElement {
+    fn render_column(&self, day_index: usize, day: NaiveDate, rendered: &[TimeEntry], ghost_id: Option<&str>, hour_px: f32, cx: &mut Context<Self>) -> AnyElement {
         let state = self.state.read(cx);
         let settings = state.data.as_ref().map(|d| d.settings.clone());
         let is_work_day = settings.as_ref().is_some_and(|s| s.work_days.contains(&day.weekday().num_days_from_sunday())) && holiday_name(day).is_none();
         let body_h = 24. * hour_px + 1.;
         let bounds_store = self.column_bounds.clone();
-        let day_entries: Vec<&TimeEntry> = entries_for_day(&self.entries, day);
+        let day_entries: Vec<&TimeEntry> = entries_for_day(rendered, day);
         let spans: Vec<(i64, i64)> = day_entries.iter().map(|e| {
             let (s, e2) = entry_span_minutes(e, day);
             (s, e2.min(DAY_MINUTES))
@@ -265,7 +289,7 @@ impl CalendarView {
         // GPUI paints in child order: draw the selected block last so it sits on top (z-index: 2).
         laid.sort_by_key(|l| self.selected.as_deref() == Some(day_entries[l.index].id.as_str()));
         let now = Local::now();
-        let hover = self.hover.filter(|(i, _)| *i == day_index).map(|(_, m)| m);
+        let hover = self.display_hover().filter(|(i, _)| *i == day_index).map(|(_, m)| m);
 
         let hatch = || canvas(|_, _, _| (), |b, _, w, cx| grid::paint_hatch(b, w, cx)).w_full().h(px(BUFFER_PX));
         let body = div()
@@ -292,25 +316,56 @@ impl CalendarView {
             .children(laid.iter().map(|l| {
                 let e = day_entries[l.index];
                 let g = BlockGeometry { start_min: spans[l.index].0, end_min: spans[l.index].1, lane: l.lane, lane_count: l.lane_count };
-                let selected = self.selected.as_deref() == Some(e.id.as_str());
-                let id = e.id.clone();
-                let id2 = e.id.clone();
+                let ghost = ghost_id == Some(e.id.as_str());
+                let selected = !ghost && self.selected.as_deref() == Some(e.id.as_str());
+                let (id_hover, id_down, id_click, id_top, id_bottom) = (e.id.clone(), e.id.clone(), e.id.clone(), e.id.clone(), e.id.clone());
+                let handle = |edge: Edge, id: String| {
+                    div()
+                        .absolute()
+                        .left_0()
+                        .right_0()
+                        .h(px(6.))
+                        .map(|d| if edge == Edge::Top { d.top_0() } else { d.bottom_0() })
+                        .cursor(gpui::CursorStyle::ResizeUpDown)
+                        .on_mouse_down(MouseButton::Left, cx.listener(move |this, ev: &MouseDownEvent, w, cx| {
+                            cx.stop_propagation();
+                            this.begin_resize(&id, edge, ev.position, w, cx);
+                        }))
+                };
                 lane_slot(&g, hour_px).child(
-                    render_block(e, selected, false, &self.hovered_entry)
+                    render_block(e, selected, ghost, &self.hovered_entry)
                         .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                             if *hovered {
-                                this.hovered_entry = id.clone();
-                            } else if this.hovered_entry == id {
+                                this.hovered_entry = id_hover.clone();
+                            } else if this.hovered_entry == id_hover {
                                 this.hovered_entry.clear();
                             }
                             cx.notify();
                         }))
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.selected = Some(id2.clone());
+                        .on_mouse_down(MouseButton::Left, cx.listener(move |this, ev: &MouseDownEvent, w, cx| {
+                            cx.stop_propagation();
+                            this.begin_move(&id_down, ev.position, w, cx);
+                        }))
+                        .on_click(cx.listener(move |this, ev: &gpui::ClickEvent, _, cx| {
+                            this.selected = Some(id_click.clone());
+                            if ev.click_count() >= 2 {
+                                this.editing = Some(id_click.clone());
+                            }
                             cx.notify();
-                        })),
+                        }))
+                        .when(!ghost, |d| d.child(handle(Edge::Top, id_top)).child(handle(Edge::Bottom, id_bottom))),
                 )
             }))
+            .map(|d| match &self.drag {
+                DragState::Creating { day_index: di, anchor_min, current_min } if *di == day_index => {
+                    let (a, b) = (*anchor_min.min(current_min), *anchor_min.max(current_min));
+                    d.child(placeholder(a, b, hour_px, n500(), with_alpha(n300(), 0.3)))
+                }
+                DragState::Picking { day_index: di, start_min, end_min } if *di == day_index => {
+                    d.child(placeholder(*start_min, *end_min, hour_px, n400(), with_alpha(n200(), 0.5)))
+                }
+                _ => d,
+            })
             .when(day == now.date_naive(), |d| {
                 let m = (now.hour() * 60 + now.minute()) as i64;
                 d.child(div().absolute().left_0().right_0().top(px(minutes_to_y(m, hour_px))).h(px(1.)).bg(red500()))
@@ -339,7 +394,10 @@ impl CalendarView {
                         ),
                 )
             })
-            .on_mouse_move(cx.listener(move |this, ev: &gpui::MouseMoveEvent, _, cx| {
+            .on_mouse_move(cx.listener(move |this, ev: &MouseMoveEvent, _, cx| {
+                if this.drag != DragState::Idle {
+                    return;
+                }
                 let Some(b) = this.column_bounds.borrow().get(day_index).copied() else { return };
                 let m = y_to_minutes(f32::from(ev.position.y - b.origin.y), this.hour_px(cx));
                 if this.hover != Some((day_index, m)) {
@@ -353,8 +411,16 @@ impl CalendarView {
                     cx.notify();
                 }
             }))
-            .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| {
+            .on_mouse_down(MouseButton::Left, cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
                 this.selected = None;
+                if matches!(this.drag, DragState::Picking { .. }) {
+                    this.drag = DragState::Idle;
+                    cx.notify();
+                    return;
+                }
+                if let Some(m) = this.pointer_minutes(day_index, ev.position, cx) {
+                    this.drag = interaction::begin_create(day_index, m);
+                }
                 cx.notify();
             }));
 
@@ -368,6 +434,273 @@ impl CalendarView {
             .child(body)
             .child(hatch())
             .into_any_element()
+    }
+}
+
+fn placeholder(a: i64, b: i64, hour_px: f32, border: gpui::Rgba, bg: gpui::Hsla) -> impl IntoElement {
+    div()
+        .absolute()
+        .left(px(3.))
+        .right(px(3.))
+        .top(px(minutes_to_y(a, hour_px) + 1.))
+        .h(px((minutes_to_y(b - a, hour_px) - 3.).max(2.)))
+        .rounded_sm()
+        .border_1()
+        .border_dashed()
+        .border_color(border)
+        .bg(bg)
+}
+
+impl CalendarView {
+    fn pointer_minutes(&self, day_index: usize, pos: Point<Pixels>, cx: &App) -> Option<i64> {
+        let b = self.column_bounds.borrow().get(day_index).copied()?;
+        Some(y_to_minutes(f32::from(pos.y - b.origin.y), self.hour_px(cx)))
+    }
+
+    fn hit_day(&self, pos: Point<Pixels>) -> Option<usize> {
+        self.column_bounds.borrow().iter().position(|b| pos.x >= b.origin.x && pos.x < b.origin.x + b.size.width)
+    }
+
+    /// Hover line: follows the cursor when idle, or the active edge while dragging.
+    fn display_hover(&self) -> Option<(usize, i64)> {
+        match &self.drag {
+            DragState::Creating { day_index, current_min, .. } => Some((*day_index, *current_min)),
+            DragState::Moving { day_index, start_min, duration, .. } => Some((*day_index, start_min + duration)),
+            DragState::Resizing { day_index, edge, start_min, end_min, .. } => Some((*day_index, if *edge == Edge::Top { *start_min } else { *end_min })),
+            DragState::Idle => self.hover,
+            DragState::Picking { .. } => None,
+        }
+    }
+
+    fn day_index_of(&self, e: &TimeEntry) -> Option<usize> {
+        let d = e.start.with_timezone(&Local).date_naive();
+        self.rendered_days.iter().position(|x| *x == d)
+    }
+
+    fn begin_move(&mut self, id: &str, pos: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
+        self.focus.focus(window, cx);
+        let Some(e) = self.cache.get(id).cloned() else { return };
+        let Some(di) = self.day_index_of(&e) else { return };
+        let day = self.rendered_days[di];
+        let (s, en) = entry_span_minutes(&e, day);
+        let Some(pm) = self.pointer_minutes(di, pos, cx) else { return };
+        self.selected = Some(id.to_string());
+        self.drag = DragState::Moving { id: id.into(), day_index: di, start_min: s, duration: en - s, offset_min: pm - s, orig_day_index: di, orig_start_min: s };
+        cx.notify();
+    }
+
+    fn begin_resize(&mut self, id: &str, edge: Edge, _pos: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
+        self.focus.focus(window, cx);
+        let Some(e) = self.cache.get(id).cloned() else { return };
+        let Some(di) = self.day_index_of(&e) else { return };
+        let (s, en) = entry_span_minutes(&e, self.rendered_days[di]);
+        self.selected = Some(id.to_string());
+        self.drag = DragState::Resizing { id: id.into(), day_index: di, edge, start_min: s, end_min: en, orig: (s, en) };
+        cx.notify();
+    }
+
+    fn on_drag_move(&mut self, pos: Point<Pixels>, cx: &mut Context<Self>) {
+        let next = match &self.drag {
+            DragState::Creating { day_index, .. } => match self.pointer_minutes(*day_index, pos, cx) {
+                Some(m) => interaction::update_create(&self.drag, m),
+                None => return,
+            },
+            DragState::Moving { day_index, .. } => {
+                let hit = self.hit_day(pos);
+                match self.pointer_minutes(hit.unwrap_or(*day_index), pos, cx) {
+                    Some(m) => interaction::update_move(&self.drag, hit, m),
+                    None => return,
+                }
+            }
+            DragState::Resizing { day_index, .. } => match self.pointer_minutes(*day_index, pos, cx) {
+                Some(m) => interaction::update_resize(&self.drag, m),
+                None => return,
+            },
+            _ => return,
+        };
+        if next != self.drag {
+            self.drag = next;
+            cx.notify();
+        }
+    }
+
+    fn on_drag_end(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let drag = std::mem::take(&mut self.drag);
+        match drag {
+            DragState::Creating { .. } => {
+                if let Some(p) = interaction::finish_create(&drag) {
+                    self.drag = p;
+                }
+            }
+            DragState::Moving { id, day_index, start_min, duration, orig_day_index, orig_start_min, .. } => {
+                if (day_index, start_min) != (orig_day_index, orig_start_min) {
+                    let day = self.rendered_days[day_index];
+                    self.commit_times(&id, at_minutes(day, start_min).to_utc(), at_minutes(day, start_min + duration).to_utc(), window, cx);
+                }
+            }
+            DragState::Resizing { id, day_index, start_min, end_min, orig, .. } => {
+                if (start_min, end_min) != orig {
+                    let day = self.rendered_days[day_index];
+                    self.commit_times(&id, at_minutes(day, start_min).to_utc(), at_minutes(day, end_min).to_utc(), window, cx);
+                }
+            }
+            other => self.drag = other,
+        }
+        cx.notify();
+    }
+
+    /// Entries as drawn: the one being moved/resized is replaced by its ghost.
+    fn rendered_entries(&self) -> (Vec<TimeEntry>, Option<String>) {
+        let mut list = self.cache.snapshot();
+        let ghost = match &self.drag {
+            DragState::Moving { id, day_index, start_min, duration, .. } => Some((id.clone(), *day_index, *start_min, start_min + duration)),
+            DragState::Resizing { id, day_index, start_min, end_min, .. } => Some((id.clone(), *day_index, *start_min, *end_min)),
+            _ => None,
+        };
+        let Some((id, di, s, e)) = ghost else { return (list, None) };
+        if let (Some(entry), Some(day)) = (list.iter_mut().find(|x| x.id == id), self.rendered_days.get(di)) {
+            entry.start = at_minutes(*day, s).to_utc();
+            entry.end = at_minutes(*day, e).to_utc();
+        }
+        (list, Some(id))
+    }
+
+    fn notify_msg(&self, n: Notification, cx: &mut Context<Self>) {
+        let n = n.autohide(true);
+        if let Some(w) = self.window.clone() {
+            let _ = w.update(cx, |_, window, cx| window.push_notification(n, cx));
+        }
+    }
+
+    /// Optimistic PATCH of start/end (updateEntry in WeekCalendar.tsx).
+    pub fn commit_times(&mut self, id: &str, start: chrono::DateTime<chrono::Utc>, end: chrono::DateTime<chrono::Utc>, window: &mut Window, cx: &mut Context<Self>) {
+        let patch = EntryPatch { start: Some(start), end: Some(end), ..Default::default() };
+        let snapshot = self.cache.snapshot();
+        self.cache.apply(id, start, end);
+        self.commit_patch(id, patch, snapshot, window, cx);
+    }
+
+    /// `snapshot` is the cache before the optimistic change; restored on failure.
+    pub fn commit_patch(&mut self, id: &str, patch: EntryPatch, snapshot: Vec<TimeEntry>, window: &mut Window, cx: &mut Context<Self>) {
+        self.window = Some(window.window_handle());
+        let fut = self.state.read(cx).api.update_entry(id, patch);
+        cx.spawn(async move |this, cx| {
+            let result = fut.await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(updated) => {
+                        this.cache.replace(updated);
+                        this.notify_msg(Notification::success("保存しました"), cx);
+                    }
+                    Err(_) => {
+                        this.cache.rollback(snapshot);
+                        this.notify_msg(Notification::error("更新に失敗しました"), cx);
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    pub fn create(&mut self, body: NewEntry, window: &mut Window, cx: &mut Context<Self>) {
+        self.window = Some(window.window_handle());
+        let fut = self.state.read(cx).api.create_entry(body);
+        cx.spawn(async move |this, cx| {
+            let result = fut.await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(e) => this.cache.insert(e),
+                    Err(_) => this.notify_msg(Notification::error("記録の作成に失敗しました"), cx),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Delete immediately; the toast offers 「元に戻す」 which re-creates the same entry.
+    pub fn delete(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.window = Some(window.window_handle());
+        let snapshot = self.cache.snapshot();
+        let Some(removed) = self.cache.remove(id) else { return };
+        if self.selected.as_deref() == Some(id) {
+            self.selected = None;
+        }
+        let fut = self.state.read(cx).api.delete_entry(id);
+        cx.spawn(async move |this, cx| {
+            let result = fut.await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(_) => {
+                        let weak = cx.weak_entity();
+                        let n = Notification::success("削除しました").action(move |_, _, _| {
+                            let weak = weak.clone();
+                            let removed = removed.clone();
+                            Button::new("undo-delete").label("元に戻す").on_click(move |_, window, cx| {
+                                let body = NewEntry {
+                                    project_id: removed.project_id.clone(),
+                                    start: removed.start,
+                                    end: removed.end,
+                                    title: removed.title.clone(),
+                                    note: removed.note.clone(),
+                                    tag_ids: removed.tags.iter().map(|t| t.tag_id.clone()).collect(),
+                                    external_event_id: removed.external_event_id.clone(),
+                                    external_event_source: removed.external_event_source.clone(),
+                                    break_minutes: removed.break_minutes,
+                                };
+                                let _ = weak.update(cx, |this, cx| this.create(body, window, cx));
+                            })
+                        });
+                        this.notify_msg(n, cx);
+                    }
+                    Err(_) => {
+                        this.cache.rollback(snapshot);
+                        this.notify_msg(Notification::error("削除に失敗しました"), cx);
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    fn on_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if matches!(self.drag, DragState::Picking { .. }) && ev.keystroke.key == "escape" {
+            self.drag = DragState::Idle;
+            cx.notify();
+            return;
+        }
+        // Only when the calendar itself has focus (not a text field inside a popover/dialog).
+        if !self.focus.is_focused(window) {
+            return;
+        }
+        let Some(id) = self.selected.clone() else { return };
+        let Some(e) = self.cache.get(&id).cloned() else { return };
+        match ev.keystroke.key.as_str() {
+            "backspace" | "delete" => self.delete(&id, window, cx),
+            "escape" => {
+                self.selected = None;
+                cx.notify();
+            }
+            "up" | "down" => {
+                let delta = if ev.keystroke.key == "up" { -15 } else { 15 };
+                let day = e.start.with_timezone(&Local).date_naive();
+                let (s, en) = entry_span_minutes(&e, day);
+                if let Some((ns, ne)) = interaction::nudge(s, en, delta, ev.keystroke.modifiers.shift) {
+                    self.commit_times(&id, at_minutes(day, ns).to_utc(), at_minutes(day, ne).to_utc(), window, cx);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Focusable for CalendarView {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus.clone()
     }
 }
 
@@ -397,8 +730,18 @@ impl Render for CalendarView {
         self.initial_scroll(hour_px, cx);
         let zoom_index = self.state.read(cx).persist.zoom_index;
         self.column_bounds.borrow_mut().truncate(days.len());
-        let columns: Vec<AnyElement> = days.iter().enumerate().map(|(i, &d)| self.render_column(i, d, hour_px, cx)).collect();
+        self.rendered_days = days.clone();
+        self.window = Some(window.window_handle());
+        let (rendered, ghost) = self.rendered_entries();
+        let columns: Vec<AnyElement> = days.iter().enumerate().map(|(i, &d)| self.render_column(i, d, &rendered, ghost.as_deref(), hour_px, cx)).collect();
         div()
+            .id("calendar-root")
+            .track_focus(&self.focus)
+            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, w, cx| this.on_key(ev, w, cx)))
+            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, w, cx| this.focus.focus(w, cx)))
+            .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _, cx| this.on_drag_move(ev.position, cx)))
+            .on_mouse_up(MouseButton::Left, cx.listener(|this, _: &MouseUpEvent, w, cx| this.on_drag_end(w, cx)))
+            .on_mouse_up_out(MouseButton::Left, cx.listener(|this, _: &MouseUpEvent, w, cx| this.on_drag_end(w, cx)))
             .size_full()
             .flex()
             .flex_col()

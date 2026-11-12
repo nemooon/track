@@ -29,18 +29,41 @@ pub fn entry(id: &str, day: u32, (sh, sm): (u32, u32), (eh, em): (u32, u32), pro
 
 /// Opens a TrackApp window whose API points at an unused port, with fake reference data loaded.
 pub fn open_app(cx: &mut TestAppContext) -> (Entity<TrackApp>, &mut VisualTestContext) {
+    open_app_with(cx, "http://127.0.0.1:9/api".into())
+}
+
+/// A local server that accepts connections and never answers (requests stay pending).
+pub fn hanging_server() -> String {
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = l.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        let mut keep = Vec::new();
+        for s in l.incoming().flatten() {
+            keep.push(s);
+        }
+    });
+    format!("http://127.0.0.1:{port}/api")
+}
+
+pub fn open_app_with(cx: &mut TestAppContext, base: String) -> (Entity<TrackApp>, &mut VisualTestContext) {
     cx.update(|cx| {
         gpui_component::init(cx);
         crate::actions::bind_keys(cx);
     });
     let dir = tempfile::tempdir().unwrap().keep();
-    let (view, vcx) = cx.add_window_view(|window, cx| {
+    let slot: std::rc::Rc<std::cell::RefCell<Option<Entity<TrackApp>>>> = Default::default();
+    let slot2 = slot.clone();
+    let (_root, vcx) = cx.add_window_view(move |window, cx| {
+        let base = base.clone();
         let state = cx.new(|_| {
-            let mut s = AppState::with_path(ApiClient::new("http://127.0.0.1:9/api".into()), dir.join("p.json"));
+            let mut s = AppState::with_path(ApiClient::new(base.clone()), dir.join("p.json"));
             s.data = Some(fake_data());
             s
         });
-        TrackApp::with_state(state, window, cx)
+        let view = cx.new(|cx| TrackApp::with_state(state, window, cx));
+        *slot2.borrow_mut() = Some(view.clone());
+        gpui_component::Root::new(view, window, cx)
     });
+    let view = slot.borrow().clone().unwrap();
     (view, vcx)
 }

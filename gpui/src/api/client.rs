@@ -299,3 +299,31 @@ mod live_tests {
         assert!(!projects.is_empty());
     }
 }
+
+/// Mutates the live (copy) DB: `cargo test live_crud -- --ignored`
+#[cfg(test)]
+mod live_crud_tests {
+    use super::*;
+    use chrono::{Local, TimeZone};
+
+    #[test]
+    #[ignore]
+    fn live_crud_roundtrip() {
+        fn b<F: std::future::Future>(f: F) -> F::Output { futures::executor::block_on(f) }
+        let api = ApiClient::from_env();
+        let t = |h, m| Local.with_ymd_and_hms(2030, 1, 7, h, m, 0).unwrap().to_utc();
+        let tag = b(api.tags()).unwrap().into_iter().next();
+        let created = b(api.create_entry(NewEntry {
+            start: t(9, 0), end: t(10, 0), title: Some("gpui live test".into()),
+            tag_ids: tag.iter().map(|t| t.id.clone()).collect(), break_minutes: 15, ..Default::default()
+        })).unwrap();
+        assert_eq!(created.break_minutes, 15);
+        let moved = b(api.update_entry(&created.id, EntryPatch { start: Some(t(9, 30)), end: Some(t(10, 30)), ..Default::default() })).unwrap();
+        assert_eq!(moved.start, t(9, 30));
+        let cleared = b(api.update_entry(&created.id, EntryPatch { title: Some(None), note: Some(Some("memo".into())), project_id: Some(None), tag_ids: Some(vec![]), ..Default::default() })).unwrap();
+        assert_eq!((cleared.title, cleared.note.as_deref(), cleared.tags.len()), (None, Some("memo"), 0));
+        let err = b(api.update_entry(&created.id, EntryPatch { end: Some(t(9, 0) + chrono::Duration::days(2)), ..Default::default() })).unwrap_err();
+        println!("cross-day error: {}", err.message);
+        b(api.delete_entry(&created.id)).unwrap();
+    }
+}
