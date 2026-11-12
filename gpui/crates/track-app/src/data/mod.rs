@@ -162,6 +162,38 @@ impl DataClient {
         self.call("settings", |db| db.settings())
     }
 
+    pub fn projects_all(&self) -> impl Future<Output = DataResult<Vec<Project>>> + Send + 'static {
+        self.call("projects_all", |db| db.projects(true))
+    }
+
+    pub fn create_client(&self, name: String) -> impl Future<Output = DataResult<String>> + Send + 'static {
+        self.call("create_client", move |db| db.create_client(&name))
+    }
+
+    pub fn update_client(&self, id: String, patch: ClientPatch) -> impl Future<Output = DataResult<Client>> + Send + 'static {
+        self.call("update_client", move |db| db.update_client(&id, patch))
+    }
+
+    pub fn create_project(&self, client_id: String, name: String, color: String, tag_ids: Vec<String>) -> impl Future<Output = DataResult<String>> + Send + 'static {
+        self.call("create_project", move |db| db.create_project_with_tags(&client_id, &name, &color, &tag_ids))
+    }
+
+    pub fn update_project(&self, id: String, patch: ProjectPatch) -> impl Future<Output = DataResult<Project>> + Send + 'static {
+        self.call("update_project", move |db| db.update_project(&id, patch))
+    }
+
+    pub fn create_tag(&self, name: String, color: String) -> impl Future<Output = DataResult<String>> + Send + 'static {
+        self.call("create_tag", move |db| db.create_tag(&name, &color))
+    }
+
+    pub fn update_tag(&self, id: String, patch: TagPatch) -> impl Future<Output = DataResult<Tag>> + Send + 'static {
+        self.call("update_tag", move |db| db.update_tag(&id, patch))
+    }
+
+    pub fn delete_tag(&self, id: String) -> impl Future<Output = DataResult<()>> + Send + 'static {
+        self.call("delete_tag", move |db| db.delete_tag(&id))
+    }
+
     pub fn update_settings(&self, patch: SettingsPatch) -> impl Future<Output = DataResult<Settings>> + Send + 'static {
         self.call("update_settings", move |db| db.update_settings(patch))
     }

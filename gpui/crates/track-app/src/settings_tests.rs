@@ -160,3 +160,90 @@ fn template_follows_saved_value_until_edited(cx: &mut TestAppContext) {
     scx.run_until_parked();
     assert_eq!(editor.read_with(&scx, |e, _| e.value().to_string()), "新しい");
 }
+
+fn projects_section(cx: &mut VisualTestContext) -> (VisualTestContext, Entity<crate::settings::projects::ProjectSettings>) {
+    let (scx, view) = open_section(cx, "settings-nav-projects");
+    let p = view.read_with(&scx, |v, _| v.projects.clone().expect("projects section"));
+    (scx, p)
+}
+
+fn type_name(scx: &mut VisualTestContext, p: &Entity<crate::settings::projects::ProjectSettings>, text: &str) {
+    let input = p.read_with(scx, |p, _| p.editor.as_ref().expect("editor open").name.clone());
+    scx.update(|w, cx| input.update(cx, |i, cx| i.set_value(text.to_string(), w, cx)));
+    scx.run_until_parked();
+}
+
+#[gpui::test]
+fn add_client_then_project_with_color(cx: &mut TestAppContext) {
+    let (app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    assert!(scx.debug_bounds("client-row-c1").is_some());
+    assert!(scx.debug_bounds("project-row-p1").is_some());
+    click(&mut scx, "client-add");
+    type_name(&mut scx, &p, "新クライアント");
+    click(&mut scx, "editor-save");
+    wait_io(&mut scx);
+    let client = f.db().clients().unwrap().into_iter().find(|c| c.name == "新クライアント").expect("client created");
+    click(&mut scx, "project-add");
+    let sel = format!("editor-client-{}", client.id);
+    let b = scx.debug_bounds(Box::leak(sel.into_boxed_str())).expect("client choice");
+    scx.simulate_click(b.center(), Modifiers::none());
+    type_name(&mut scx, &p, "新案件");
+    click(&mut scx, "editor-color-3");
+    click(&mut scx, "editor-save");
+    wait_io(&mut scx);
+    wait_io(cx);
+    let project = f.db().projects(true).unwrap().into_iter().find(|x| x.name == "新案件").expect("project created");
+    assert_eq!((project.client_id.as_str(), project.color.as_str()), (client.id.as_str(), "#22c55e"));
+    let in_main = app.read_with(cx, |a, cx| a.state.read(cx).data.as_ref().map(|d| d.projects.iter().any(|x| x.id == project.id)));
+    assert_eq!(in_main, Some(true), "the main window's project list has it");
+}
+
+#[gpui::test]
+fn archive_hides_project_until_restored(cx: &mut TestAppContext) {
+    let (app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, _p) = projects_section(cx);
+    click(&mut scx, "project-archive-p1");
+    wait_io(&mut scx);
+    wait_io(cx);
+    assert!(f.db().project("p1").unwrap().archived);
+    assert!(scx.debug_bounds("project-archived-p1").is_some(), "shown greyed with アーカイブ済み");
+    let in_main = app.read_with(cx, |a, cx| a.state.read(cx).data.as_ref().map(|d| d.projects.iter().any(|x| x.id == "p1")));
+    assert_eq!(in_main, Some(false));
+    click(&mut scx, "project-archive-p1");
+    wait_io(&mut scx);
+    assert!(!f.db().project("p1").unwrap().archived);
+    // Archiving the client archives its projects; a project of an archived client cannot be restored alone.
+    click(&mut scx, "client-archive-c1");
+    wait_io(&mut scx);
+    assert!(f.db().project("p2").unwrap().archived);
+    click(&mut scx, "project-archive-p2");
+    wait_io(&mut scx);
+    assert!(f.db().project("p2").unwrap().archived, "クライアントを先に復元してください");
+}
+
+#[gpui::test]
+fn tag_crud(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    click(&mut scx, "tag-add");
+    type_name(&mut scx, &p, "定例");
+    click(&mut scx, "editor-save");
+    wait_io(&mut scx);
+    assert!(scx.debug_bounds("editor-error").is_some(), "同じ名前のタグが既にあります");
+    type_name(&mut scx, &p, "新タグ");
+    click(&mut scx, "editor-save");
+    wait_io(&mut scx);
+    let tag = f.db().tags().unwrap().into_iter().find(|t| t.name == "新タグ").expect("tag created");
+    let edit = Box::leak(format!("tag-edit-{}", tag.id).into_boxed_str());
+    click(&mut scx, edit);
+    click(&mut scx, "editor-color-0");
+    click(&mut scx, "editor-save");
+    wait_io(&mut scx);
+    assert_eq!(f.db().tags().unwrap().into_iter().find(|t| t.id == tag.id).unwrap().color, "#ef4444");
+    let del = Box::leak(format!("tag-delete-{}", tag.id).into_boxed_str());
+    click(&mut scx, del);
+    click(&mut scx, "tag-delete-confirm");
+    wait_io(&mut scx);
+    assert!(f.db().tags().unwrap().iter().all(|t| t.id != tag.id));
+}

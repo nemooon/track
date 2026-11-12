@@ -11,6 +11,7 @@ use gpui_component::{Icon, IconName, Root};
 
 pub mod calendar;
 pub mod form;
+pub mod projects;
 pub mod reports;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,12 +76,13 @@ pub struct SettingsWindow {
     /// Section views, created the first time each is shown.
     pub calendar: Option<Entity<calendar::CalendarSettings>>,
     pub reports: Option<Entity<reports::ReportSettings>>,
+    pub projects: Option<Entity<projects::ProjectSettings>>,
 }
 
 impl SettingsWindow {
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
         cx.observe(&state, |_, _, cx| cx.notify()).detach();
-        SettingsWindow { state, section: SettingsSection::Calendar, calendar: None, reports: None }
+        SettingsWindow { state, section: SettingsSection::Calendar, calendar: None, reports: None, projects: None }
     }
 
     pub fn show(&mut self, section: SettingsSection, cx: &mut Context<Self>) {
@@ -93,6 +95,7 @@ impl SettingsWindow {
         match self.section {
             SettingsSection::Calendar => Some(self.calendar.get_or_insert_with(|| cx.new(|cx| calendar::CalendarSettings::new(state, cx))).clone().into()),
             SettingsSection::Reports => Some(self.reports.get_or_insert_with(|| cx.new(|cx| reports::ReportSettings::new(state, window, cx))).clone().into()),
+            SettingsSection::Projects => Some(self.projects.get_or_insert_with(|| cx.new(|cx| projects::ProjectSettings::new(state, cx))).clone().into()),
             _ => None,
         }
     }
