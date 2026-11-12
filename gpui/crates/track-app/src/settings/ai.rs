@@ -226,14 +226,14 @@ impl AiSettings {
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .child(div().w(px(320.)).child(Input::new(&self.codex_model)))
+                    .child(div().w_full().child(Input::new(&self.codex_model)))
                     .child(candidates)
                     .child(
                         div()
                             .flex()
-                            .items_center()
+                            .items_start()
                             .gap_2()
-                            .child(div().text_xs().text_color(n500()).child(detail))
+                            .child(div().flex_1().min_w_0().text_xs().text_color(n500()).child(detail))
                             .child(form::button("codex-models-refresh", "更新", false, !self.models_loading).on_click(cx.listener(|this, _, _, cx| this.load_models(cx)))),
                     )
                     .child(div().text_xs().text_color(n500()).child("実行ファイルの変更を保存すると、そのCodexから候補を取得します。")),
@@ -245,7 +245,7 @@ impl AiSettings {
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .child(div().w(px(420.)).child(Input::new(&self.codex_executable)))
+                    .child(div().w_full().child(Input::new(&self.codex_executable)))
                     .child(div().text_xs().text_color(n500()).child("Codexの既存のログインを再利用し、TrackはAPIキーを保存しません。")),
             ))
     }
@@ -288,7 +288,7 @@ impl Render for AiSettings {
             "codex" => root.child(self.render_codex(cx)),
             "custom-command" => root.child(
                 form::card("カスタムコマンド", "任意のローカルコマンドをAI処理に利用します。")
-                    .child(form::row("実行ファイル", "AI処理に使用するコマンドの絶対パスです。", div().w(px(420.)).child(Input::new(&self.command_executable))))
+                    .child(form::row("実行ファイル", "AI処理に使用するコマンドの絶対パスです。", div().w_full().child(Input::new(&self.command_executable))))
                     .child(form::row(
                         "引数",
                         "コマンドへ渡す引数を1行に1つ入力します。",

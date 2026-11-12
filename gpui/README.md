@@ -44,6 +44,17 @@ CLI はアプリを起動していなくても使えるので、終了時にも�
 文面は `integrations/` のものを元に、`$HOME/.track-gpui/runtime.json` を読み、`TRACK_DATA_DIR="$HOME/.track-gpui"` を付けて CLI を呼ぶよう書き換えてある。
 本採用時は `ui/integrations_dialog.rs` の `DEV_NAMES` を外し、本来の名前に戻す。
 
+## 設定
+
+`⌘,`、メニュー「Track → 設定…」、ヘッダー右の歯車で別ウインドウの設定を開く。項目は Tauri 版と同じ
+（カレンダー／レポート（出力フォーマット・週報テンプレート）／プロジェクト／AI／バックアップと復元。メモは無し）。
+勤務設定・出力フォーマットは DB の `Settings`、AI とバックアップは `config.json` に、Tauri 版と同じ形式で保存する
+（`config.json` の知らない項目は消さない）。
+
+自動バックアップはアプリが起動時と 1 時間ごとに確認し、`backupIntervalHours` 経っていれば `VACUUM INTO` で
+`track-auto-*.db` を保存先へ書く。開発版では保存先・復元元を `~/.track-gpui` の中に限り、iCloud Drive の候補も出さない
+（本物のバックアップがそこにあるため）。
+
 AI 生成（週報・カスタム出力）は `config.json` の `aiProvider` に従い、Codex CLI・カスタムコマンド・
 Apple Intelligence ヘルパー（`/Applications/Track.app` 同梱）をアプリから直接起動する。
 
@@ -52,3 +63,4 @@ Apple Intelligence ヘルパー（`/Applications/Track.app` 同梱）をアプ�
 - `scripts/winshot.sh out.png` — アプリのウインドウだけをスクリーンショットする
 - `TRACK_GPUI_PAGE=reports cargo run` — レポート画面から起動する
 - `TRACK_GPUI_WINDOW=1440x900` — 起動時のウインドウサイズ
+- `TRACK_GPUI_SETTINGS=<calendar|reports|projects|ai|backup>` — 起動時に設定ウインドウをその項目で開く（`winshot.sh` はどちらかのウインドウを撮るので、設定だけ撮るときはウインドウ ID を指定する）
