@@ -684,7 +684,7 @@ impl ReportsView {
             let note_row = |text: &'static str| div().py_2().pl(px(32.)).px_3().text_xs().text_color(n400()).child(text).into_any_element();
             match self.children.get(&path) {
                 None | Some(Children::Loading) => body.push(note_row("読み込み中…")),
-                Some(Children::Failed(_)) => body.push(note_row("読み込みに失敗しました")),
+                Some(Children::Failed(msg)) => body.push(div().py_2().pl(px(32.)).px_3().text_xs().text_color(red600()).child(format!("読み込みに失敗しました（{msg}）")).into_any_element()),
                 Some(Children::Loaded(es)) if es.is_empty() => body.push(note_row("エントリがありません")),
                 Some(Children::Loaded(es)) if group_same => {
                     for g in group_entries_by_title(es) {

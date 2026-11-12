@@ -44,7 +44,6 @@ pub fn button(id: impl Into<ElementId>, active: bool, icon_only: bool) -> Statef
         })
 }
 
-#[allow(dead_code)]
 /// 「サーバーに接続できません」 strip with a 再試行 button (id `retry_id`).
 pub fn error_banner(retry_id: &'static str, message: &str) -> Stateful<Div> {
     div()
@@ -66,6 +65,7 @@ pub fn error_banner(retry_id: &'static str, message: &str) -> Stateful<Div> {
         .child(div().rounded_md().bg(n900()).text_color(white()).px_3().py_1().cursor_pointer().child("再試行"))
 }
 
+#[allow(dead_code)]
 pub fn disabled(d: Stateful<Div>, is_disabled: bool) -> Stateful<Div> {
     if is_disabled { d.opacity(0.4).cursor_default() } else { d }
 }
