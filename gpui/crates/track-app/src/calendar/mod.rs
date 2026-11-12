@@ -387,9 +387,11 @@ impl CalendarView {
                         .bg(n400())
                         .child(
                             div()
+                                .debug_selector(|| "hover-time".into())
                                 .absolute()
                                 .right_full()
                                 .top(px(-7.))
+                                .whitespace_nowrap()
                                 .rounded_full()
                                 .bg(n700())
                                 .px_1()

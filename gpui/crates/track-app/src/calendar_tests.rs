@@ -251,3 +251,15 @@ fn changing_period_mid_drag_cancels_instead_of_saving_elsewhere(cx: &mut TestApp
     let e = stored(&f, "a").unwrap();
     assert_eq!((e.start, e.end), (at(12, 10, 0), at(12, 11, 0)), "no save after navigating away");
 }
+
+/// The hover time pill sits left of the line on one line, like Tauri's `right-full whitespace-nowrap`.
+#[gpui::test]
+fn hover_time_label_is_one_line_left_of_the_line(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = setup(cx);
+    let b = cx.debug_bounds("entry-a").expect("entry block");
+    let at = point(b.center().x, b.origin.y + px(96. * 3.));
+    cx.simulate_mouse_move(at, None, Modifiers::none());
+    let label = cx.debug_bounds("hover-time").expect("hover label");
+    assert!(label.size.height <= px(16.), "single line, got {:?}", label.size);
+    assert!(label.size.width >= px(24.), "fits HH:MM, got {:?}", label.size);
+}
