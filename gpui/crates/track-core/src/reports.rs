@@ -124,7 +124,7 @@ impl Db {
         }
         // stable sort by minutes, ties keep first-seen order (like Array.prototype.sort)
         let mut out: Vec<ReportRow> = order.into_iter().filter_map(|k| rows.remove(&k)).collect();
-        out.sort_by(|a, b| b.total_minutes.cmp(&a.total_minutes));
+        out.sort_by_key(|r| std::cmp::Reverse(r.total_minutes));
         Ok(ReportResponse { rows: out, total_minutes: total, range: DateSpan { from, to } })
     }
 

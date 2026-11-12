@@ -1,6 +1,8 @@
 use chrono::{Datelike, Duration, NaiveDate};
 
-pub use track_core::dates::{month_range, week_range, week_start};
+pub use track_core::dates::{month_range, week_start};
+#[cfg(test)]
+pub use track_core::dates::week_range;
 
 pub const SNAP_MIN: i64 = 15;
 pub const DAY_MINUTES: i64 = 24 * 60;
@@ -24,10 +26,6 @@ impl DayCount {
         }
     }
 }
-
-
-/// Sunday-start week; `to` is exclusive.
-#[cfg(test)]
 
 
 pub fn visible_days(anchor: NaiveDate, count: DayCount, work_days: &[u32]) -> Vec<NaiveDate> {
