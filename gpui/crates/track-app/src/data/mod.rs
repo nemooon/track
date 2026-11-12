@@ -163,7 +163,7 @@ impl DataClient {
     }
 
     pub fn config(&self) -> AppConfig {
-        track_core::repo::app_config(&self.data_dir)
+        track_core::config::load_config(&self.data_dir).app_config()
     }
 
     pub fn report(&self, q: &ReportQuery) -> impl Future<Output = DataResult<ReportResponse>> + Send + 'static {

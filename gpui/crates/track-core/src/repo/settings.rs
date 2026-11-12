@@ -1,8 +1,7 @@
 //! The single `Settings` row and `config.json`.
 use crate::error::{CoreError, Result};
-use crate::model::{AppConfig, ReportCopyColumn, ReportCopyField, ReportCopyFormat, Settings, SettingsPatch};
+use crate::model::{ReportCopyColumn, ReportCopyField, ReportCopyFormat, Settings, SettingsPatch};
 use crate::Db;
-use std::path::Path;
 
 /// `DEFAULT_REPORT_COPY_FORMATS` in src/server/routes/settings.ts.
 pub fn default_report_copy_formats() -> Vec<ReportCopyFormat> {
@@ -161,19 +160,5 @@ impl Db {
                 })
             },
         )?)
-    }
-}
-
-/// `~/.track/config.json` (only the AI fields the app uses). Missing file → defaults.
-pub fn app_config(data_dir: &Path) -> AppConfig {
-    let raw = std::fs::read_to_string(data_dir.join("config.json")).unwrap_or_default();
-    let v: serde_json::Value = serde_json::from_str(&raw).unwrap_or(serde_json::Value::Null);
-    let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
-    AppConfig {
-        ai_provider: Some(s("aiProvider")).filter(|p| !p.is_empty()).unwrap_or_else(|| "apple-intelligence".into()),
-        ai_codex_executable: s("aiCodexExecutable"),
-        ai_codex_model: s("aiCodexModel"),
-        ai_command_executable: s("aiCommandExecutable"),
-        ai_command_args: v.get("aiCommandArgs").and_then(|a| a.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default(),
     }
 }
