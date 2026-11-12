@@ -129,6 +129,41 @@ impl Db {
         Ok(())
     }
 
+    /// Entries matching every given condition, newest first (at most 1000).
+    pub fn search_entries(&self, q: &crate::edit::EntrySearch, limit: i64) -> Result<Vec<TimeEntry>> {
+        use rusqlite::types::Value;
+        let mut cond: Vec<String> = Vec::new();
+        let mut args: Vec<Value> = Vec::new();
+        match q.project_id.as_deref() {
+            Some("none") => cond.push("e.projectId IS NULL".into()),
+            Some(p) => {
+                args.push(Value::Text(p.into()));
+                cond.push(format!("e.projectId = ?{}", args.len()));
+            }
+            None => {}
+        }
+        if let Some(text) = q.query.as_deref().filter(|t| !t.is_empty()) {
+            let escaped = text.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+            args.push(Value::Text(format!("%{escaped}%")));
+            let n = args.len();
+            cond.push(format!(r"(e.title LIKE ?{n} ESCAPE '\' OR e.note LIKE ?{n} ESCAPE '\')"));
+        }
+        if let Some(from) = q.from {
+            args.push(Value::Text(time::to_db(from)));
+            cond.push(format!(r#"e."end" > ?{}"#, args.len()));
+        }
+        if let Some(to) = q.to {
+            args.push(Value::Text(time::to_db(to)));
+            cond.push(format!("e.start < ?{}", args.len()));
+        }
+        let where_ = if cond.is_empty() { String::new() } else { format!("WHERE {}", cond.join(" AND ")) };
+        args.push(Value::Integer(limit.clamp(1, 1000)));
+        let sql = format!("{ENTRY_SELECT} {where_} ORDER BY e.start DESC LIMIT ?{}", args.len());
+        let mut st = self.conn().prepare(&sql)?;
+        let rows: Vec<TimeEntry> = st.query_map(rusqlite::params_from_iter(args), entry_from_row)?.collect::<std::result::Result<_, _>>()?;
+        rows.into_iter().map(|e| self.hydrate(e)).collect()
+    }
+
     /// Up to 100 distinct trimmed titles from the newest 500 entries; `Some("none")` = no project.
     pub fn entry_titles(&self, project: Option<&str>) -> Result<Vec<String>> {
         let (cond, arg): (&str, Option<&str>) = match project {
