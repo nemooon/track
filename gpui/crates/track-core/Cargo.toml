@@ -12,6 +12,7 @@ dirs.workspace = true
 rusqlite.workspace = true
 rand.workspace = true
 sha2.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

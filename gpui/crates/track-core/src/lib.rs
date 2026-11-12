@@ -6,6 +6,7 @@ pub mod error;
 pub mod guard;
 pub mod ids;
 pub mod migrate;
+pub mod prepare;
 pub mod model;
 pub mod report;
 pub mod repo;
