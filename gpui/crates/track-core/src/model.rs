@@ -58,6 +58,30 @@ pub struct TimeEntry {
     pub break_minutes: i64,
 }
 
+/// `PATCH /api/clients/:id`
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ClientPatch {
+    pub name: Option<String>,
+    pub archived: Option<bool>,
+}
+
+/// `PATCH /api/projects/:id`. `tag_ids` replaces the project's tags.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ProjectPatch {
+    pub client_id: Option<String>,
+    pub name: Option<String>,
+    pub color: Option<String>,
+    pub archived: Option<bool>,
+    pub tag_ids: Option<Vec<String>>,
+}
+
+/// `PATCH /api/tags/:id`
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TagPatch {
+    pub name: Option<String>,
+    pub color: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NewEntry {
