@@ -29,12 +29,12 @@ fn fixture(id: &str, timestamps: &[&str]) -> Fixture {
     Fixture { _tmp: tmp, dir, file }
 }
 
-fn env_with(codex: &PathBuf, claude: &PathBuf, thread: Option<&str>, now: &str) -> PrepareEnv {
+fn env_with(codex: &std::path::Path, claude: &std::path::Path, thread: Option<&str>, now: &str) -> PrepareEnv {
     PrepareEnv {
         now: ms(now),
-        codex_root: codex.clone(),
+        codex_root: codex.to_path_buf(),
         codex_archived_root: None,
-        claude_root: claude.clone(),
+        claude_root: claude.to_path_buf(),
         cwd: std::env::current_dir().unwrap(),
         codex_thread_id: thread.map(String::from),
     }
