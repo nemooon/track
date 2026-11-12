@@ -52,7 +52,7 @@ pub fn entry_span_minutes(e: &TimeEntry, day: NaiveDate) -> (i64, i64) {
 
 /// Worked minutes for the day: Σ(end − start − breakMinutes).
 pub fn day_total_minutes(entries: &[TimeEntry], day: NaiveDate) -> i64 {
-    entries_for_day(entries, day).iter().map(|e| (e.end - e.start).num_minutes() - e.break_minutes).sum()
+    entries_for_day(entries, day).iter().map(|e| ((e.end - e.start).num_minutes() - e.break_minutes).max(0)).sum()
 }
 
 #[cfg(test)]
@@ -92,5 +92,12 @@ mod tests {
         assert_eq!(day_total_minutes(&all, d12), 60);
         assert_eq!(day_total_minutes(&all, d13), 45);
         assert_eq!(entry_span_minutes(&e, d12), (1380, 1440));
+    }
+
+    #[test]
+    fn day_total_never_counts_negative_entries() {
+        // 15-minute entry with a 60-minute break must count as 0, not -45.
+        let all = vec![entry("a", (12, 9, 0), (12, 9, 15), 60), entry("b", (12, 10, 0), (12, 11, 0), 0)];
+        assert_eq!(day_total_minutes(&all, NaiveDate::from_ymd_opt(2026, 11, 12).unwrap()), 60);
     }
 }
