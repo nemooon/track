@@ -151,7 +151,7 @@ fn custom_output_with_ai_streams_and_restores_from_cache(cx: &mut TestAppContext
     assert_eq!(body["mode"], "report-aggregation");
     assert!(body["input"].as_str().unwrap().contains("目的別"));
     // Re-open: the cached result for the same format and data is restored.
-    cx.update(|w, cx| gpui_component::WindowExt::close_dialog(w, cx));
+    cx.update(gpui_component::WindowExt::close_dialog);
     click(cx, "output-open");
     wait_io(cx);
     click(cx, "format-select");
