@@ -6717,7 +6717,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "track-gpui"
+name = "track-app"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -6734,6 +6734,26 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "track-core",
+]
+
+[[package]]
+name = "track-cli"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "track-core",
+]
+
+[[package]]
+name = "track-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dirs 6.0.0",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
