@@ -1,24 +1,40 @@
+#![allow(dead_code)] // prototype: modules land before their callers
+mod actions;
 mod api;
+mod app;
+mod calendar;
 mod core;
-use gpui::{App, AppContext, Bounds, Context, IntoElement, ParentElement, Render, Styled, Window, WindowBounds, WindowOptions, div, px, size};
+mod persist;
+mod reports;
+mod ui;
+#[cfg(test)]
+mod testing;
+#[cfg(test)]
+mod app_tests;
+
+use gpui::{App, AppContext, Bounds, Point, TitlebarOptions, WindowBounds, WindowOptions, px, size};
 use gpui_component::Root;
 
-struct Hello;
-
-impl Render for Hello {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div().size_full().flex().items_center().justify_center().child("Track (GPUI)")
-    }
-}
-
 fn main() {
-    gpui_platform::application().run(|cx: &mut App| {
+    gpui_platform::application().with_assets(gpui_kit_assets::Assets::new("")).run(|cx: &mut App| {
         gpui_component::init(cx);
+        actions::bind_keys(cx);
+        actions::set_menus(cx);
+        cx.on_action(|_: &actions::Quit, cx| cx.quit());
         let bounds = Bounds::centered(None, size(px(1200.), px(800.)), cx);
         cx.open_window(
-            WindowOptions { window_bounds: Some(WindowBounds::Windowed(bounds)), ..Default::default() },
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                titlebar: Some(TitlebarOptions {
+                    title: Some("Track (GPUI)".into()),
+                    appears_transparent: true,
+                    traffic_light_position: Some(Point::new(px(14.), px(14.))),
+                }),
+                window_min_size: Some(size(px(360.), px(480.))),
+                ..Default::default()
+            },
             |window, cx| {
-                let view = cx.new(|_| Hello);
+                let view = cx.new(|cx| app::TrackApp::new(window, cx));
                 cx.new(|cx| Root::new(view, window, cx))
             },
         )

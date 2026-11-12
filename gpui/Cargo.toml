@@ -8,6 +8,7 @@ publish = false
 gpui = { package = "gpui-pre", version = "=0.3.12" }
 gpui_platform = { package = "gpui-pre-platform", version = "=0.3.12", features = ["font-kit", "runtime_shaders"] }
 gpui-component = "=0.9.1"
+gpui-kit-assets = "=0.9.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
@@ -20,6 +21,7 @@ dirs = "6"
 
 [dev-dependencies]
 tempfile = "3"
+gpui = { package = "gpui-pre", version = "=0.3.12", features = ["test-support"] }
 
 [profile.dev.package."*"]
 opt-level = 2
