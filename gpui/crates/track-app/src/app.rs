@@ -517,14 +517,34 @@ impl Render for TrackApp {
             .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.calendar.update(cx, |c, cx| c.zoom(-1, cx))))
             .child(self.render_header(window, cx))
             .child(div().flex_1().min_h_0().flex().flex_col().child(self.render_body(cx)))
-            .child(crate::ui::status_bar::render(self.status_left(cx), self.state.read(cx).ai_op.clone(), cx))
+            .child(crate::ui::status_bar::render(self.status_left(window, cx), self.state.read(cx).ai_op.clone(), cx))
     }
 }
 
 impl TrackApp {
-    /// Page facts for the status bar (filled in by the calendar and reports).
-    fn status_left(&self, _cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
-        vec![]
+    /// Page facts for the status bar.
+    fn status_left(&self, window: &Window, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
+        let p = palette(cx);
+        let mono = |s: String| div().font_family(MONO).text_color(p.text).child(s);
+        match self.page {
+            Page::Calendar => {
+                let cal = self.calendar.read(cx);
+                let days = cal.days(window, cx);
+                let total = cal.visible_total_minutes(&days);
+                let mut items = vec![div()
+                    .debug_selector(|| "status-total".into())
+                    .flex()
+                    .gap_1()
+                    .child("合計")
+                    .child(mono(format!("{}:{:02}", total / 60, total % 60)))
+                    .into_any_element()];
+                if let Some(label) = cal.selection_label() {
+                    items.push(div().debug_selector(|| "status-selection".into()).min_w_0().truncate().child(format!("選択: {label}")).into_any_element());
+                }
+                items
+            }
+            Page::Reports => vec![],
+        }
     }
 
     fn forward(&mut self, ev: crate::ui::date_nav::NavEvent, window: &mut Window, cx: &mut Context<Self>) {

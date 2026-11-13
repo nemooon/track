@@ -150,6 +150,21 @@ impl CalendarView {
         self.initial_scroll_done = true;
     }
 
+    /// Minutes recorded on the shown days (the same per-day totals as the day headers).
+    pub fn visible_total_minutes(&self, days: &[NaiveDate]) -> i64 {
+        days.iter().map(|d| day_total_minutes(self.cache.entries(), *d)).sum()
+    }
+
+    /// 「<タイトル> HH:MM–HH:MM（H:MM）」 for the selected entry.
+    pub fn selection_label(&self) -> Option<String> {
+        let e = self.selected.as_ref().and_then(|id| self.cache.get(id))?;
+        let (s, t) = (e.start.with_timezone(&Local), e.end.with_timezone(&Local));
+        let end = if t.date_naive() > s.date_naive() && t.hour() == 0 && t.minute() == 0 { "24:00".to_string() } else { t.format("%H:%M").to_string() };
+        let net = ((e.end - e.start).num_minutes() - e.break_minutes).max(0);
+        let title = e.title.clone().filter(|t| !t.is_empty()).unwrap_or_else(|| "（タイトルなし）".into());
+        Some(format!("{title} {}–{end}（{}:{:02}）", s.format("%H:%M"), net / 60, net % 60))
+    }
+
     fn initial_scroll(&mut self, hour_px: f32, cx: &gpui::App) {
         if self.initial_scroll_done {
             return;
@@ -182,6 +197,7 @@ impl CalendarView {
     }
 
     fn render_day_header(&self, days: &[NaiveDate], zoom_index: usize, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
         let today = Local::now().date_naive();
         let zoom_btn = |id: &'static str, label: &'static str, disabled: bool, delta: i32| {
             div()
@@ -193,8 +209,8 @@ impl CalendarView {
                 .rounded_sm()
                 .text_sm()
                 .font_weight(FontWeight::BOLD)
-                .text_color(n500())
-                .map(|d| if disabled { d.opacity(0.3) } else { d.cursor_pointer().hover(|s| s.bg(n100())) })
+                .text_color(p.text_muted)
+                .map(|d| if disabled { d.opacity(0.3) } else { d.cursor_pointer().hover(|s| s.bg(p.hover)) })
                 .child(label)
                 .on_click(cx.listener(move |this, _, _, cx| {
                     if !disabled {
@@ -206,7 +222,7 @@ impl CalendarView {
             .flex()
             .flex_shrink_0()
             .border_b_1()
-            .border_color(n200())
+            .border_color(p.border)
             .child(
                 div()
                     .w(px(GUTTER_PX))
@@ -225,11 +241,10 @@ impl CalendarView {
                     .flex_1()
                     .min_w_0()
                     .border_l_1()
-                    .border_color(n200())
+                    .border_color(p.border)
                     .px_2()
                     .py_2()
                     .text_xs()
-                    .when(d == today, |s| s.bg(amber50()))
                     .child(
                         div()
                             .flex()
@@ -243,7 +258,7 @@ impl CalendarView {
                                     .items_center()
                                     .justify_center()
                                     .rounded_full()
-                                    .bg(with_alpha(n200(), 0.5))
+                                    .map(|c| if d == today { c.bg(p.accent).text_color(p.accent_text) } else { c.bg(with_alpha(p.border, 0.5)) })
                                     .text_lg()
                                     .font_weight(FontWeight::BOLD)
                                     .child(d.day().to_string()),
@@ -255,20 +270,20 @@ impl CalendarView {
                                         .items_center()
                                         .gap_2()
                                         .h(px(20.))
-                                        .child(div().text_color(n500()).font_weight(FontWeight::SEMIBOLD).child(weekday_ja(d)))
+                                        .child(div().text_color(p.text_muted).font_weight(FontWeight::SEMIBOLD).child(weekday_ja(d)))
                                         .when_some(holiday, |s, name| {
-                                            s.child(div().rounded_sm().bg(gpui::rgb(0xf87171)).px_1().py(px(2.)).text_size(px(10.)).line_height(px(12.)).text_color(white()).truncate().child(name))
+                                            s.child(div().rounded_sm().bg(p.holiday).px_1().py(px(2.)).text_size(px(10.)).line_height(px(12.)).text_color(p.bg).truncate().child(name))
                                         }),
                                 ),
                             )
                             .when(total > 0, |s| {
-                                s.child(div().self_end().text_xs().text_color(n600()).font_weight(FontWeight::SEMIBOLD).child(format_duration_calendar(total)))
+                                s.child(div().self_end().text_xs().text_color(p.text_muted).font_weight(FontWeight::SEMIBOLD).child(format_duration_calendar(total)))
                             }),
                     )
             }))
     }
 
-    fn render_gutter(&self, hour_px: f32) -> impl IntoElement {
+    fn render_gutter(&self, p: Palette, hour_px: f32) -> impl IntoElement {
         let height = 24. * hour_px + 1. + BUFFER_PX * 2.;
         let label = |top: f32, text: String, half: bool| {
             div()
@@ -277,7 +292,8 @@ impl CalendarView {
                 .top(px(top - if half { 6. } else { 7. }))
                 .text_size(px(if half { 9. } else { 10. }))
                 .line_height(px(if half { 12. } else { 14. }))
-                .text_color(if half { n400() } else { n600() })
+                .font_family(MONO)
+                .text_color(if half { p.text_faint } else { p.text_muted })
                 .child(text)
         };
         div()
@@ -290,6 +306,7 @@ impl CalendarView {
     }
 
     fn render_column(&self, day_index: usize, day: NaiveDate, rendered: &[TimeEntry], ghost_id: Option<&str>, hour_px: f32, cx: &mut Context<Self>) -> AnyElement {
+        let p = palette(cx);
         let state = self.state.read(cx);
         let settings = state.data.as_ref().map(|d| d.settings.clone());
         let is_work_day = settings.as_ref().is_some_and(|s| s.work_days.contains(&day.weekday().num_days_from_sunday())) && holiday_name(day).is_none();
@@ -312,7 +329,7 @@ impl CalendarView {
             .relative()
             .h(px(body_h))
             .cursor(gpui::CursorStyle::Crosshair)
-            .bg(with_alpha(n200(), 0.2))
+            .bg(with_alpha(p.border, 0.2))
             .child(
                 canvas(move |b, _, _| {
                     let mut v = bounds_store.borrow_mut();
@@ -325,7 +342,7 @@ impl CalendarView {
                 .size_full(),
             )
             .when_some(settings.filter(|_| is_work_day), |d, s| {
-                d.child(div().absolute().left_0().right_0().top(px(minutes_to_y(s.work_start, hour_px))).h(px(minutes_to_y(s.work_end - s.work_start, hour_px).max(0.))).bg(white()))
+                d.child(div().absolute().left_0().right_0().top(px(minutes_to_y(s.work_start, hour_px))).h(px(minutes_to_y(s.work_end - s.work_start, hour_px).max(0.))).bg(p.bg))
             })
             .child(canvas(|_, _, _| (), move |b, _, w, cx| grid::paint_grid_lines(b, hour_px, w, cx)).absolute().size_full())
             .children(laid.iter().map(|l| {
@@ -348,7 +365,7 @@ impl CalendarView {
                         }))
                 };
                 lane_slot(&g, hour_px).child(
-                    render_block(e, selected, ghost, &self.hovered_entry)
+                    render_block(p, e, selected, ghost, &self.hovered_entry)
                         .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                             if *hovered {
                                 this.hovered_entry = id_hover.clone();
@@ -374,16 +391,16 @@ impl CalendarView {
             .map(|d| match &self.drag {
                 DragState::Creating { day_index: di, anchor_min, current_min } if *di == day_index => {
                     let (a, b) = (*anchor_min.min(current_min), *anchor_min.max(current_min));
-                    d.child(placeholder(a, b, hour_px, n500(), with_alpha(n300(), 0.3)))
+                    d.child(placeholder(a, b, hour_px, p.text_muted, with_alpha(p.text_faint, 0.3)))
                 }
                 DragState::Picking { day_index: di, start_min, end_min } if *di == day_index => {
-                    d.child(placeholder(*start_min, *end_min, hour_px, n400(), with_alpha(n200(), 0.5)))
+                    d.child(placeholder(*start_min, *end_min, hour_px, p.text_faint, with_alpha(p.border, 0.5)))
                 }
                 _ => d,
             })
             .when(day == now.date_naive(), |d| {
                 let m = (now.hour() * 60 + now.minute()) as i64;
-                d.child(div().absolute().left_0().right_0().top(px(minutes_to_y(m, hour_px))).h(px(1.)).bg(red500()))
+                d.child(div().absolute().left_0().right_0().top(px(minutes_to_y(m, hour_px))).h(px(1.)).bg(p.now_line))
             })
             .when_some(hover, |d, m| {
                 d.child(
@@ -393,7 +410,7 @@ impl CalendarView {
                         .right_0()
                         .top(px(minutes_to_y(m, hour_px) - 1.))
                         .h(px(1.))
-                        .bg(n400())
+                        .bg(p.text_faint)
                         .child(
                             div()
                                 .debug_selector(|| "hover-time".into())
@@ -402,11 +419,11 @@ impl CalendarView {
                                 .top(px(-7.))
                                 .whitespace_nowrap()
                                 .rounded_full()
-                                .bg(n700())
+                                .bg(p.text)
                                 .px_1()
                                 .text_size(px(9.))
                                 .line_height(px(13.))
-                                .text_color(white())
+                                .text_color(p.bg)
                                 .child(format!("{:02}:{:02}", m / 60, m % 60)),
                         ),
                 )
@@ -445,7 +462,7 @@ impl CalendarView {
             .flex_1()
             .min_w_0()
             .border_l_1()
-            .border_color(n200())
+            .border_color(p.border)
             .child(hatch())
             .child(body)
             .child(hatch())
@@ -453,7 +470,7 @@ impl CalendarView {
     }
 }
 
-fn placeholder(a: i64, b: i64, hour_px: f32, border: gpui::Rgba, bg: gpui::Hsla) -> impl IntoElement {
+fn placeholder(a: i64, b: i64, hour_px: f32, border: gpui::Hsla, bg: gpui::Hsla) -> impl IntoElement {
     div()
         .absolute()
         .left(px(3.))
@@ -869,7 +886,7 @@ impl Render for CalendarView {
                     .min_h_0()
                     .overflow_y_scroll()
                     .track_scroll(&self.scroll)
-                    .child(div().flex().items_start().child(self.render_gutter(hour_px)).child(div().flex_1().flex().items_start().children(columns))),
+                    .child(div().flex().items_start().child(self.render_gutter(p, hour_px)).child(div().flex_1().flex().items_start().children(columns))),
             )
             .children(picker_overlay)
     }

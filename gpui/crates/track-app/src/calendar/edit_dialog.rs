@@ -138,8 +138,8 @@ impl EditForm {
     }
 }
 
-fn label(text: &'static str) -> impl IntoElement {
-    div().text_sm().font_weight(FontWeight::MEDIUM).text_color(n700()).child(text)
+fn label(p: Palette, text: &'static str) -> impl IntoElement {
+    div().text_sm().font_weight(FontWeight::MEDIUM).text_color(p.text).child(text)
 }
 
 fn field() -> gpui::Div {
@@ -158,6 +158,7 @@ impl Focusable for EditForm {
 
 impl Render for EditForm {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
         let project = self.selected_project().cloned();
         let locked = locked_tag_ids(project.as_ref());
         let q = self.select_query.read(cx).value().to_string();
@@ -173,17 +174,17 @@ impl Render for EditForm {
                     this.save(cx);
                 }
             }))
-            .child(field().child(label("タイトル")).child(Input::new(&self.title)))
+            .child(field().child(label(p, "タイトル")).child(Input::new(&self.title)))
             .child(
                 div()
                     .flex()
                     .gap_3()
-                    .child(field().flex_1().child(label("開始")).child(TimeField::new(&self.start)))
-                    .child(field().flex_1().child(label("終了")).child(TimeField::new(&self.end)))
-                    .child(field().w(px(96.)).child(label("休憩 (分)")).child(Input::new(&self.break_min))),
+                    .child(field().flex_1().child(label(p, "開始")).child(TimeField::new(&self.start)))
+                    .child(field().flex_1().child(label(p, "終了")).child(TimeField::new(&self.end)))
+                    .child(field().w(px(96.)).child(label(p, "休憩 (分)")).child(Input::new(&self.break_min))),
             )
             .child(
-                field().child(label("プロジェクト")).child(
+                field().child(label(p, "プロジェクト")).child(
                     div()
                         .id("edit-project-button")
                         .debug_selector(|| "edit-project-button".into())
@@ -192,19 +193,19 @@ impl Render for EditForm {
                         .gap_2()
                         .rounded_md()
                         .border_1()
-                        .border_color(n300())
+                        .border_color(p.border)
                         .px_3()
                         .py_2()
                         .text_sm()
                         .cursor_pointer()
-                        .hover(|s| s.bg(n50()))
+                        .hover(|s| s.bg(p.surface))
                         .child(div().size(px(10.)).flex_shrink_0().rounded_full().bg(hex(project.as_ref().map(|p| p.color.as_str()).unwrap_or("#a3a3a3"))))
                         .child(
                             div()
-                                .text_color(if project.is_some() { n900() } else { n500() })
+                                .text_color(if project.is_some() { p.text } else { p.text_muted })
                                 .child(project.as_ref().map(|p| format!("{} / {}", p.client.name, p.name)).unwrap_or_else(|| "プロジェクトなし".into())),
                         )
-                        .child(div().ml_auto().text_color(n400()).child(Icon::new(IconName::ChevronDown).size_3p5()))
+                        .child(div().ml_auto().text_color(p.text_faint).child(Icon::new(IconName::ChevronDown).size_3p5()))
                         .on_click(cx.listener(|this, _, w, cx| {
                             this.select_open = !this.select_open;
                             this.select_query.update(cx, |s, cx| s.focus(w, cx));
@@ -225,8 +226,8 @@ impl Render for EditForm {
                                             .w(px(280.))
                                             .rounded_md()
                                             .border_1()
-                                            .border_color(n200())
-                                            .bg(white())
+                                            .border_color(p.border)
+                                            .bg(p.bg)
                                             .shadow_lg()
                                             .occlude()
                                             .on_mouse_down_out(cx.listener(|this, _, _, cx| {
@@ -240,7 +241,7 @@ impl Render for EditForm {
                                                     cx.notify();
                                                 }
                                             }))
-                                            .child(div().border_b_1().border_color(n200()).child(Input::new(&self.select_query).appearance(false).px_3().py_2()))
+                                            .child(div().border_b_1().border_color(p.border).child(Input::new(&self.select_query).appearance(false).px_3().py_2()))
                                             .child(project_list(&self.projects, &q, on_pick, cx)),
                                     ),
                                 )
@@ -250,16 +251,16 @@ impl Render for EditForm {
                 ),
             )
             .when(!self.tags.is_empty(), |d| {
-                d.child(field().child(label("タグ")).child(div().flex().flex_wrap().gap_2().children(self.tags.iter().map(|tag| {
+                d.child(field().child(label(p, "タグ")).child(div().flex().flex_wrap().gap_2().children(self.tags.iter().map(|tag| {
                     let is_locked = locked.contains(&tag.id);
                     let active = is_locked || self.tag_ids.contains(&tag.id);
                     let id = tag.id.clone();
-                    tag_chip(format!("edit-tag-{}", tag.id).into(), tag, active, is_locked)
+                    tag_chip(p, format!("edit-tag-{}", tag.id).into(), tag, active, is_locked)
                         .when(is_locked, |d| d.opacity(0.7))
                         .on_click(cx.listener(move |this, _, _, cx| this.toggle_tag(&id, cx)))
                 }))))
             })
-            .child(field().child(label("メモ")).child(Textarea::new(&self.note)))
+            .child(field().child(label(p, "メモ")).child(Textarea::new(&self.note)))
             .child(
                 div()
                     .mt_2()
@@ -269,8 +270,8 @@ impl Render for EditForm {
                         footer_button("edit-delete")
                             .border_1()
                             .border_color(gpui::rgb(0xfca5a5))
-                            .text_color(red600())
-                            .hover(|s| s.bg(red50()))
+                            .text_color(p.danger)
+                            .hover(|s| s.bg(p.danger_bg))
                             .child("削除")
                             .on_click(cx.listener(|this, _, _, cx| cx.emit(EditEvent::Delete(this.entry.id.clone())))),
                     )
@@ -281,16 +282,16 @@ impl Render for EditForm {
                             .child(
                                 footer_button("edit-cancel")
                                     .border_1()
-                                    .border_color(n300())
-                                    .hover(|s| s.bg(n50()))
+                                    .border_color(p.border)
+                                    .hover(|s| s.bg(p.surface))
                                     .child("キャンセル")
                                     .on_click(cx.listener(|_, _, _, cx| cx.emit(EditEvent::Cancel))),
                             )
                             .child(
                                 footer_button("edit-save")
-                                    .bg(n900())
-                                    .text_color(white())
-                                    .hover(|s| s.bg(n700()))
+                                    .bg(p.text)
+                                    .text_color(p.bg)
+                                    .hover(|s| s.bg(p.text))
                                     .child("保存")
                                     .on_click(cx.listener(|this, _, _, cx| this.save(cx))),
                             ),

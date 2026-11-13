@@ -201,8 +201,9 @@ impl ProjectPicker {
 
 /// Client-grouped project list with a trailing 「プロジェクトなし」 row (ProjectPickerPopover / ProjectSelectPopover).
 pub fn project_list<V: 'static>(projects: &[Project], query: &str, on_pick: PickFn<V>, cx: &mut Context<V>) -> AnyElement {
+    let p = palette(cx);
     let groups = filter_projects(projects, query);
-    let row = |id: gpui::SharedString, color: gpui::Rgba, label: String| {
+    let row = |id: gpui::SharedString, color: gpui::Hsla, label: String| {
         div()
             .id(id)
             .flex()
@@ -213,7 +214,7 @@ pub fn project_list<V: 'static>(projects: &[Project], query: &str, on_pick: Pick
             .py(px(6.))
             .text_sm()
             .cursor_pointer()
-            .hover(|s| s.bg(n100()))
+            .hover(|s| s.bg(p.hover))
             .child(div().size(px(10.)).flex_shrink_0().rounded_full().bg(color))
             .child(label)
     };
@@ -222,14 +223,14 @@ pub fn project_list<V: 'static>(projects: &[Project], query: &str, on_pick: Pick
         .max_h(px(320.))
         .overflow_y_scroll()
         .py_1()
-        .when(groups.is_empty(), |d| d.child(div().px_3().py_4().flex().justify_center().text_xs().text_color(n400()).child("プロジェクトがありません")))
+        .when(groups.is_empty(), |d| d.child(div().px_3().py_4().flex().justify_center().text_xs().text_color(p.text_faint).child("プロジェクトがありません")))
         .children(groups.into_iter().map(|(client, ps)| {
             div()
-                .child(div().px_3().pb_1().pt_2().text_size(px(10.)).font_weight(FontWeight::MEDIUM).text_color(n400()).child(client.to_uppercase()))
-                .children(ps.into_iter().map(|p| {
-                    let pid = p.id.clone();
+                .child(div().px_3().pb_1().pt_2().text_size(px(10.)).font_weight(FontWeight::MEDIUM).text_color(p.text_faint).child(client.to_uppercase()))
+                .children(ps.into_iter().map(|proj| {
+                    let pid = proj.id.clone();
                     let on_pick = on_pick.clone();
-                    row(format!("pick-project-{}", p.id).into(), hex(&p.color), p.name.clone())
+                    row(format!("pick-project-{}", proj.id).into(), hex(&proj.color).into(), proj.name.clone())
                         .debug_selector({
                             let pid = pid.clone();
                             move || format!("project-{pid}")
@@ -239,18 +240,18 @@ pub fn project_list<V: 'static>(projects: &[Project], query: &str, on_pick: Pick
         }))
         .child({
             let on_pick = on_pick.clone();
-            row("pick-project-none".into(), n400(), "プロジェクトなし".into())
+            row("pick-project-none".into(), p.text_faint, "プロジェクトなし".into())
                 .mt_1()
                 .border_t_1()
-                .border_color(n200())
-                .text_color(n500())
+                .border_color(p.border)
+                .text_color(p.text_muted)
                 .debug_selector(|| "project-none".into())
                 .on_click(cx.listener(move |this, _, w, cx| on_pick(this, None, w, cx)))
         })
         .into_any_element()
 }
 
-pub fn tag_chip(id: gpui::SharedString, tag: &Tag, active: bool, locked: bool) -> gpui::Stateful<gpui::Div> {
+pub fn tag_chip(p: Palette, id: gpui::SharedString, tag: &Tag, active: bool, locked: bool) -> gpui::Stateful<gpui::Div> {
     div()
         .id(id)
         .rounded_full()
@@ -260,9 +261,9 @@ pub fn tag_chip(id: gpui::SharedString, tag: &Tag, active: bool, locked: bool) -
         .text_size(px(11.))
         .map(|d| {
             if active {
-                d.border_color(gpui::transparent_black()).bg(hex(&tag.color)).text_color(white())
+                d.border_color(gpui::transparent_black()).bg(hex(&tag.color)).text_color(p.bg)
             } else {
-                d.border_color(n200()).bg(white()).text_color(n600()).hover(|s| s.bg(n50()))
+                d.border_color(p.border).bg(p.bg).text_color(p.text_muted).hover(|s| s.bg(p.surface))
             }
         })
         .map(|d| if locked { d.cursor_default() } else { d.cursor_pointer() })
@@ -277,6 +278,7 @@ impl Focusable for ProjectPicker {
 
 impl Render for ProjectPicker {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
         let shell = div()
             .id("project-picker")
             .debug_selector(|| "project-picker".into())
@@ -285,8 +287,8 @@ impl Render for ProjectPicker {
             .overflow_hidden()
             .rounded_md()
             .border_1()
-            .border_color(n200())
-            .bg(white())
+            .border_color(p.border)
+            .bg(p.bg)
             .shadow_lg()
             .occlude()
             .on_mouse_down_out(cx.listener(|_, _, _, cx| cx.emit(PickerEvent::Cancel)))
@@ -303,7 +305,7 @@ impl Render for ProjectPicker {
                 this.pick(p.as_ref(), w, cx);
             });
             return shell
-                .child(div().border_b_1().border_color(n200()).child(Input::new(&self.query).appearance(false).px_3().py_2()))
+                .child(div().border_b_1().border_color(p.border).child(Input::new(&self.query).appearance(false).px_3().py_2()))
                 .child(project_list(&projects, &q, on_pick, cx));
         };
         let matches = self.matches(cx);
@@ -316,8 +318,8 @@ impl Render for ProjectPicker {
                     .items_center()
                     .gap_2()
                     .border_b_1()
-                    .border_color(n200())
-                    .bg(n50())
+                    .border_color(p.border)
+                    .bg(p.surface)
                     .px_2()
                     .py(px(6.))
                     .child(
@@ -325,19 +327,19 @@ impl Render for ProjectPicker {
                             .id("picker-back")
                             .rounded_sm()
                             .p_1()
-                            .text_color(n500())
+                            .text_color(p.text_muted)
                             .cursor_pointer()
-                            .hover(|s| s.bg(n200()).text_color(n800()))
+                            .hover(|s| s.bg(p.border).text_color(p.text))
                             .child(Icon::new(IconName::ChevronLeft).size_3p5())
                             .on_click(cx.listener(|this, _, w, cx| this.back(w, cx))),
                     )
                     .child(div().size(px(10.)).flex_shrink_0().rounded_full().bg(hex(&picked.color)))
-                    .child(div().truncate().text_sm().text_color(n700()).child(picked.name.clone())),
+                    .child(div().truncate().text_sm().text_color(p.text).child(picked.name.clone())),
             )
             .child(
                 div()
                     .border_b_1()
-                    .border_color(n200())
+                    .border_color(p.border)
                     .capture_key_down(cx.listener(|this, ev: &KeyDownEvent, w, cx| this.on_title_key(ev, w, cx)))
                     .child(Input::new(&self.title).appearance(false).px_3().py_2()),
             )
@@ -348,8 +350,8 @@ impl Render for ProjectPicker {
                         .max_h(px(160.))
                         .overflow_y_scroll()
                         .border_b_1()
-                        .border_color(n200())
-                        .bg(n50())
+                        .border_color(p.border)
+                        .bg(p.surface)
                         .py_1()
                         .children(matches.iter().enumerate().map(|(i, t)| {
                             let t2 = t.clone();
@@ -360,7 +362,7 @@ impl Render for ProjectPicker {
                                 .text_sm()
                                 .truncate()
                                 .cursor_pointer()
-                                .map(|d| if self.active == Some(i) { d.bg(n200()) } else { d.hover(|s| s.bg(n100())) })
+                                .map(|d| if self.active == Some(i) { d.bg(p.border) } else { d.hover(|s| s.bg(p.hover)) })
                                 .child(t.clone())
                                 .on_hover(cx.listener(move |this, h: &bool, _, cx| {
                                     if *h {
@@ -376,34 +378,34 @@ impl Render for ProjectPicker {
                 d.child(
                     div()
                         .border_b_1()
-                        .border_color(n200())
+                        .border_color(p.border)
                         .px_3()
                         .py_2()
-                        .child(div().mb_1().text_size(px(10.)).font_weight(FontWeight::MEDIUM).text_color(n400()).child("タグ"))
+                        .child(div().mb_1().text_size(px(10.)).font_weight(FontWeight::MEDIUM).text_color(p.text_faint).child("タグ"))
                         .child(div().flex().flex_wrap().gap_1().children(self.tags.iter().map(|tag| {
                             let locked = picked.locked.contains(&tag.id);
                             let active = locked || self.selected_tags.contains(&tag.id);
                             let id = tag.id.clone();
-                            tag_chip(format!("picker-tag-{}", tag.id).into(), tag, active, locked)
+                            tag_chip(p, format!("picker-tag-{}", tag.id).into(), tag, active, locked)
                                 .on_click(cx.listener(move |this, _, _, cx| this.toggle_tag(&id, cx)))
                         }))),
                 )
             })
-            .child(div().px_3().py_2().border_b_1().border_color(n200()).child(Textarea::new(&self.note).appearance(false)))
+            .child(div().px_3().py_2().border_b_1().border_color(p.border).child(Textarea::new(&self.note).appearance(false)))
             .child(
                 div().flex().justify_end().px_3().py_2().child(
                     div()
                         .id("picker-submit")
                         .debug_selector(|| "picker-submit".into())
                         .rounded_md()
-                        .bg(n900())
+                        .bg(p.text)
                         .px_3()
                         .py(px(6.))
                         .text_xs()
                         .font_weight(FontWeight::MEDIUM)
-                        .text_color(white())
+                        .text_color(p.bg)
                         .cursor_pointer()
-                        .hover(|s| s.bg(n700()))
+                        .hover(|s| s.bg(p.text))
                         .child("作成 (⌘↵)")
                         .on_click(cx.listener(|this, _, _, cx| this.submit(cx))),
                 ),

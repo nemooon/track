@@ -37,26 +37,27 @@ pub fn lane_slot(g: &BlockGeometry, hour_px: f32) -> Div {
         .w(gpui::relative(1. / g.lane_count as f32))
 }
 
-pub fn render_block(entry: &TimeEntry, selected: bool, ghost: bool, hovered_id: &str) -> Stateful<Div> {
+pub fn render_block(p: Palette, entry: &TimeEntry, selected: bool, ghost: bool, hovered_id: &str) -> Stateful<Div> {
     let accent = hex(entry.project.as_ref().map(|p| p.color.as_str()).unwrap_or(NO_PROJECT));
     let hovered = hovered_id == entry.id;
+    // A pale wash of the project colour with a slightly stronger rim (Zed-like, no heavy shadow).
     let (border, bg) = if selected {
-        (mix(accent, 0.56, n400()), mix(accent, 0.14, white()))
+        (mix(accent, 0.6, p.bg), mix(accent, 0.18, p.bg))
     } else if hovered {
-        (mix(accent, 0.36, n300()), mix(accent, 0.12, white()))
+        (mix(accent, 0.45, p.bg), mix(accent, 0.15, p.bg))
     } else {
-        (mix(accent, 0.24, rgb_e5e7eb()), mix(accent, 0.08, white()))
+        (mix(accent, 0.3, p.bg), mix(accent, 0.12, p.bg))
     };
-    let text = mix(accent, 0.52, n900());
+    let text = p.text;
     let start = entry.start.with_timezone(&Local);
     let end = entry.end.with_timezone(&Local);
     let gross = (entry.end - entry.start).num_minutes();
     let dur = format!("{}{}", format_duration_calendar((gross - entry.break_minutes).max(0)), break_label(entry.break_minutes));
     let project_name = entry.project.as_ref().map(|p| p.name.clone()).unwrap_or_else(|| "プロジェクトなし".into());
     let title = entry.title.clone().filter(|t| !t.is_empty());
-    let mut shadows = vec![BoxShadow { color: black_a(if hovered || selected { 0.08 } else { 0.035 }).into(), offset: point(px(0.), px(if hovered || selected { 2. } else { 1. })), blur_radius: px(if hovered || selected { 5. } else { 1. }), spread_radius: px(0.), inset: false }];
+    let mut shadows = vec![];
     if selected {
-        shadows.push(BoxShadow { color: with_alpha(accent, 0.2), offset: point(px(0.), px(0.)), blur_radius: px(0.), spread_radius: px(2.), inset: false });
+        shadows.push(BoxShadow { color: with_alpha(accent, 0.22), offset: point(px(0.), px(0.)), blur_radius: px(0.), spread_radius: px(2.), inset: false });
     }
     let id_owned = entry.id.clone();
     div()
@@ -68,7 +69,7 @@ pub fn render_block(entry: &TimeEntry, selected: bool, ghost: bool, hovered_id: 
         .left(px(2.))
         .right(px(4.))
         .overflow_hidden()
-        .rounded_md()
+        .rounded(px(5.))
         .border_1()
         .border_color(border)
         .bg(bg)
@@ -79,7 +80,6 @@ pub fn render_block(entry: &TimeEntry, selected: bool, ghost: bool, hovered_id: 
         .shadow(shadows)
         .when(ghost, |d| d.opacity(0.6))
         .cursor(if ghost { gpui::CursorStyle::ClosedHand } else { gpui::CursorStyle::OpenHand })
-        .child(div().absolute().left_0().top(px(6.)).bottom(px(6.)).w(px(3.)).rounded_r_full().bg(accent))
         .child(
             div()
                 .flex()
@@ -101,9 +101,9 @@ pub fn render_block(entry: &TimeEntry, selected: bool, ghost: bool, hovered_id: 
                                 .text_size(px(9.))
                                 .font_weight(FontWeight::MEDIUM)
                                 .line_height(px(12.))
-                                .bg(white_a(0.62))
-                                .border_1()
-                                .border_color(black_a(0.045))
+                                .font_family(MONO)
+                                .text_color(p.text_muted)
+                                .bg(with_alpha(p.bg, 0.6))
                                 .child(format!("{}–{}", start.format("%H:%M"), end.format("%H:%M"))),
                         ),
                 )
@@ -145,9 +145,6 @@ pub fn render_block(entry: &TimeEntry, selected: bool, ghost: bool, hovered_id: 
         )
 }
 
-fn rgb_e5e7eb() -> gpui::Rgba {
-    gpui::rgb(0xe5e7eb)
-}
 
 #[cfg(test)]
 mod tests {

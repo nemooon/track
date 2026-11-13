@@ -263,3 +263,38 @@ fn hover_time_label_is_one_line_left_of_the_line(cx: &mut TestAppContext) {
     assert!(label.size.height <= px(16.), "single line, got {:?}", label.size);
     assert!(label.size.width >= px(24.), "fits HH:MM, got {:?}", label.size);
 }
+
+fn visible_days(app: &gpui::Entity<crate::app::TrackApp>, cx: &mut gpui::VisualTestContext) -> Vec<NaiveDate> {
+    cx.update(|w, cx| app.read(cx).calendar.read(cx).days(w, cx))
+}
+
+#[gpui::test]
+fn visible_total_counts_only_shown_days(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
+    let days = visible_days(&app, cx);
+    let total = |app: &gpui::Entity<crate::app::TrackApp>, cx: &mut gpui::VisualTestContext, days: &[NaiveDate]| app.read_with(cx, |a, cx| a.calendar.read(cx).visible_total_minutes(days));
+    assert_eq!(total(&app, cx, &days), 60, "only entry a (12th) is in the shown week");
+    insert_entry(&f.db(), "late", at(12, 23, 0), at(13, 0, 0), None, "深夜");
+    insert_entry(&f.db(), "before", at(8, 23, 0), at(9, 0, 0), None, "前週");
+    app.update(cx, |a, cx| a.calendar.update(cx, |c, cx| c.reload(cx)));
+    wait_io(cx);
+    assert_eq!(total(&app, cx, &days), 120, "an entry ending at midnight counts on its day; the day before the range does not");
+}
+
+#[gpui::test]
+fn selection_label_shows_title_and_span(cx: &mut TestAppContext) {
+    let (app, cx, _f) = setup(cx);
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).selection_label()), None);
+    click(cx, "entry-a");
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).selection_label()), Some("作業a 10:00–11:00（1:00）".into()));
+    cx.simulate_keystrokes("escape");
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).selection_label()), None);
+}
+
+#[gpui::test]
+fn status_bar_shows_calendar_total(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = setup(cx);
+    let bar = cx.debug_bounds("status-bar").expect("status bar");
+    let total = cx.debug_bounds("status-total").expect("calendar total in the status bar");
+    assert!(bar.contains(&total.center()));
+}
