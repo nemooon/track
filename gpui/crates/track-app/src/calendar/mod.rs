@@ -142,6 +142,14 @@ impl CalendarView {
         }
     }
 
+    /// Tests: start scrolled to an hour before 09:00, as during the day, whatever the clock says
+    /// (at night the real first scroll goes to the current time).
+    #[cfg(test)]
+    pub fn pin_daytime_scroll(&mut self, cx: &gpui::App) {
+        self.scroll.set_offset(point(px(0.), -px(BUFFER_PX + minutes_to_y(8 * 60, self.hour_px(cx)))));
+        self.initial_scroll_done = true;
+    }
+
     fn initial_scroll(&mut self, hour_px: f32, cx: &gpui::App) {
         if self.initial_scroll_done {
             return;

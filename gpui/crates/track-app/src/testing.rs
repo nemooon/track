@@ -127,6 +127,7 @@ fn open_with(cx: &mut TestAppContext, data: DataClient, persist: PathBuf, preloa
             state.update(cx, |s, cx| s.load(cx));
         }
         let view = cx.new(|cx| TrackApp::with_state(state, window, cx));
+        view.update(cx, |a, cx| a.calendar.update(cx, |c, cx| c.pin_daytime_scroll(cx)));
         *slot2.borrow_mut() = Some(view.clone());
         gpui_component::Root::new(view, window, cx)
     });
@@ -152,4 +153,10 @@ pub fn fake_ai(dir: &Path, text: &str) {
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     let config = serde_json::json!({ "aiProvider": "custom-command", "aiCommandExecutable": script });
     std::fs::write(dir.join("config.json"), config.to_string()).unwrap();
+}
+
+/// A day the default calendar (稼働日) shows this week: Monday of the current Sunday-start week.
+/// `Local::now()` itself is hidden on Saturdays and Sundays.
+pub fn visible_weekday() -> NaiveDate {
+    crate::core::time::week_start(chrono::Local::now().date_naive()) + chrono::Duration::days(1)
 }

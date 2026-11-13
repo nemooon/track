@@ -120,7 +120,7 @@ fn external_write_triggers_reload(cx: &mut TestAppContext) {
     use crate::testing::{insert_entry, local, open_app_db, wait_io};
     let (app, cx, fixture) = open_app_db(cx, |_| {});
     wait_io(cx);
-    let today = Local::now().date_naive();
+    let today = crate::testing::visible_weekday();
     assert!(app.read_with(cx, |a, cx| a.calendar.read(cx).cache.get("ext").is_none()));
     // Another process (track-cli, AI) writes through its own connection.
     let other = fixture.db();
