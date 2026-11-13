@@ -13,8 +13,6 @@ pub struct PersistState {
     pub reports_expanded: HashMap<String, Vec<String>>,
     /// `reports.groupSameTitles`
     pub group_same_titles: bool,
-    /// `reports.summaryCollapsed`
-    pub summary_collapsed: bool,
     /// `reports.customOutputCache.v1`
     pub output_cache: Vec<track_core::report::cache::CachedOutput>,
     /// How report durations are shown.
@@ -32,7 +30,7 @@ pub enum DurationStyle {
 
 impl Default for PersistState {
     fn default() -> Self {
-        Self { zoom_index: DEFAULT_ZOOM, reports_expanded: HashMap::new(), group_same_titles: false, summary_collapsed: false, output_cache: Vec::new(), duration_style: DurationStyle::Decimal }
+        Self { zoom_index: DEFAULT_ZOOM, reports_expanded: HashMap::new(), group_same_titles: false, output_cache: Vec::new(), duration_style: DurationStyle::Decimal }
     }
 }
 
@@ -57,6 +55,18 @@ impl PersistState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn old_persist_file_with_summary_collapsed_loads() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("p.json");
+        std::fs::write(&path, r#"{"summary_collapsed": true, "zoom_index": 2}"#).unwrap();
+        let s = PersistState::load(&path);
+        assert_eq!(s.zoom_index, 2, "the rest of an old file still loads");
+        assert!(!s.group_same_titles);
+        let saved = { s.save(&path).unwrap(); std::fs::read_to_string(&path).unwrap() };
+        assert!(!saved.contains("summary_collapsed"), "the dropped setting is not written back");
+    }
 
     #[test]
     fn persist_roundtrip() {

@@ -262,6 +262,7 @@ fn button(id: &'static str) -> gpui::Stateful<gpui::Div> {
 
 impl Render for CustomOutput {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
         let format = self.format().cloned();
         let uses_ai = format.as_ref().is_some_and(report_copy_format_uses_ai);
         let provider = self.state.read(cx).data.as_ref().map(|d| d.config.ai_provider.clone()).unwrap_or_default();
@@ -276,7 +277,7 @@ impl Render for CustomOutput {
                 .justify_center()
                 .gap_3()
                 .text_sm()
-                .text_color(n500())
+                .text_color(p.text_muted)
                 .child(
                     div()
                         .flex()
@@ -284,7 +285,7 @@ impl Render for CustomOutput {
                         .gap_2()
                         .child(Icon::new(IconName::LoaderCircle).size_5().text_color(gpui::rgb(0x1d4ed8)))
                         .child(if uses_ai { format!("{}で作成しています…", provider_label(&provider)) } else { "現在の集計から作成しています…".into() })
-                        .when(uses_ai, |d| d.child(div().text_xs().text_color(n400()).child(elapsed_label(secs)))),
+                        .when(uses_ai, |d| d.child(div().text_xs().text_color(p.text_faint).child(elapsed_label(secs)))),
                 )
                 .when_some(self.progress.clone().filter(|_| uses_ai), |d, (kind, msg)| {
                     d.child(
@@ -301,12 +302,12 @@ impl Render for CustomOutput {
                             .px_4()
                             .py_3()
                             .child(div().mb_1().text_size(px(11.)).font_weight(FontWeight::MEDIUM).text_color(gpui::rgb(0x1d4ed8)).child(if kind == "reasoning" { "考えていること" } else { "進捗" }))
-                            .child(div().text_xs().text_color(n600()).child(msg)),
+                            .child(div().text_xs().text_color(p.text_muted).child(msg)),
                     )
                 })
                 .into_any_element()
         } else if let Some(err) = &self.error {
-            div().debug_selector(|| "output-error".into()).rounded_md().border_1().border_color(gpui::rgb(0xfecaca)).bg(red50()).px_4().py_3().text_sm().text_color(red700()).child(err.clone()).into_any_element()
+            div().debug_selector(|| "output-error".into()).rounded_md().border_1().border_color(gpui::rgb(0xfecaca)).bg(p.danger_bg).px_4().py_3().text_sm().text_color(p.danger).child(err.clone()).into_any_element()
         } else if !self.result.is_empty() {
             let f = format.clone().unwrap();
             let sum: i64 = self.result.iter().map(|r| r.minutes).sum();
@@ -325,11 +326,11 @@ impl Render for CustomOutput {
                         .overflow_y_scroll()
                         .rounded_lg()
                         .border_1()
-                        .border_color(n200())
+                        .border_color(p.border)
                         .text_sm()
-                        .child(div().flex().bg(n50()).text_color(n500()).font_weight(FontWeight::MEDIUM).children(f.columns.iter().map(|c| div().flex_1().px_3().py_2().child(report_copy_column_header(c)))))
+                        .child(div().flex().bg(p.surface).text_color(p.text_muted).font_weight(FontWeight::MEDIUM).children(f.columns.iter().map(|c| div().flex_1().px_3().py_2().child(report_copy_column_header(c)))))
                         .children(self.result.iter().map(|r| {
-                            div().flex().border_t_1().border_color(n100()).text_color(n700()).children(f.columns.iter().map(|c| div().flex_1().px_3().py_2().child(aggregation_column_value(r, c, self.result_total))))
+                            div().flex().border_t_1().border_color(p.hover).text_color(p.text).children(f.columns.iter().map(|c| div().flex_1().px_3().py_2().child(aggregation_column_value(r, c, self.result_total))))
                         })),
                 )
                 .child(
@@ -339,7 +340,7 @@ impl Render for CustomOutput {
                         .justify_end()
                         .gap_x_5()
                         .text_xs()
-                        .text_color(n500())
+                        .text_color(p.text_muted)
                         .when_some(self.restored_at, |d, at| {
                             let t = Local.timestamp_millis_opt(at).single().map(|t| t.format("%Y/%-m/%-d %-H:%M:%S").to_string()).unwrap_or_default();
                             d.child(div().debug_selector(|| "output-restored".into()).text_color(gpui::rgb(0x2563eb)).child(format!("保存済み結果を復元 · {t}")))
@@ -357,11 +358,11 @@ impl Render for CustomOutput {
                 .rounded_lg()
                 .border_1()
                 .border_dashed()
-                .border_color(n200())
+                .border_color(p.border)
                 .px_4()
                 .py_10()
                 .text_sm()
-                .text_color(n400())
+                .text_color(p.text_faint)
                 .child("出力フォーマットを選んで「作成する」を押してください")
                 .into_any_element()
         };
@@ -370,15 +371,15 @@ impl Render for CustomOutput {
             .flex_col()
             .gap_4()
             .h(px(600.))
-            .child(div().text_sm().text_color(n500()).child(self.subtitle()))
+            .child(div().text_sm().text_color(p.text_muted).child(self.subtitle()))
             .child(
                 div()
                     .flex()
                     .flex_col()
                     .gap(px(6.))
-                    .child(div().text_sm().font_weight(FontWeight::MEDIUM).text_color(n800()).child("出力形式"))
+                    .child(div().text_sm().font_weight(FontWeight::MEDIUM).text_color(p.text).child("出力形式"))
                     .map(|d| match &format {
-                        None => d.child(div().rounded_md().border_1().border_color(gpui::rgb(0xfde68a)).bg(amber50()).px_3().py_2().text_sm().text_color(gpui::rgb(0x92400e)).child("設定の「レポート」で出力フォーマットを登録してください。")),
+                        None => d.child(div().rounded_md().border_1().border_color(gpui::rgb(0xfde68a)).bg(p.warning_bg).px_3().py_2().text_sm().text_color(gpui::rgb(0x92400e)).child("設定の「レポート」で出力フォーマットを登録してください。")),
                         Some(f) => d.child(
                             div()
                                 .relative()
@@ -391,13 +392,13 @@ impl Render for CustomOutput {
                                         .justify_between()
                                         .rounded_md()
                                         .border_1()
-                                        .border_color(n300())
+                                        .border_color(p.border)
                                         .px_3()
                                         .py_2()
                                         .text_sm()
                                         .cursor_pointer()
                                         .child(format_label(f))
-                                        .child(Icon::new(IconName::ChevronDown).size_3p5().text_color(n400()))
+                                        .child(Icon::new(IconName::ChevronDown).size_3p5().text_color(p.text_faint))
                                         .on_click(cx.listener(|this, _, _, cx| {
                                             if !this.generating {
                                                 this.picking_format = !this.picking_format;
@@ -412,8 +413,8 @@ impl Render for CustomOutput {
                                             .w(px(420.))
                                             .rounded_md()
                                             .border_1()
-                                            .border_color(n200())
-                                            .bg(white())
+                                            .border_color(p.border)
+                                            .bg(p.bg)
                                             .shadow_lg()
                                             .py_1()
                                             .occlude()
@@ -431,7 +432,7 @@ impl Render for CustomOutput {
                                                     .py(px(6.))
                                                     .text_sm()
                                                     .cursor_pointer()
-                                                    .hover(|s| s.bg(n100()))
+                                                    .hover(|s| s.bg(p.hover))
                                                     .child(format_label(f))
                                                     .on_click(cx.listener(move |this, _, _, cx| this.select_format(id.clone(), cx)))
                                             })),
@@ -446,14 +447,14 @@ impl Render for CustomOutput {
                                 .items_center()
                                 .gap_2()
                                 .text_xs()
-                                .text_color(n500())
+                                .text_color(p.text_muted)
                                 .child(
                                     div()
                                         .rounded_full()
                                         .px_2()
                                         .py(px(2.))
                                         .font_weight(FontWeight::MEDIUM)
-                                        .map(|d| if uses_ai { d.bg(gpui::rgb(0xede9fe)).text_color(gpui::rgb(0x6d28d9)) } else { d.bg(n100()).text_color(n600()) })
+                                        .map(|d| if uses_ai { d.bg(gpui::rgb(0xede9fe)).text_color(gpui::rgb(0x6d28d9)) } else { d.bg(p.hover).text_color(p.text_muted) })
                                         .child(if uses_ai { "AI使用" } else { "AIなし" }),
                                 )
                                 .child(if uses_ai { "設定した指示で工数を再分類して出力します。" } else { "現在の集計結果を指定した列順で出力します。" }),
@@ -466,12 +467,12 @@ impl Render for CustomOutput {
                     .flex()
                     .justify_end()
                     .gap_2()
-                    .child(button("output-close").hover(|s| s.bg(n100())).child("閉じる").on_click(cx.listener(|_, _, w, cx| w.close_dialog(cx))))
+                    .child(button("output-close").hover(|s| s.bg(p.hover)).child("閉じる").on_click(cx.listener(|_, _, w, cx| w.close_dialog(cx))))
                     .child(
                         button("output-create")
                             .border_1()
-                            .border_color(n300())
-                            .map(|d| if self.generating || format.is_none() { d.opacity(0.5) } else { d.hover(|s| s.bg(n50())) })
+                            .border_color(p.border)
+                            .map(|d| if self.generating || format.is_none() { d.opacity(0.5) } else { d.hover(|s| s.bg(p.surface)) })
                             .child(Icon::new(if self.generating { IconName::LoaderCircle } else { IconName::FileText }).size_4())
                             .child(if self.result.is_empty() { "作成する" } else { "再作成" })
                             .on_click(cx.listener(|this, _, _, cx| {
@@ -483,9 +484,9 @@ impl Render for CustomOutput {
                     .when(!self.result.is_empty() && !self.generating, |d| {
                         d.child(
                             button("output-copy")
-                                .bg(n900())
-                                .text_color(white())
-                                .hover(|s| s.bg(n700()))
+                                .bg(p.text)
+                                .text_color(p.bg)
+                                .hover(|s| s.bg(p.text))
                                 .child(Icon::new(if self.copied { IconName::Check } else { IconName::Copy }).size_4())
                                 .child(if self.copied { "コピーしました" } else { "結果をコピー" })
                                 .on_click(cx.listener(|this, _, _, cx| this.copy(cx))),

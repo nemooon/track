@@ -1,5 +1,4 @@
 pub mod custom_output;
-mod summary;
 pub mod weekly_report;
 
 use track_core::model::{GroupBy, ReportEntry, ReportQuery, ReportRange, ReportResponse};
@@ -12,13 +11,12 @@ use crate::persist::DurationStyle;
 use crate::ui::{controls, date_nav::{self, DateNav, HasDateNav, NavEvent, NavKind}, theme::*};
 use chrono::{Datelike, Duration, Local, NaiveDate};
 use gpui::{
-    AnyElement, AppContext, Context, Entity, FontWeight, InteractiveElement, IntoElement, KeyDownEvent, MouseMoveEvent, ParentElement,
+    AnyElement, AppContext, Context, Entity, FontWeight, InteractiveElement, IntoElement, KeyDownEvent, ParentElement,
     Render, StatefulInteractiveElement, Styled, Subscription, Task, Window, div, prelude::FluentBuilder, px,
 };
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::{Icon, IconName};
 use std::collections::{HashMap, HashSet};
-use summary::{SummaryProps, collapsed_strip, donut, hit_slice, legend, slice_angles};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FilterKind {
@@ -56,10 +54,8 @@ pub struct ReportsView {
     expand_all: bool,
     pub open_filter: Option<FilterKind>,
     filter_query: Entity<InputState>,
-    donut_hover: Option<usize>,
     pub output: Option<Entity<custom_output::CustomOutput>>,
     pub weekly: Option<Entity<weekly_report::WeeklyReport>>,
-    donut_bounds_store: std::rc::Rc<std::cell::Cell<Option<gpui::Bounds<gpui::Pixels>>>>,
     totals_copied: bool,
     copy_task: Option<Task<()>>,
     _subs: Vec<Subscription>,
@@ -90,10 +86,8 @@ impl ReportsView {
             expand_all: false,
             open_filter: None,
             filter_query,
-            donut_hover: None,
             output: None,
             weekly: None,
-            donut_bounds_store: Default::default(),
             totals_copied: false,
             copy_task: None,
             _subs: subs,
@@ -339,6 +333,7 @@ impl ReportsView {
     }
 
     fn render_filter(&self, kind: FilterKind, label: &'static str, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
         let options = self.options(kind, cx);
         let selected = self.selected(kind).clone();
         let active = !selected.is_empty();
@@ -359,7 +354,7 @@ impl ReportsView {
                     .px_3()
                     .text_xs()
                     .cursor_pointer()
-                    .map(|d| if active { d.border_color(n900()).bg(n900()).text_color(white()) } else { d.border_color(n300()).bg(white()).text_color(n700()).hover(|s| s.bg(n50())) })
+                    .map(|d| if active { d.border_color(p.text).bg(p.text).text_color(p.bg) } else { d.border_color(p.border).bg(p.bg).text_color(p.text).hover(|s| s.bg(p.surface)) })
                     .child(filter_label(label, &options, &selected))
                     .child(div().opacity(0.7).child(Icon::new(IconName::ChevronDown).size_3()))
                     .on_click(cx.listener(move |this, _, w, cx| {
@@ -391,7 +386,7 @@ impl ReportsView {
                             .py(px(6.))
                             .text_sm()
                             .cursor_pointer()
-                            .hover(|s| s.bg(n100()))
+                            .hover(|s| s.bg(p.hover))
                             .child(
                                 div()
                                     .size_4()
@@ -401,12 +396,12 @@ impl ReportsView {
                                     .justify_center()
                                     .rounded_sm()
                                     .border_1()
-                                    .map(|d| if checked { d.border_color(n900()).bg(n900()).text_color(white()) } else { d.border_color(n300()).bg(white()) })
+                                    .map(|d| if checked { d.border_color(p.text).bg(p.text).text_color(p.bg) } else { d.border_color(p.border).bg(p.bg) })
                                     .when(checked, |d| d.child(Icon::new(IconName::Check).size_3())),
                             )
                             .when_some(o.color.clone(), |d, c| d.child(div().size(px(10.)).flex_shrink_0().rounded_full().bg(hex(&c))))
                             .child(div().flex_1().truncate().child(o.label.clone()))
-                            .when_some(o.hint.clone(), |d, h| d.child(div().text_size(px(10.)).text_color(n400()).child(h)))
+                            .when_some(o.hint.clone(), |d, h| d.child(div().text_size(px(10.)).text_color(p.text_faint).child(h)))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 let mut next = this.selected(kind).clone();
                                 if let Some(i) = next.iter().position(|x| *x == oid) {
@@ -428,8 +423,8 @@ impl ReportsView {
                         .overflow_hidden()
                         .rounded_md()
                         .border_1()
-                        .border_color(n200())
-                        .bg(white())
+                        .border_color(p.border)
+                        .bg(p.bg)
                         .shadow_lg()
                         .occlude()
                         .on_mouse_down_out(cx.listener(|this, _, _, cx| {
@@ -448,7 +443,7 @@ impl ReportsView {
                                 .items_center()
                                 .justify_between()
                                 .border_b_1()
-                                .border_color(n200())
+                                .border_color(p.border)
                                 .px_3()
                                 .py_1()
                                 .child(div().flex_1().child(Input::new(&self.filter_query).appearance(false)))
@@ -458,9 +453,9 @@ impl ReportsView {
                                             .id("filter-clear")
                                             .ml_2()
                                             .text_size(px(11.))
-                                            .text_color(n500())
+                                            .text_color(p.text_muted)
                                             .cursor_pointer()
-                                            .hover(|s| s.text_color(n900()))
+                                            .hover(|s| s.text_color(p.text))
                                             .child("クリア")
                                             .on_click(cx.listener(move |this, _, _, cx| this.set_selected(kind, vec![], cx))),
                                     )
@@ -472,7 +467,7 @@ impl ReportsView {
                                 .max_h(px(300.))
                                 .overflow_y_scroll()
                                 .py_1()
-                                .when(empty, |d| d.child(div().px_3().py_4().flex().justify_center().text_xs().text_color(n400()).child(format!("該当する{label}がありません"))))
+                                .when(empty, |d| d.child(div().px_3().py_4().flex().justify_center().text_xs().text_color(p.text_faint).child(format!("該当する{label}がありません"))))
                                 .children(rows),
                         ),
                 ))
@@ -480,7 +475,7 @@ impl ReportsView {
     }
 
     fn render_filter_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let collapsed = self.state.read(cx).persist.summary_collapsed;
+        let p = palette(cx);
         let any = !(self.client_ids.is_empty() && self.project_ids.is_empty() && self.tag_ids.is_empty());
         div()
             .flex()
@@ -489,28 +484,11 @@ impl ReportsView {
             .items_center()
             .gap_2()
             .border_b_1()
-            .border_color(n200())
-            .bg(with_alpha(n50(), 0.6))
+            .border_color(p.border)
+            .bg(with_alpha(p.surface, 0.6))
             .px_3()
             .py_2()
-            .child(
-                div()
-                    .id("summary-toggle")
-                    .size(px(28.))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_sm()
-                    .cursor_pointer()
-                    .text_color(if collapsed { n400() } else { n700() })
-                    .hover(|s| s.bg(with_alpha(n200(), 0.7)))
-                    .child(Icon::new(IconName::ChartPie).size_4())
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.state.update(cx, |s, _| s.update_persist(|p| p.summary_collapsed = !p.summary_collapsed));
-                        cx.notify();
-                    })),
-            )
-            .child(div().mr_1().text_xs().font_weight(FontWeight::MEDIUM).text_color(n500()).child("絞り込み"))
+            .child(div().mr_1().text_xs().font_weight(FontWeight::MEDIUM).text_color(p.text_muted).child("絞り込み"))
             .child(self.render_filter(FilterKind::Client, "クライアント", cx))
             .child(self.render_filter(FilterKind::Project, "プロジェクト", cx))
             .child(self.render_filter(FilterKind::Tag, "タグ", cx))
@@ -520,9 +498,9 @@ impl ReportsView {
                         .id("filter-clear-all")
                         .ml_1()
                         .text_xs()
-                        .text_color(n500())
+                        .text_color(p.text_muted)
                         .cursor_pointer()
-                        .hover(|s| s.text_color(n900()).underline())
+                        .hover(|s| s.text_color(p.text).underline())
                         .child("すべてクリア")
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.client_ids.clear();
@@ -534,70 +512,8 @@ impl ReportsView {
             })
     }
 
-    fn render_summary(&self, data: &ReportResponse, wide: bool, medium: bool, cx: &mut Context<Self>) -> AnyElement {
-        let collapsed = self.state.read(cx).persist.summary_collapsed;
-        if collapsed {
-            return collapsed_strip(&data.rows, wide).into_any_element();
-        }
-        let props = SummaryProps { rows: &data.rows, total: data.total_minutes, group_by: self.group_by, hovered: self.donut_hover, style: self.style(cx) };
-        let angles = slice_angles(&data.rows.iter().map(|r| r.total_minutes).collect::<Vec<_>>());
-        div()
-            .flex()
-            .flex_col()
-            .min_w_0()
-            .child(
-                div()
-                    .flex()
-                    .min_h(px(48.))
-                    .flex_shrink_0()
-                    .items_center()
-                    .justify_between()
-                    .px_4()
-                    .child(div().text_sm().font_weight(FontWeight::MEDIUM).text_color(n800()).child("集計サマリー"))
-                    .child(div().text_xs().text_color(n400()).child(format!("{}件", data.rows.len()))),
-            )
-            .child(
-                div()
-                    .flex()
-                    .gap_4()
-                    .px_4()
-                    .pb_4()
-                    .pt_2()
-                    .map(|d| if medium && !wide { d.flex_row().items_start() } else { d.flex_col().items_center() })
-                    .child(
-                        div()
-                            .id("donut")
-                            .child(donut(&props))
-                            .on_mouse_move(cx.listener(move |this, ev: &MouseMoveEvent, _, cx| {
-                                let _ = ev;
-                                let hit = this.donut_bounds_store.get().and_then(|b| {
-                                    let c = b.center();
-                                    let size = f32::from(b.size.width.min(b.size.height));
-                                    hit_slice(&angles, f32::from(ev.position.x - c.x), f32::from(ev.position.y - c.y), size / 2. * 0.62, size / 2. * 0.95)
-                                });
-                                if hit != this.donut_hover {
-                                    this.donut_hover = hit;
-                                    cx.notify();
-                                }
-                            }))
-                            .on_hover(cx.listener(|this, h: &bool, _, cx| {
-                                if !*h {
-                                    this.donut_hover = None;
-                                    cx.notify();
-                                }
-                            }))
-                            .child({
-                                let store = self.donut_bounds_store.clone();
-                                gpui::canvas(move |b, _, _| store.set(Some(b)), |_, _, _, _| ()).absolute().size_full()
-                            })
-                            .relative(),
-                    )
-                    .child(legend(&props)),
-            )
-            .into_any_element()
-    }
-
     fn render_details(&self, data: &ReportResponse, cx: &mut Context<Self>) -> AnyElement {
+        let p = palette(cx);
         let group_same = self.state.read(cx).persist.group_same_titles;
         let style = self.style(cx);
         let total = data.total_minutes;
@@ -609,18 +525,18 @@ impl ReportsView {
                 .child(div().w(px(160.)).flex_shrink_0().px_3().child(date))
                 .child(div().w(px(112.)).flex_shrink_0().px_3().child(tags))
                 .child(div().w(px(96.)).flex_shrink_0().px_3().flex().justify_end().child(time))
-                .child(div().w(px(64.)).flex_shrink_0().px_3().flex().justify_end().child(pct))
+                .child(div().w(px(168.)).flex_shrink_0().px_3().flex().justify_end().child(pct))
         };
         let e = || div().into_any_element();
         let header = div()
             .flex_shrink_0()
             .border_b_1()
-            .border_color(n200())
-            .bg(with_alpha(n50(), 0.8))
+            .border_color(p.border)
+            .bg(with_alpha(p.surface, 0.8))
             .py_2()
             .text_sm()
             .font_weight(FontWeight::MEDIUM)
-            .text_color(n500())
+            .text_color(p.text_muted)
             .child(cols(
                 div()
                     .flex()
@@ -635,9 +551,9 @@ impl ReportsView {
                             .items_center()
                             .justify_center()
                             .rounded_sm()
-                            .text_color(n400())
+                            .text_color(p.text_faint)
                             .cursor_pointer()
-                            .hover(|s| s.bg(with_alpha(n200(), 0.7)).text_color(n600()))
+                            .hover(|s| s.bg(with_alpha(p.border, 0.7)).text_color(p.text_muted))
                             .child(Icon::new(IconName::ChevronsUpDown).size_3())
                             .on_click(cx.listener(|this, _, _, cx| this.toggle_all(cx))),
                     )
@@ -652,7 +568,7 @@ impl ReportsView {
                             .gap_2()
                             .text_xs()
                             .font_weight(FontWeight::NORMAL)
-                            .text_color(n600())
+                            .text_color(p.text_muted)
                             .cursor_pointer()
                             .child("まとめる")
                             .child(
@@ -662,8 +578,8 @@ impl ReportsView {
                                     .w(px(28.))
                                     .flex_shrink_0()
                                     .rounded_full()
-                                    .bg(if group_same { n900() } else { n300() })
-                                    .child(div().absolute().top(px(2.)).left(px(if group_same { 14. } else { 2. })).size_3().rounded_full().bg(white()).shadow_sm()),
+                                    .bg(if group_same { p.text } else { p.text_faint })
+                                    .child(div().absolute().top(px(2.)).left(px(if group_same { 14. } else { 2. })).size_3().rounded_full().bg(p.bg).shadow_sm()),
                             )
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.state.update(cx, |s, _| s.update_persist(|p| p.group_same_titles = !p.group_same_titles));
@@ -678,13 +594,13 @@ impl ReportsView {
             ));
         let tag_pills = |tags: &[track_core::model::Tag]| -> AnyElement {
             if tags.is_empty() {
-                div().text_color(n300()).child("—").into_any_element()
+                div().text_color(p.text_faint).child("—").into_any_element()
             } else {
                 div()
                     .flex()
                     .flex_wrap()
                     .gap_1()
-                    .children(tags.iter().map(|t| div().rounded_full().px(px(6.)).text_size(px(10.)).text_color(white()).bg(hex(&t.color)).child(t.name.clone())))
+                    .children(tags.iter().map(|t| div().rounded_full().px(px(6.)).text_size(px(10.)).text_color(p.bg).bg(hex(&t.color)).child(t.name.clone())))
                     .into_any_element()
             }
         };
@@ -699,24 +615,24 @@ impl ReportsView {
                     .id(gpui::SharedString::from(format!("row-{path}")))
                     .debug_selector(move || sel.clone())
                     .border_b_1()
-                    .border_color(n100())
+                    .border_color(p.hover)
                     .py_2()
                     .text_sm()
                     .cursor_pointer()
-                    .hover(|s| s.bg(n50()))
+                    .hover(|s| s.bg(p.surface))
                     .child(cols(
                         div()
                             .flex()
                             .items_center()
                             .gap_2()
-                            .child(div().size_4().flex_shrink_0().flex().items_center().justify_center().text_color(n400()).child(Icon::new(if open { IconName::ChevronDown } else { IconName::ChevronRight }).size_3()))
+                            .child(div().size_4().flex_shrink_0().flex().items_center().justify_center().text_color(p.text_faint).child(Icon::new(if open { IconName::ChevronDown } else { IconName::ChevronRight }).size_3()))
                             .child(div().size_3().flex_shrink_0().rounded_sm().bg(hex(&row_color(r.color.as_deref(), i))))
                             .child(div().min_w_0().truncate().child(r.label.clone()))
                             .into_any_element(),
                         e(),
                         e(),
-                        div().child(format_duration(r.total_minutes, style)).into_any_element(),
-                        div().text_color(n500()).child(format!("{}%", percent(r.total_minutes, total))).into_any_element(),
+                        div().font_family(MONO).child(format_duration(r.total_minutes, style)).into_any_element(),
+                        share_cell(p, &r.key, &row_color(r.color.as_deref(), i), r.total_minutes, total),
                     ))
                     .on_click(cx.listener(move |this, _, _, cx| this.toggle_row(p2.clone(), k2.clone(), cx)))
                     .into_any_element(),
@@ -727,23 +643,23 @@ impl ReportsView {
             let child_row = |content: AnyElement, date: AnyElement, tags: AnyElement, minutes: i64| {
                 div()
                     .border_b_1()
-                    .border_color(n100())
+                    .border_color(p.hover)
                     .py(px(6.))
                     .text_sm()
-                    .text_color(n700())
+                    .text_color(p.text)
                     .child(cols(
                         div().pl(px(20.)).flex().items_center().gap_2().child(div().size_4().flex_shrink_0()).child(content).into_any_element(),
                         date,
                         tags,
-                        div().child(format_duration(minutes, style)).into_any_element(),
-                        div().text_color(n400()).child(format!("{}%", percent(minutes, r.total_minutes))).into_any_element(),
+                        div().font_family(MONO).child(format_duration(minutes, style)).into_any_element(),
+                        div().text_color(p.text_faint).child(format!("{}%", percent(minutes, r.total_minutes))).into_any_element(),
                     ))
                     .into_any_element()
             };
-            let note_row = |text: &'static str| div().py_2().pl(px(32.)).px_3().text_xs().text_color(n400()).child(text).into_any_element();
+            let note_row = |text: &'static str| div().py_2().pl(px(32.)).px_3().text_xs().text_color(p.text_faint).child(text).into_any_element();
             match self.children.get(&path) {
                 None | Some(Children::Loading) => body.push(note_row("読み込み中…")),
-                Some(Children::Failed(msg)) => body.push(div().py_2().pl(px(32.)).px_3().text_xs().text_color(red600()).child(format!("読み込みに失敗しました（{msg}）")).into_any_element()),
+                Some(Children::Failed(msg)) => body.push(div().py_2().pl(px(32.)).px_3().text_xs().text_color(p.danger).child(format!("読み込みに失敗しました（{msg}）")).into_any_element()),
                 Some(Children::Loaded(es)) if es.is_empty() => body.push(note_row("エントリがありません")),
                 Some(Children::Loaded(es)) if group_same => {
                     for g in group_entries_by_title(es) {
@@ -753,14 +669,14 @@ impl ReportsView {
                                 .min_w_0()
                                 .items_center()
                                 .gap_2()
-                                .child(div().size_2().flex_shrink_0().rounded_full().bg(g.project.as_ref().map(|p| hex(&p.color)).unwrap_or(n300())))
+                                .child(div().size_2().flex_shrink_0().rounded_full().bg(g.project.as_ref().map(|pr| gpui::Hsla::from(hex(&pr.color))).unwrap_or(p.text_faint)))
                                 .child(div().min_w_0().truncate().map(|d| match &g.title {
                                     Some(t) if !t.is_empty() => d.child(t.clone()),
-                                    _ => d.text_color(n400()).child("（タイトルなし）"),
+                                    _ => d.text_color(p.text_faint).child("（タイトルなし）"),
                                 }))
-                                .child(div().text_size(px(10.)).text_color(n400()).child(format!("×{}", g.count)))
+                                .child(div().text_size(px(10.)).text_color(p.text_faint).child(format!("×{}", g.count)))
                                 .into_any_element(),
-                            div().text_xs().text_color(n300()).child("—").into_any_element(),
+                            div().text_xs().text_color(p.text_faint).child("—").into_any_element(),
                             tag_pills(&g.tags),
                             g.minutes,
                         ));
@@ -776,15 +692,15 @@ impl ReportsView {
                                 .min_w_0()
                                 .items_center()
                                 .gap_2()
-                                .child(div().size_2().flex_shrink_0().rounded_full().bg(en.project.as_ref().map(|p| hex(&p.color)).unwrap_or(n300())))
+                                .child(div().size_2().flex_shrink_0().rounded_full().bg(en.project.as_ref().map(|pr| gpui::Hsla::from(hex(&pr.color))).unwrap_or(p.text_faint)))
                                 .child(div().min_w_0().truncate().map(|d| match &en.title {
                                     Some(t) if !t.is_empty() => d.child(t.clone()),
-                                    _ => d.text_color(n400()).child("（タイトルなし）"),
+                                    _ => d.text_color(p.text_faint).child("（タイトルなし）"),
                                 }))
                                 .into_any_element(),
                             div()
                                 .text_xs()
-                                .text_color(n500())
+                                .text_color(p.text_muted)
                                 .whitespace_nowrap()
                                 .child(format!("{} ({}) {}–{}", s.format("%m/%d"), crate::core::time::weekday_ja(s.date_naive()), s.format("%H:%M"), end.format("%H:%M")))
                                 .into_any_element(),
@@ -812,20 +728,20 @@ impl ReportsView {
                     .justify_between()
                     .gap_3()
                     .border_b_1()
-                    .border_color(n200())
+                    .border_color(p.border)
                     .px_3()
                     .py(px(10.))
-                    .child(div().text_sm().font_weight(FontWeight::MEDIUM).text_color(n800()).child("明細"))
+                    .child(div().text_sm().font_weight(FontWeight::MEDIUM).text_color(p.text).child("明細"))
                     .child(self.render_output_buttons(cx)),
             )
             .child(header)
             .child(div().id("report-body").flex_1().min_h_0().overflow_y_scroll().children(body))
             .child(
-                div().flex_shrink_0().border_t_1().border_color(n200()).bg(with_alpha(n50(), 0.5)).py_2().text_sm().font_weight(FontWeight::MEDIUM).child(cols(
+                div().flex_shrink_0().border_t_1().border_color(p.border).bg(with_alpha(p.surface, 0.5)).py_2().text_sm().font_weight(FontWeight::MEDIUM).child(cols(
                     div().child("合計").into_any_element(),
                     e(),
                     e(),
-                    div().child(format_duration(total, style)).into_any_element(),
+                    div().font_family(MONO).child(format_duration(total, style)).into_any_element(),
                     div().child("100%").into_any_element(),
                 )),
             )
@@ -833,6 +749,7 @@ impl ReportsView {
     }
 
     fn render_output_buttons(&self, cx: &mut Context<Self>) -> AnyElement {
+        let p = palette(cx);
         let small = |id: &'static str| div().id(id).debug_selector(move || id.into()).flex().items_center().gap(px(6.)).rounded_md().border_1().px(px(10.)).py_1().text_xs().font_weight(FontWeight::MEDIUM).cursor_pointer();
         div()
             .flex()
@@ -843,10 +760,10 @@ impl ReportsView {
             .when(self.range == ReportRange::Week, |d| {
                 d.child(
                     small("weekly-copy-totals")
-                        .border_color(n200())
-                        .bg(white())
-                        .text_color(n700())
-                        .hover(|s| s.bg(n50()))
+                        .border_color(p.border)
+                        .bg(p.bg)
+                        .text_color(p.text)
+                        .hover(|s| s.bg(p.surface))
                         .child(Icon::new(if self.totals_copied { IconName::Check } else { IconName::Copy }).size_3p5())
                         .child(if self.totals_copied { "コピーしました" } else { "週の合計をコピー" })
                         .on_click(cx.listener(|this, _, _, cx| this.copy_weekly_totals(cx))),
@@ -924,36 +841,17 @@ pub fn shift_month(d: NaiveDate, delta: i32) -> NaiveDate {
 }
 
 impl Render for ReportsView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = palette(cx);
         self.ensure_loaded(cx);
-        let width = f32::from(window.viewport_size().width);
-        let (wide, medium) = (width >= 1280., width >= 768.);
-        let collapsed = self.state.read(cx).persist.summary_collapsed;
         let error_banner = self.error.clone().map(|msg| controls::error_banner(&p, "reports-retry", &msg).on_click(cx.listener(|this, _, _, cx| this.reload(cx))));
         let body: AnyElement = match (&self.data, self.loading) {
             (None, false) if self.error.is_some() => div().flex_1().into_any_element(),
-            (None, _) | (_, true) => div().flex_1().flex().items_center().justify_center().text_sm().text_color(n400()).child("読み込み中…").into_any_element(),
-            (Some(d), _) if d.rows.is_empty() => div().flex_1().flex().items_center().justify_center().text_color(n400()).child("この期間にデータがありません").into_any_element(),
+            (None, _) | (_, true) => div().flex_1().flex().items_center().justify_center().text_sm().text_color(p.text_faint).child("読み込み中…").into_any_element(),
+            (Some(d), _) if d.rows.is_empty() => div().flex_1().flex().items_center().justify_center().text_color(p.text_faint).child("この期間にデータがありません").into_any_element(),
             (Some(d), _) => {
                 let d = d.clone();
-                let summary = self.render_summary(&d, wide, medium, cx);
-                let details = self.render_details(&d, cx);
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .map(|x| if wide { x.flex_row() } else { x.flex_col() })
-                    .child(
-                        div()
-                            .flex_shrink_0()
-                            .min_w_0()
-                            .border_color(n200())
-                            .map(|x| if wide { x.w(px(if collapsed { 8. } else { 300. })).border_r_1() } else { x.border_b_1() })
-                            .child(summary),
-                    )
-                    .child(details)
-                    .into_any_element()
+                self.render_details(&d, cx)
             }
         };
         div()
@@ -963,7 +861,7 @@ impl Render for ReportsView {
             .flex_col()
             .overflow_hidden()
             .child(self.render_toolbar(cx))
-            .child(div().flex_1().min_h_0().flex().flex_col().bg(white()).child(self.render_filter_bar(cx)).children(error_banner).child(body))
+            .child(div().flex_1().min_h_0().flex().flex_col().bg(p.bg).child(self.render_filter_bar(cx)).children(error_banner).child(body))
     }
 }
 
@@ -977,4 +875,27 @@ mod tests {
         assert_eq!(shift_month(d(2026, 3, 31), -1), d(2026, 2, 28));
         assert_eq!(shift_month(d(2026, 12, 15), 1), d(2027, 1, 15));
     }
+}
+
+/// Share of the period: a thin bar in the row's colour plus the percentage (replaces the donut).
+fn share_cell(p: Palette, key: &str, color: &str, minutes: i64, total: i64) -> AnyElement {
+    let ratio = if total > 0 { (minutes as f32 / total as f32).clamp(0., 1.) } else { 0. };
+    let (bar, fill) = (format!("share-bar-{key}"), format!("share-fill-{key}"));
+    div()
+        .flex()
+        .items_center()
+        .gap_2()
+        .child(
+            div()
+                .debug_selector(move || bar.clone())
+                .w(px(96.))
+                .h(px(6.))
+                .flex_shrink_0()
+                .rounded_full()
+                .bg(p.border_subtle)
+                .overflow_hidden()
+                .child(div().debug_selector(move || fill.clone()).h_full().w(gpui::relative(ratio)).rounded_full().bg(hex(color))),
+        )
+        .child(div().w(px(36.)).flex().justify_end().font_family(MONO).text_color(p.text_muted).child(format!("{}%", percent(minutes, total))))
+        .into_any_element()
 }

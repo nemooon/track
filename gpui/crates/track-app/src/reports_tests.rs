@@ -185,3 +185,45 @@ fn duration_style_defaults_to_decimal_and_toggles(cx: &mut TestAppContext) {
     click(cx, "duration-decimal");
     assert_eq!(app.read_with(cx, |a, cx| a.reports.read(cx).duration(90, cx)), "1.5h");
 }
+
+fn row_keys(app: &gpui::Entity<crate::app::TrackApp>, cx: &mut gpui::VisualTestContext) -> Vec<String> {
+    app.read_with(cx, |a, cx| a.reports.read(cx).data.as_ref().map(|d| d.rows.iter().map(|r| r.key.clone()).collect()).unwrap_or_default())
+}
+
+fn share(cx: &mut gpui::VisualTestContext, key: &str) -> f32 {
+    let bar: &'static str = Box::leak(format!("share-bar-{key}").into_boxed_str());
+    let fill: &'static str = Box::leak(format!("share-fill-{key}").into_boxed_str());
+    let (b, f) = (cx.debug_bounds(bar).expect("track"), cx.debug_bounds(fill).expect("fill"));
+    f32::from(f.size.width) / f32::from(b.size.width)
+}
+
+#[gpui::test]
+fn summary_column_is_gone(cx: &mut TestAppContext) {
+    let (app, cx, _f) = setup(cx);
+    assert!(cx.debug_bounds("donut").is_none() && cx.debug_bounds("summary-toggle").is_none());
+    let key = row_keys(&app, cx)[0].clone();
+    let sel: &'static str = Box::leak(format!("row-{key}").into_boxed_str());
+    let row = cx.debug_bounds(sel).expect("row");
+    assert!(row.origin.x <= gpui::px(16.), "the table spans the full width: {row:?}");
+}
+
+#[gpui::test]
+fn share_bar_width_matches_share(cx: &mut TestAppContext) {
+    let (app, cx, _f) = setup(cx);
+    let keys = row_keys(&app, cx);
+    assert_eq!(keys.len(), 2, "{keys:?}");
+    let (a, b) = (share(cx, &keys[0]), share(cx, &keys[1]));
+    assert!((a - 0.75).abs() < 0.02, "p1 90/120: {a}");
+    assert!((b - 0.25).abs() < 0.02, "no project 30/120: {b}");
+}
+
+#[gpui::test]
+fn single_row_bar_is_full(cx: &mut TestAppContext) {
+    let today = crate::testing::visible_weekday();
+    let (app, cx, _f) = open_app_db(cx, move |db| insert_entry(db, "x", local(today, 9, 0), local(today, 10, 0), Some("p1"), "単独"));
+    cx.simulate_keystrokes("cmd-2");
+    wait_io(cx);
+    let keys = row_keys(&app, cx);
+    assert_eq!(keys.len(), 1);
+    assert!((share(cx, &keys[0]) - 1.0).abs() < 0.01);
+}

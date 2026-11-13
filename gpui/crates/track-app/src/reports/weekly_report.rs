@@ -105,12 +105,13 @@ fn button(id: &'static str) -> gpui::Stateful<gpui::Div> {
 
 impl Render for WeeklyReport {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
         let provider = self.state.read(cx).data.as_ref().map(|d| d.config.ai_provider.clone()).unwrap_or_default();
         div()
             .flex()
             .flex_col()
             .gap_4()
-            .child(div().text_sm().text_color(n500()).child(format!("{} · 表示中の絞り込みを反映", period_label(self.anchor, false))))
+            .child(div().text_sm().text_color(p.text_muted).child(format!("{} · 表示中の絞り込みを反映", period_label(self.anchor, false))))
             .map(|d| {
                 if self.generating {
                     d.child(
@@ -122,12 +123,12 @@ impl Render for WeeklyReport {
                             .justify_center()
                             .gap_3()
                             .text_sm()
-                            .text_color(n500())
+                            .text_color(p.text_muted)
                             .child(Icon::new(IconName::LoaderCircle).size_6().text_color(gpui::rgb(0x047857)))
                             .child(format!("{}で生成しています…", provider_label(&provider))),
                     )
                 } else if let Some(e) = &self.error {
-                    d.child(div().debug_selector(|| "weekly-error".into()).rounded_md().border_1().border_color(gpui::rgb(0xfecaca)).bg(red50()).px_4().py_3().text_sm().text_color(red700()).child(e.clone()))
+                    d.child(div().debug_selector(|| "weekly-error".into()).rounded_md().border_1().border_color(gpui::rgb(0xfecaca)).bg(p.danger_bg).px_4().py_3().text_sm().text_color(p.danger).child(e.clone()))
                 } else {
                     d.child(div().h(px(420.)).child(Textarea::new(&self.editor).h_full()))
                 }
@@ -137,12 +138,12 @@ impl Render for WeeklyReport {
                     .flex()
                     .justify_end()
                     .gap_2()
-                    .child(button("weekly-close").hover(|s| s.bg(n100())).child("閉じる").on_click(cx.listener(|_, _, w, cx| w.close_dialog(cx))))
+                    .child(button("weekly-close").hover(|s| s.bg(p.hover)).child("閉じる").on_click(cx.listener(|_, _, w, cx| w.close_dialog(cx))))
                     .child(
                         button("weekly-regenerate")
                             .border_1()
-                            .border_color(n300())
-                            .map(|d| if self.generating { d.opacity(0.5) } else { d.hover(|s| s.bg(n50())) })
+                            .border_color(p.border)
+                            .map(|d| if self.generating { d.opacity(0.5) } else { d.hover(|s| s.bg(p.surface)) })
                             .child("再生成")
                             .on_click(cx.listener(|this, _, w, cx| {
                                 if !this.generating {
@@ -153,9 +154,9 @@ impl Render for WeeklyReport {
                     .when(!self.generating && self.error.is_none(), |d| {
                         d.child(
                             button("weekly-copy")
-                                .bg(n900())
-                                .text_color(white())
-                                .hover(|s| s.bg(n700()))
+                                .bg(p.text)
+                                .text_color(p.bg)
+                                .hover(|s| s.bg(p.text))
                                 .child(Icon::new(if self.copied { IconName::Check } else { IconName::Copy }).size_4())
                                 .child(if self.copied { "コピーしました" } else { "週報をコピー" })
                                 .on_click(cx.listener(|this, _, _, cx| this.copy(cx))),
