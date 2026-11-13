@@ -134,21 +134,19 @@ impl Db {
     /// AI registration as an operation. A replay of an earlier identical request changes
     /// nothing and records no operation.
     pub fn record_ai_entry(&mut self, source: &str, input: NewEntry, reg: AiRegistrationInput) -> Result<(TimeEntry, bool, Option<Operation>)> {
-        let known: i64 = self.conn().query_row(r#"SELECT COUNT(*) FROM "AiRegistration" WHERE requestId = ?1"#, [&reg.request_id], |r| r.get(0))?;
-        if known > 0 {
-            let (e, replay) = self.create_ai_entry(input, reg)?;
-            return Ok((e, replay, None));
-        }
         let request_id = reg.request_id.clone();
-        let ((e, replay), op) = self.with_operation(source, |db, rec| {
+        let ((e, replay), op) = self.with_optional_operation(source, |db, rec| {
             let (e, replay) = db.create_ai_entry(input, reg)?;
+            if replay {
+                rec.nothing_changed();
+            }
             rec.created(Table::TimeEntry, "id", &e.id);
             rec.created(Table::TagOnEntry, "entryId", &e.id);
             rec.created(Table::AiRegistration, "requestId", &request_id);
             let summary = format!("工数を記録（{}）", e.title.clone().unwrap_or_default());
             Ok(((e, replay), summary, 1))
         })?;
-        Ok((e, replay, Some(op)))
+        Ok((e, replay, op))
     }
 
     pub fn op_create_client(&mut self, source: &str, name: &str) -> Result<(Client, Operation)> {

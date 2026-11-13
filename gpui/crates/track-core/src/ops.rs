@@ -59,6 +59,8 @@ pub struct Change {
 #[derive(Debug, Default)]
 pub struct Recorder {
     changes: Vec<Change>,
+    /// Set when the work turned out to change nothing (an idempotent replay): no operation is recorded.
+    unchanged: bool,
 }
 
 impl Recorder {
@@ -73,6 +75,11 @@ impl Recorder {
             self.changes.push(Change { table, column: column.into(), value: value.into(), before, after: vec![] });
         }
         Ok(())
+    }
+
+    /// The operation changed nothing; commit without recording it.
+    pub fn nothing_changed(&mut self) {
+        self.unchanged = true;
     }
 
     /// Rows the operation created (nothing before).
@@ -137,6 +144,12 @@ impl Db {
     /// after. `f` returns its value, a one-line summary and the number of items it changed.
     /// On error nothing is changed and nothing is recorded.
     pub fn with_operation<T>(&mut self, source: &str, f: impl FnOnce(&mut Db, &mut Recorder) -> Result<(T, String, i64)>) -> Result<(T, Operation)> {
+        let (value, op) = self.with_optional_operation(source, f)?;
+        Ok((value, op.ok_or_else(|| CoreError::code_msg("database_error", "操作が記録されませんでした。"))?))
+    }
+
+    /// Like `with_operation`, but `f` may call `Recorder::nothing_changed` (then `None`).
+    pub fn with_optional_operation<T>(&mut self, source: &str, f: impl FnOnce(&mut Db, &mut Recorder) -> Result<(T, String, i64)>) -> Result<(T, Option<Operation>)> {
         self.ensure_writable()?;
         if !self.conn().is_autocommit() {
             return Err(CoreError::code_msg("database_error", "操作の途中で別の操作は始められません。"));
@@ -151,9 +164,12 @@ impl Db {
         result
     }
 
-    fn run_operation<T>(&mut self, source: &str, f: impl FnOnce(&mut Db, &mut Recorder) -> Result<(T, String, i64)>) -> Result<(T, Operation)> {
+    fn run_operation<T>(&mut self, source: &str, f: impl FnOnce(&mut Db, &mut Recorder) -> Result<(T, String, i64)>) -> Result<(T, Option<Operation>)> {
         let mut rec = Recorder::default();
         let (value, summary, count) = f(self, &mut rec)?;
+        if rec.unchanged {
+            return Ok((value, None));
+        }
         for c in rec.changes.iter_mut() {
             c.after = self.scope_rows(c.table, &c.column, &c.value)?;
         }
@@ -168,7 +184,7 @@ impl Db {
             params![KEEP, time::to_db(Utc::now() - chrono::Duration::days(KEEP_DAYS))],
         )?;
         let op = self.operation(id)?.expect("just recorded");
-        Ok((value, op))
+        Ok((value, Some(op)))
     }
 
     pub fn operation(&self, id: i64) -> Result<Option<Operation>> {
@@ -226,6 +242,18 @@ fn dependents(table: &str) -> &'static [(&'static str, &'static str, &'static st
         "Project" => &[("TimeEntry", "projectId", "id"), ("TagOnProject", "projectId", "id"), ("Note", "projectId", "id")],
         "Tag" => &[("TagOnEntry", "tagId", "id"), ("TagOnProject", "tagId", "id")],
         "TimeEntry" => &[("TagOnEntry", "entryId", "id"), ("AiRegistration", "entryId", "requestId")],
+        _ => &[],
+    }
+}
+
+/// Foreign keys of a table: (column, parent table). Parents are keyed by `id`.
+fn parents(table: &str) -> &'static [(&'static str, &'static str)] {
+    match table {
+        "Project" => &[("clientId", "Client")],
+        "TimeEntry" => &[("projectId", "Project")],
+        "TagOnEntry" => &[("tagId", "Tag"), ("entryId", "TimeEntry")],
+        "TagOnProject" => &[("tagId", "Tag"), ("projectId", "Project")],
+        "AiRegistration" => &[("entryId", "TimeEntry")],
         _ => &[],
     }
 }
@@ -305,6 +333,31 @@ impl Db {
                 for k in keys {
                     if !deleting.iter().any(|(t, d)| t == dep && *d == k) {
                         changed.push(serde_json::json!({ "table": dep, "key": k }));
+                    }
+                }
+            }
+        }
+        // Rows this undo puts back need their parents: a parent deleted since (outside the
+        // operation) makes the undo impossible rather than a foreign-key failure at COMMIT.
+        let mut inserting: Vec<(&'static str, String)> = Vec::new();
+        for (c, now) in changes.iter().zip(&current) {
+            for r in &c.before {
+                let k = key_of(c.table, r);
+                if find(now, c.table, &k).is_none() {
+                    inserting.push((c.table.name(), k));
+                }
+            }
+        }
+        for (c, now) in changes.iter().zip(&current) {
+            for r in c.before.iter().filter(|r| find(now, c.table, &key_of(c.table, r)).is_none()) {
+                for (column, parent) in parents(c.table.name()) {
+                    let Some(Value::String(v)) = r.get(*column) else { continue };
+                    let will_exist = inserting.iter().any(|(t, k)| t == parent && k == v);
+                    let exists = !deleting.iter().any(|(t, k)| t == parent && k == v)
+                        && self.conn().query_row(&format!(r#"SELECT COUNT(*) FROM "{parent}" WHERE id = ?1"#), [v], |r| r.get::<_, i64>(0))? > 0;
+                    let entry = serde_json::json!({ "table": parent, "key": v });
+                    if !will_exist && !exists && !changed.contains(&entry) {
+                        changed.push(entry);
                     }
                 }
             }

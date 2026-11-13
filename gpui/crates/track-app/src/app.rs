@@ -132,6 +132,23 @@ impl AppState {
         .detach();
     }
 
+    /// After a restore the DB's operations (and their ids) are the snapshot's: start over from
+    /// its newest one and drop a notice about an operation that no longer applies.
+    pub fn reset_ops_baseline(&mut self, cx: &mut Context<Self>) {
+        self.ai_op = None;
+        let fut = self.api.latest_operation_id();
+        cx.spawn(async move |this, cx| {
+            if let Ok(id) = fut.await {
+                let _ = this.update(cx, |this, cx| {
+                    this.ops_seen = Some(id);
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+        cx.notify();
+    }
+
     /// New operations (newest first): the newest one not undone replaces the notice.
     fn note_operations(&mut self, ops: Vec<track_core::ops::Operation>) {
         if let Some(max) = ops.iter().map(|o| o.id).max() {

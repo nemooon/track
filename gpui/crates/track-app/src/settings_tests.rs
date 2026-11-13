@@ -457,7 +457,7 @@ fn backup_now_lists_snapshot(cx: &mut TestAppContext) {
 #[gpui::test]
 fn restore_from_settings_reloads_main_window(cx: &mut TestAppContext) {
     use crate::testing::{insert_entry, local};
-    let today = chrono::Local::now().date_naive();
+    let today = crate::testing::visible_weekday();
     let (app, cx, f) = open_app_db(cx, |db| insert_entry(db, "a", local(today, 10, 0), local(today, 11, 0), Some("p1"), "前"));
     wait_io(cx);
     let (mut scx, _view) = open_section(cx, "settings-nav-backup");
@@ -502,4 +502,33 @@ fn projects_section_follows_outside_changes(cx: &mut TestAppContext) {
     wait_io(cx);
     wait_io(&mut scx);
     assert!(p.read_with(&scx, |p, _| p.projects.iter().any(|x| x.name == "外部案件")), "the cached section re-reads after a reload");
+}
+
+#[gpui::test]
+fn restore_resets_the_ai_operation_baseline(cx: &mut TestAppContext) {
+    use crate::testing::{insert_entry, local};
+    let today = crate::testing::visible_weekday();
+    let (app, cx, f) = open_app_db(cx, |db| insert_entry(db, "a", local(today, 10, 0), local(today, 11, 0), None, "前"));
+    wait_io(cx);
+    let (mut scx, _view) = open_section(cx, "settings-nav-backup");
+    click(&mut scx, "backup-now");
+    wait_io(&mut scx);
+    // Operations after the snapshot: ids 1..=3, the banner offers the last one.
+    for t in ["x", "y", "z"] {
+        f.db().edit_entries("codex", &["a".to_string()], track_core::model::EntryPatch { title: Some(Some(t.into())), ..Default::default() }).unwrap();
+    }
+    app.update(cx, |a, cx| a.state.update(cx, |s, cx| s.refresh_all(cx)));
+    wait_io(cx);
+    assert_eq!(app.read_with(cx, |a, cx| a.state.read(cx).ops_seen), Some(3));
+    click(&mut scx, "backup-restore-0");
+    click(&mut scx, "backup-restore-confirm");
+    wait_io(&mut scx);
+    wait_io(cx);
+    let state = app.read_with(cx, |a, cx| (a.state.read(cx).ops_seen, a.state.read(cx).ai_op.is_some()));
+    assert_eq!(state, (Some(0), false), "the restored DB has no operations; nothing from before is offered");
+    // The next AI operation (id 1 again) is offered.
+    f.db().edit_entries("codex", &["a".to_string()], track_core::model::EntryPatch { title: Some(Some("後".into())), ..Default::default() }).unwrap();
+    app.update(cx, |a, cx| a.state.update(cx, |s, cx| s.refresh_all(cx)));
+    wait_io(cx);
+    assert!(app.read_with(cx, |a, cx| a.state.read(cx).ai_op.is_some()));
 }

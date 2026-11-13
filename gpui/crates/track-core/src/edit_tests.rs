@@ -173,3 +173,17 @@ fn undo_of_project_create_conflicts_when_entries_moved_onto_it() {
     assert_eq!(err.code(), "undo_conflict", "not a raw foreign-key error");
     assert_eq!(err.details()["changed"][0]["table"], "TimeEntry");
 }
+
+#[test]
+fn undo_of_tag_delete_conflicts_when_a_tagged_entry_is_gone() {
+    let (_d, mut db) = db();
+    let (t, _) = db.op_create_tag("codex", "green", "#22c55e").unwrap();
+    let e = db.create_entry(NewEntry { start: local(12, 9, 0), end: local(12, 10, 0), tag_ids: vec![t.id.clone()], ..Default::default() }).unwrap();
+    let (_, op) = db.op_delete_tag("codex", &t.id).unwrap();
+    db.delete_entry(&e.id).unwrap();
+    let err = db.undo_operation(Some(op.id)).unwrap_err();
+    assert_eq!(err.code(), "undo_conflict", "not a raw foreign-key error");
+    assert_eq!(err.details()["changed"][0]["table"], "TimeEntry");
+    assert_eq!(err.details()["changed"][0]["key"], e.id.as_str());
+    assert!(db.tags().unwrap().is_empty(), "nothing restored");
+}

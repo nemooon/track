@@ -11,7 +11,7 @@ use track_core::{CoreError, Db};
 pub const CONFIRM_FROM: usize = 10;
 
 fn flag(args: &[String], name: &str) -> bool {
-    args.iter().any(|a| a == name)
+    crate::has_flag(args, name)
 }
 
 fn required<'a>(args: &'a [String], name: &str) -> Result<&'a str> {

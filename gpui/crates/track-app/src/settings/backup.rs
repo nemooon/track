@@ -183,7 +183,10 @@ impl BackupSettings {
                     Err(e) => format!("リストアに失敗しました: {}", e.message),
                 });
                 this.reload(cx);
-                this.state.update(cx, |s, cx| s.refresh_all(cx));
+                this.state.update(cx, |s, cx| {
+                    s.reset_ops_baseline(cx);
+                    s.refresh_all(cx);
+                });
             });
         })
         .detach();

@@ -178,3 +178,27 @@ fn create_records_an_operation_that_undo_removes() {
     assert_eq!(e.run(&["undo"]).0, 0);
     assert!(e.db().search_entries(&track_core::edit::EntrySearch { query: Some("記録".into()), ..Default::default() }, 10).unwrap().is_empty());
 }
+
+#[test]
+fn confirmed_given_as_an_option_value_does_not_count() {
+    let e = Env::new(10);
+    let ids = e.ids(10);
+    let (code, out) = e.run(&with_ids(vec!["update", "--title", "--confirmed"], &ids));
+    assert_eq!((code, out["error"].as_str()), (1, Some("confirmation_required")), "{out}");
+    let (code, out) = e.run(&with_ids(vec!["delete", "--note", "--confirmed"], &ids[..1]));
+    assert_eq!((code, out["error"].as_str()), (1, Some("confirmation_required")), "{out}");
+    let (code, out) = e.run(&["create", "--start", "2026-11-12T03:00:00Z", "--end", "2026-11-12T04:00:00Z", "--title", "--confirmed"]);
+    assert_eq!((code, out["error"].as_str()), (1, Some("confirmation_required")), "{out}");
+}
+
+#[test]
+fn delete_with_unknown_id_changes_nothing() {
+    let e = Env::new(2);
+    let ids = e.ids(2);
+    let mut args = with_ids(vec!["delete", "--confirmed"], &ids);
+    args.extend(["--id", "missing"]);
+    let (code, out) = e.run(&args);
+    assert_eq!((code, out["error"].as_str()), (1, Some("not_found")));
+    assert_eq!(e.in_project(&e.project), 2);
+    assert!(e.run(&["history"]).1["operations"].as_array().unwrap().is_empty());
+}

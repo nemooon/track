@@ -21,6 +21,18 @@ pub(crate) fn option<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).map(String::as_str)
 }
 
+/// Options that take a value: the token after one is that value, never a flag.
+const VALUE_OPTIONS: &[&str] = &[
+    "--start", "--end", "--title", "--project-id", "--note", "--tag-id", "--break-minutes", "--source", "--session-id",
+    "--request-id", "--id", "--query", "--from", "--to", "--limit", "--name", "--color", "--client-id", "--archived",
+    "--date", "--scope", "--idle-minutes", "--session-file",
+];
+
+/// `name` given as a flag (not as the value of another option, e.g. `--title --confirmed`).
+pub(crate) fn has_flag(args: &[String], name: &str) -> bool {
+    args.iter().enumerate().any(|(i, a)| a == name && (i == 0 || !VALUE_OPTIONS.contains(&args[i - 1].as_str())))
+}
+
 /// Every value given for a repeatable flag.
 pub(crate) fn options<'a>(args: &'a [String], name: &str) -> Vec<&'a str> {
     args.iter().enumerate().filter(|(_, a)| *a == name).filter_map(|(i, _)| args.get(i + 1)).map(String::as_str).collect()
@@ -72,7 +84,7 @@ fn open_db() -> Result<Db> {
 }
 
 fn create(db: &mut Db, args: &[String]) -> Result<Value> {
-    if !args.iter().any(|a| a == "--confirmed") {
+    if !has_flag(args, "--confirmed") {
         return fail("confirmation_required", "登録前に内容を提示し、利用者の確認を得てください。");
     }
     let start = option(args, "--start").ok_or_else(|| CoreError::code_msg("invalid_input", "--startが必要です。"))?;
@@ -100,7 +112,7 @@ fn create(db: &mut Db, args: &[String]) -> Result<Value> {
     {
         return fail("invalid_input", "--source、--session-id、--request-idを一緒に指定してください。");
     }
-    let allow_overlap = args.iter().any(|a| a == "--allow-overlap");
+    let allow_overlap = has_flag(args, "--allow-overlap");
     if request_id.is_none() {
         let existing = prepare::overlaps(db, start, end)?;
         let duplicate = existing.iter().any(|x| {
@@ -183,7 +195,7 @@ fn run(args: &[String]) -> Result<Output> {
     let mut db = open_db()?;
     let value = match command {
         "status" => json!({ "connected": true, "dbPath": db.path, "projectCount": db.projects(false)?.len() }),
-        "projects" => json!({ "projects": db.projects(rest.iter().any(|a| a == "--all"))? }),
+        "projects" => json!({ "projects": db.projects(has_flag(rest, "--all"))? }),
         "clients" => json!({ "clients": db.clients()? }),
         "tags" => json!({ "tags": db.tags()? }),
         "search" => edit::search(&db, rest)?,
