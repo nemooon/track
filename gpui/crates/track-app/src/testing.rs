@@ -112,6 +112,7 @@ fn open_with(cx: &mut TestAppContext, data: DataClient, persist: PathBuf, preloa
     cx.executor().allow_parking();
     cx.update(|cx| {
         gpui_component::init(cx);
+        crate::ui::theme::install_light_theme(cx);
         crate::actions::bind_keys(cx);
     });
     let slot: std::rc::Rc<std::cell::RefCell<Option<Entity<TrackApp>>>> = Default::default();

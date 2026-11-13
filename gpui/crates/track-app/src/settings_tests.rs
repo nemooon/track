@@ -532,3 +532,14 @@ fn restore_resets_the_ai_operation_baseline(cx: &mut TestAppContext) {
     wait_io(cx);
     assert!(app.read_with(cx, |a, cx| a.state.read(cx).ai_op.is_some()));
 }
+
+#[gpui::test]
+fn light_theme_is_forced_and_shared_with_settings_window(cx: &mut TestAppContext) {
+    use crate::ui::theme::{Palette, palette};
+    let (_app, cx, _f) = open_app_db(cx, |_| {});
+    let main = cx.update(|_, cx| palette(cx));
+    assert_eq!(main, Palette::light());
+    assert_eq!(cx.update(|_, cx| gpui_component::Theme::global(cx).mode), gpui_component::ThemeMode::Light);
+    let (mut scx, _view) = open_section(cx, "settings-nav-calendar");
+    assert_eq!(scx.update(|_, cx| palette(cx)), main, "the settings window reads the same palette");
+}

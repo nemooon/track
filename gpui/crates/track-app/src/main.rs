@@ -24,6 +24,7 @@ use gpui_component::Root;
 fn main() {
     gpui_platform::application().with_assets(gpui_kit_assets::Assets::new("")).run(|cx: &mut App| {
         gpui_component::init(cx);
+        crate::ui::theme::install_light_theme(cx);
         actions::bind_keys(cx);
         actions::set_menus(cx);
         cx.on_action(|_: &actions::Quit, cx| cx.quit());
