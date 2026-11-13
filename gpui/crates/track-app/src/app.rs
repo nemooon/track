@@ -39,16 +39,43 @@ pub struct AppState {
     persist_path: PathBuf,
     /// Newest AI operation already known; None until the startup baseline is read.
     pub ops_seen: Option<i64>,
-    /// The AI operation offered for undo in the main window.
+    /// The AI operations offered for undo in the main window.
     pub ai_op: Option<AiOpNotice>,
 }
 
-/// 「AI が N 件変更しました［元に戻す］」
+/// 「AI が N 件変更しました［元に戻す］」: every AI operation that arrived while the notice
+/// was up (until it is closed), undone together newest first.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AiOpNotice {
-    pub operation: track_core::ops::Operation,
+    /// Newest first.
+    pub operations: Vec<track_core::ops::Operation>,
     pub error: Option<String>,
     pub busy: bool,
+}
+
+impl AiOpNotice {
+    /// Items changed by all the operations.
+    pub fn count(&self) -> i64 {
+        self.operations.iter().map(|o| o.count).sum()
+    }
+
+    pub fn summary(&self) -> String {
+        match self.operations.as_slice() {
+            [] => String::new(),
+            [one] => one.summary.clone(),
+            [newest, rest @ ..] => format!("{} ほか{}件の操作", newest.summary, rest.len()),
+        }
+    }
+
+    fn ids(&self) -> Vec<i64> {
+        self.operations.iter().map(|o| o.id).collect()
+    }
+
+    /// Keeps only `ids`; None when nothing is left.
+    fn keep(mut self, ids: &[i64]) -> Option<Self> {
+        self.operations.retain(|o| ids.contains(&o.id));
+        (!self.operations.is_empty()).then_some(self)
+    }
 }
 
 impl AppState {
@@ -87,19 +114,16 @@ impl AppState {
     pub fn refresh_all(&mut self, cx: &mut Context<Self>) {
         let fut = Self::read_all(self.api.clone());
         let ops = self.ops_seen.map(|seen| self.api.operations_after(seen));
-        let shown = self.ai_op.as_ref().map(|n| (n.operation.id, self.api.operation(n.operation.id)));
+        let shown = self.ai_op.as_ref().map(|n| self.api.pending_operations(n.ids()));
         cx.spawn(async move |this, cx| {
             let result = fut.await;
             let ops = match ops {
                 Some(f) => f.await.ok(),
                 None => None,
             };
-            // The offered operation may have been undone (or pruned) from the CLI meanwhile.
-            let gone = match shown {
-                Some((id, f)) => match f.await {
-                    Ok(current) if current.as_ref().is_none_or(|op| op.undone_at.is_some()) => Some(id),
-                    _ => None,
-                },
+            // Offered operations may have been undone (or pruned) from the CLI meanwhile.
+            let pending = match shown {
+                Some(f) => f.await.ok(),
                 None => None,
             };
             let _ = this.update(cx, |this, cx| {
@@ -107,8 +131,8 @@ impl AppState {
                     Ok(data) => this.data = Some(data),
                     Err(e) => this.error = Some(e.message),
                 }
-                if gone.is_some() && this.ai_op.as_ref().map(|n| n.operation.id) == gone {
-                    this.ai_op = None;
+                if let Some(pending) = pending {
+                    this.ai_op = this.ai_op.take().and_then(|n| n.keep(&pending));
                 }
                 if let Some(ops) = ops {
                     this.note_operations(ops);
@@ -149,40 +173,46 @@ impl AppState {
         cx.notify();
     }
 
-    /// New operations (newest first): the newest one not undone replaces the notice.
+    /// New operations (newest first) join the notice that is up, or start one.
     fn note_operations(&mut self, ops: Vec<track_core::ops::Operation>) {
         if let Some(max) = ops.iter().map(|o| o.id).max() {
             self.ops_seen = Some(self.ops_seen.unwrap_or(0).max(max));
         }
-        if let Some(op) = ops.into_iter().find(|o| o.undone_at.is_none()) {
-            self.ai_op = Some(AiOpNotice { operation: op, error: None, busy: false });
+        let mut fresh: Vec<_> = ops.into_iter().filter(|o| o.undone_at.is_none()).collect();
+        if fresh.is_empty() {
+            return;
+        }
+        match self.ai_op.as_mut() {
+            Some(n) => {
+                fresh.retain(|o| !n.operations.iter().any(|x| x.id == o.id));
+                fresh.append(&mut n.operations);
+                n.operations = fresh;
+            }
+            None => self.ai_op = Some(AiOpNotice { operations: fresh, error: None, busy: false }),
         }
     }
 
+    /// Undoes every operation in the notice, newest first; stops at one that cannot be undone.
     pub fn undo_ai_op(&mut self, cx: &mut Context<Self>) {
         let Some(notice) = self.ai_op.as_mut().filter(|n| !n.busy) else { return };
         notice.busy = true;
         notice.error = None;
-        let id = notice.operation.id;
-        let fut = self.api.undo_operation(id);
+        let fut = self.api.undo_operations(notice.ids());
         cx.notify();
         cx.spawn(async move |this, cx| {
             let result = fut.await;
             let _ = this.update(cx, |this, cx| {
-                match result {
-                    Ok(_) => {
-                        if this.ai_op.as_ref().is_some_and(|n| n.operation.id == id) {
-                            this.ai_op = None;
-                        }
-                        this.refresh_all(cx);
-                    }
-                    Err(e) => {
-                        if let Some(n) = this.ai_op.as_mut().filter(|n| n.operation.id == id) {
-                            n.busy = false;
-                            n.error = Some(e.message);
-                        }
-                    }
-                }
+                let (done, error) = match result {
+                    Ok((done, error)) => (done, error.map(|e| e.message)),
+                    Err(e) => (vec![], Some(e.message)),
+                };
+                this.ai_op = this.ai_op.take().and_then(|mut n| {
+                    n.operations.retain(|o| !done.contains(&o.id));
+                    n.busy = false;
+                    n.error = error;
+                    (!n.operations.is_empty()).then_some(n)
+                });
+                this.refresh_all(cx);
                 cx.notify();
             });
         })

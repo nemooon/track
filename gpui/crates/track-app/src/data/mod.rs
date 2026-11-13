@@ -173,12 +173,33 @@ impl DataClient {
         self.call("operations_after", move |db| db.operations_after(id))
     }
 
-    pub fn operation(&self, id: i64) -> impl Future<Output = DataResult<Option<track_core::ops::Operation>>> + Send + 'static {
-        self.call("operation", move |db| db.operation(id))
+    /// Which of `ids` can still be undone (not undone, not pruned).
+    pub fn pending_operations(&self, ids: Vec<i64>) -> impl Future<Output = DataResult<Vec<i64>>> + Send + 'static {
+        self.call("pending_operations", move |db| {
+            let mut out = Vec::new();
+            for id in ids {
+                if db.operation(id)?.is_some_and(|o| o.undone_at.is_none()) {
+                    out.push(id);
+                }
+            }
+            Ok(out)
+        })
     }
 
-    pub fn undo_operation(&self, id: i64) -> impl Future<Output = DataResult<track_core::ops::UndoResult>> + Send + 'static {
-        self.call("undo_operation", move |db| db.undo_operation(Some(id)))
+    /// Undoes `ids` in the given order (newest first), stopping at the first that fails.
+    /// Returns the ids that are no longer pending (undone now or already) and that failure.
+    pub fn undo_operations(&self, ids: Vec<i64>) -> impl Future<Output = DataResult<(Vec<i64>, Option<DataError>)>> + Send + 'static {
+        self.call("undo_operations", move |db| {
+            let mut done = Vec::new();
+            for id in ids {
+                match db.undo_operation(Some(id)) {
+                    Ok(_) => done.push(id),
+                    Err(e) if matches!(e.code(), "already_undone" | "not_found") => done.push(id),
+                    Err(e) => return Ok((done, Some(DataError::from(e)))),
+                }
+            }
+            Ok((done, None))
+        })
     }
 
     pub fn projects_all(&self) -> impl Future<Output = DataResult<Vec<Project>>> + Send + 'static {

@@ -246,3 +246,67 @@ fn banner_goes_away_when_undone_elsewhere(cx: &mut TestAppContext) {
     refresh(&app, cx);
     assert!(cx.debug_bounds("ai-op-banner").is_none(), "an operation undone from the CLI is no longer offered");
 }
+
+fn ai_record(db: &mut track_core::Db, project: &str, h: u32, title: &str) -> String {
+    let t = Local::now().date_naive();
+    let input = track_core::model::NewEntry { project_id: Some(project.into()), start: crate::testing::local(t, h, 0), end: crate::testing::local(t, h + 1, 0), title: Some(title.into()), ..Default::default() };
+    db.op_create_entry("codex", input).unwrap().0.id
+}
+
+fn group_len(app: &gpui::Entity<crate::app::TrackApp>, cx: &mut gpui::VisualTestContext) -> usize {
+    app.read_with(cx, |a, cx| a.state.read(cx).ai_op.as_ref().map(|n| n.operations.len()).unwrap_or(0))
+}
+
+#[gpui::test]
+fn banner_undoes_every_operation_since_it_appeared(cx: &mut TestAppContext) {
+    let (app, cx, f) = seeded(cx, false);
+    refresh(&app, cx);
+    let c = f.db().clients().unwrap()[0].id.clone();
+    let (p, _) = f.db().op_create_project("codex", &c, "Hako", "#22c55e", &[]).unwrap();
+    refresh(&app, cx);
+    let e1 = ai_record(&mut f.db(), &p.id, 13, "一");
+    let e2 = ai_record(&mut f.db(), &p.id, 14, "二");
+    refresh(&app, cx);
+    let e3 = ai_record(&mut f.db(), &p.id, 15, "三");
+    refresh(&app, cx);
+    assert_eq!(group_len(&app, cx), 4, "project creation and three recordings in one notice");
+    let b = cx.debug_bounds("ai-op-undo").expect("undo button");
+    cx.simulate_click(b.center(), gpui::Modifiers::none());
+    settle(cx);
+    let db = f.db();
+    assert!([&e1, &e2, &e3].iter().all(|id| db.entry(id).unwrap().is_none()));
+    assert!(db.project(&p.id).is_err(), "the project creation is undone too");
+    assert!(db.operations(10).unwrap().iter().all(|o| o.undone_at.is_some()));
+    assert!(cx.debug_bounds("ai-op-banner").is_none());
+}
+
+#[gpui::test]
+fn grouped_undo_stops_at_a_conflict_and_keeps_the_rest(cx: &mut TestAppContext) {
+    let (app, cx, f) = seeded(cx, false);
+    refresh(&app, cx);
+    ai_rename(&mut f.db(), "a", "AI");
+    let e = ai_record(&mut f.db(), &f.db().projects(false).unwrap()[0].id, 13, "記録");
+    refresh(&app, cx);
+    f.db().update_entry("a", track_core::model::EntryPatch { title: Some(Some("手修正".into())), ..Default::default() }).unwrap();
+    let b = cx.debug_bounds("ai-op-undo").expect("undo button");
+    cx.simulate_click(b.center(), gpui::Modifiers::none());
+    settle(cx);
+    assert!(f.db().entry(&e).unwrap().is_none(), "the newer operation was undone");
+    assert_eq!(f.db().entry("a").unwrap().unwrap().title.as_deref(), Some("手修正"));
+    assert!(cx.debug_bounds("ai-op-error").is_some());
+    assert_eq!(group_len(&app, cx), 1, "only the conflicting operation is left");
+}
+
+#[gpui::test]
+fn closing_the_banner_starts_a_new_group(cx: &mut TestAppContext) {
+    let (app, cx, f) = seeded(cx, false);
+    refresh(&app, cx);
+    ai_rename(&mut f.db(), "a", "一");
+    refresh(&app, cx);
+    let close = cx.debug_bounds("ai-op-close").expect("close");
+    cx.simulate_click(close.center(), gpui::Modifiers::none());
+    settle(cx);
+    ai_rename(&mut f.db(), "a", "二");
+    refresh(&app, cx);
+    assert_eq!(group_len(&app, cx), 1);
+}

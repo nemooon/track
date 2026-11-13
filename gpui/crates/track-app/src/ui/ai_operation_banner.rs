@@ -5,7 +5,6 @@ use gpui::{Context, InteractiveElement, IntoElement, ParentElement, StatefulInte
 
 pub fn render(notice: Option<AiOpNotice>, cx: &mut Context<TrackApp>) -> Option<impl IntoElement> {
     let n = notice?;
-    let op = &n.operation;
     Some(
         div()
             .id("ai-op-banner")
@@ -21,7 +20,7 @@ pub fn render(notice: Option<AiOpNotice>, cx: &mut Context<TrackApp>) -> Option<
             .border_color(amber100())
             .text_xs()
             .text_color(n800())
-            .child(div().flex_1().min_w_0().truncate().child(format!("AI が {} 件変更しました：{}", op.count, op.summary)))
+            .child(div().flex_1().min_w_0().truncate().child(format!("AI が {} 件変更しました：{}", n.count(), n.summary())))
             .when_some(n.error.clone(), |d, e| d.child(div().debug_selector(|| "ai-op-error".into()).flex_none().text_color(red700()).child(e)))
             .child(
                 div()
