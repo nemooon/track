@@ -163,6 +163,7 @@ impl CalendarView {
     }
 
     fn render_toolbar(&mut self, eff: DayCount, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
         let kind = match eff {
             DayCount::One => NavKind::Day,
             DayCount::Three => NavKind::Days(3),
@@ -170,9 +171,9 @@ impl CalendarView {
         };
         let width = f32::from(window.viewport_size().width);
         let options = [(DayCount::One, 0.), (DayCount::Three, 640.), (DayCount::Workdays, 768.), (DayCount::Seven, 768.)];
-        controls::toolbar().child(date_nav::render(self.nav, self.anchor, kind, cx)).child(
-            controls::group().children(options.into_iter().filter(|(_, min)| width >= *min).map(|(dc, _)| {
-                controls::button(dc.label(), eff == dc, false).child(dc.label()).on_click(cx.listener(move |this, _, _, cx| {
+        controls::toolbar(&p).child(date_nav::render(self.nav, self.anchor, kind, cx)).child(
+            controls::group(&p).children(options.into_iter().filter(|(_, min)| width >= *min).map(|(dc, _)| {
+                controls::button(&p, dc.label(), eff == dc, false).child(dc.label()).on_click(cx.listener(move |this, _, _, cx| {
                     this.day_count = dc;
                     cx.notify();
                 }))
@@ -830,6 +831,7 @@ impl HasDateNav for CalendarView {
 
 impl Render for CalendarView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
         let eff = self.effective(window);
         let days = self.days(window, cx);
         self.ensure_loaded(&days, cx);
@@ -857,7 +859,7 @@ impl Render for CalendarView {
             .flex_col()
             .child(self.render_toolbar(eff, window, cx))
             .when_some(self.load_error.clone(), |d, msg| {
-                d.child(controls::error_banner("calendar-retry", &msg).on_click(cx.listener(|this, _, _, cx| this.reload(cx))))
+                d.child(controls::error_banner(&p, "calendar-retry", &msg).on_click(cx.listener(|this, _, _, cx| this.reload(cx))))
             })
             .child(self.render_day_header(&days, zoom_index, cx))
             .child(

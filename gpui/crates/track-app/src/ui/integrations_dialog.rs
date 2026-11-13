@@ -26,6 +26,7 @@ impl IntegrationsDialog {
 
 impl Render for IntegrationsDialog {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
         let choice = |id: &'static str, label: &'static str, hint: &'static str, kind: IntegrationKind| {
             div()
                 .id(id)
@@ -35,13 +36,13 @@ impl Render for IntegrationsDialog {
                 .gap(px(2.))
                 .rounded_md()
                 .border_1()
-                .border_color(n200())
+                .border_color(p.border)
                 .px_3()
                 .py_2()
                 .cursor_pointer()
-                .hover(|s| s.bg(n50()))
-                .child(div().text_sm().font_weight(FontWeight::MEDIUM).text_color(n900()).child(label))
-                .child(div().text_xs().text_color(n500()).child(hint))
+                .hover(|s| s.bg(p.surface))
+                .child(div().text_sm().font_weight(FontWeight::MEDIUM).text_color(p.text).child(label))
+                .child(div().text_xs().text_color(p.text_muted).child(hint))
                 .on_click(cx.listener(move |this, _, _, cx| this.install(kind, cx)))
         };
         let name = if DEV_NAMES { "track-dev" } else { "track" };
@@ -50,10 +51,10 @@ impl Render for IntegrationsDialog {
             .flex_col()
             .gap_3()
             .text_sm()
-            .child(div().text_color(n600()).child(format!(
+            .child(div().text_color(p.text_muted).child(format!(
                 "AI から Track に工数を登録するためのスキルをインストールします。インストール後、Codex では ${name}、Claude Code では /{name} で呼び出せます。"
             )))
-            .when(DEV_NAMES, |d| d.child(div().text_xs().text_color(n500()).child("開発版のため、本来の track スキルとは別の名前で入れ、コピー DB（~/.track-gpui）を使います。")))
+            .when(DEV_NAMES, |d| d.child(div().text_xs().text_color(p.text_muted).child("開発版のため、本来の track スキルとは別の名前で入れ、コピー DB（~/.track-gpui）を使います。")))
             .child(choice("install-codex", "Codex", "~/.codex/skills にスキルを入れる", IntegrationKind::Codex))
             .child(choice("install-claude", "Claude Code", "~/.claude/commands にコマンドを入れる", IntegrationKind::Claude))
             .child(choice("install-both", "両方", "Codex と Claude Code の両方に入れる", IntegrationKind::Both))
@@ -70,7 +71,7 @@ impl Render for IntegrationsDialog {
                         .child("インストールしました")
                         .children(paths.into_iter().map(|p| div().child(p.display().to_string()))),
                 ),
-                Err(e) => d.child(div().debug_selector(|| "install-error".into()).rounded_md().bg(red50()).px_3().py_2().text_xs().text_color(red700()).child(e)),
+                Err(e) => d.child(div().debug_selector(|| "install-error".into()).rounded_md().bg(p.danger_bg).px_3().py_2().text_xs().text_color(p.danger).child(e)),
             })
     }
 }

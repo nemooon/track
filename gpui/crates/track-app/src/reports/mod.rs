@@ -315,21 +315,22 @@ impl ReportsView {
     }
 
     fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
         let kind = if self.range == ReportRange::Week { NavKind::Week } else { NavKind::Month };
-        controls::toolbar()
+        controls::toolbar(&p)
             .child(date_nav::render(self.nav, self.anchor, kind, cx))
-            .child(controls::group().children([(ReportRange::Week, "週"), (ReportRange::Month, "月")].into_iter().map(|(r, label)| {
-                controls::button(label, self.range == r, false).child(label).on_click(cx.listener(move |this, _, _, cx| {
+            .child(controls::group(&p).children([(ReportRange::Week, "週"), (ReportRange::Month, "月")].into_iter().map(|(r, label)| {
+                controls::button(&p, label, self.range == r, false).child(label).on_click(cx.listener(move |this, _, _, cx| {
                     this.range = r;
                     cx.notify();
                 }))
             })))
-            .child(controls::group().children([(GroupBy::Client, "クライアント"), (GroupBy::Project, "プロジェクト"), (GroupBy::Tag, "タグ")].into_iter().map(
-                |(g, label)| controls::button(label, self.group_by == g, false).child(label).on_click(cx.listener(move |this, _, _, cx| this.set_group_by(g, cx))),
+            .child(controls::group(&p).children([(GroupBy::Client, "クライアント"), (GroupBy::Project, "プロジェクト"), (GroupBy::Tag, "タグ")].into_iter().map(
+                |(g, label)| controls::button(&p, label, self.group_by == g, false).child(label).on_click(cx.listener(move |this, _, _, cx| this.set_group_by(g, cx))),
             )))
-            .child(controls::group().children([(DurationStyle::Decimal, "duration-decimal", "1.5h"), (DurationStyle::HoursMinutes, "duration-hm", "1h 30m")].into_iter().map(
+            .child(controls::group(&p).children([(DurationStyle::Decimal, "duration-decimal", "1.5h"), (DurationStyle::HoursMinutes, "duration-hm", "1h 30m")].into_iter().map(
                 |(s, id, label)| {
-                    controls::button(id, self.style(cx) == s, false)
+                    controls::button(&p, id, self.style(cx) == s, false)
                         .debug_selector(move || id.into())
                         .child(label)
                         .on_click(cx.listener(move |this, _, _, cx| this.set_duration_style(s, cx)))
@@ -924,11 +925,12 @@ pub fn shift_month(d: NaiveDate, delta: i32) -> NaiveDate {
 
 impl Render for ReportsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
         self.ensure_loaded(cx);
         let width = f32::from(window.viewport_size().width);
         let (wide, medium) = (width >= 1280., width >= 768.);
         let collapsed = self.state.read(cx).persist.summary_collapsed;
-        let error_banner = self.error.clone().map(|msg| controls::error_banner("reports-retry", &msg).on_click(cx.listener(|this, _, _, cx| this.reload(cx))));
+        let error_banner = self.error.clone().map(|msg| controls::error_banner(&p, "reports-retry", &msg).on_click(cx.listener(|this, _, _, cx| this.reload(cx))));
         let body: AnyElement = match (&self.data, self.loading) {
             (None, false) if self.error.is_some() => div().flex_1().into_any_element(),
             (None, _) | (_, true) => div().flex_1().flex().items_center().justify_center().text_sm().text_color(n400()).child("読み込み中…").into_any_element(),

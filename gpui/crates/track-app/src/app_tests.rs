@@ -310,3 +310,15 @@ fn closing_the_banner_starts_a_new_group(cx: &mut TestAppContext) {
     refresh(&app, cx);
     assert_eq!(group_len(&app, cx), 1);
 }
+
+#[gpui::test]
+fn header_has_only_tabs_and_settings(cx: &mut TestAppContext) {
+    let (_app, cx) = open_app(cx);
+    let header = cx.debug_bounds("app-header").expect("header");
+    for id in ["tab-calendar", "tab-reports", "open-settings"] {
+        let b = cx.debug_bounds(id).unwrap_or_else(|| panic!("{id}"));
+        assert!(header.contains(&b.center()), "{id} sits in the header");
+    }
+    let nav = cx.debug_bounds("nav-label").expect("date label");
+    assert!(nav.origin.y >= header.origin.y + header.size.height, "the date navigation stays below the header");
+}

@@ -375,38 +375,45 @@ impl TrackApp {
     }
 
     fn render_header(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
         let tab = |id: &'static str, label: &'static str, icon: IconName, page: Page, active: bool| {
             div()
                 .id(id)
-                .relative()
-                .h_full()
+                .debug_selector(move || id.into())
                 .flex()
                 .items_center()
                 .gap(px(6.))
-                .px_3()
+                .h(px(24.))
+                .px_2()
+                .rounded(px(5.))
                 .text_xs()
                 .font_weight(gpui::FontWeight::MEDIUM)
                 .cursor_pointer()
-                .text_color(if active { white().into() } else { with_alpha(white(), 0.55) })
-                .when(!active, |d| d.hover(|s| s.text_color(with_alpha(white(), 0.85))))
-                .child(Icon::new(icon).size_4())
+                .map(|d| {
+                    if active {
+                        d.bg(p.bg).text_color(p.text).border_1().border_color(p.border)
+                    } else {
+                        d.text_color(p.text_muted).hover(move |s| s.bg(p.hover).text_color(p.text))
+                    }
+                })
+                .child(Icon::new(icon).size_3p5())
                 .child(label)
-                .when(active, |d| d.child(div().absolute().left_3().right_3().bottom_0().h(px(2.)).rounded_full().bg(white())))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(cx.listener(move |this, _, _, cx| this.show(page, cx)))
         };
         let fullscreen = window.is_fullscreen();
         div()
             .id("header")
+            .debug_selector(|| "app-header".into())
             .flex()
             .flex_shrink_0()
             .items_center()
-            .h(px(44.))
+            .h(px(38.))
             .pr_3()
             .pl(px(if fullscreen { 12. } else { 92. }))
-            .bg(header_bg())
+            .bg(p.surface)
             .border_b_1()
-            .border_color(header_border())
+            .border_color(p.border)
             .on_mouse_down(MouseButton::Left, |ev, window, _| {
                 if ev.click_count == 2 {
                     window.titlebar_double_click();
@@ -416,7 +423,6 @@ impl TrackApp {
             })
             .child(
                 div()
-                    .h_full()
                     .flex()
                     .items_center()
                     .gap_1()
@@ -429,10 +435,10 @@ impl TrackApp {
                     .debug_selector(|| "open-settings".into())
                     .ml_auto()
                     .p_1()
-                    .rounded_md()
+                    .rounded(px(5.))
                     .cursor_pointer()
-                    .text_color(with_alpha(white(), 0.7))
-                    .hover(|s| s.text_color(white()).bg(with_alpha(white(), 0.1)))
+                    .text_color(p.text_muted)
+                    .hover(move |s| s.text_color(p.text).bg(p.hover))
                     .child(Icon::new(IconName::Settings).size_4())
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(cx.listener(|this, _, _, cx| crate::settings::open_settings(this.state.clone(), cx))),
@@ -440,6 +446,7 @@ impl TrackApp {
     }
 
     fn render_body(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let p = palette(cx);
         let state = self.state.read(cx);
         if state.data.is_none() {
             let error = state.error.clone();
@@ -452,19 +459,19 @@ impl TrackApp {
                 .justify_center()
                 .gap_3()
                 .text_sm()
-                .text_color(n600())
+                .text_color(p.text_muted)
                 .map(|d| match error {
                     Some(e) if !loading => d
-                        .child(div().font_weight(gpui::FontWeight::SEMIBOLD).text_color(n800()).child("データを読み込めません"))
-                        .child(div().text_xs().text_color(n500()).child(e))
+                        .child(div().font_weight(gpui::FontWeight::SEMIBOLD).text_color(p.text).child("データを読み込めません"))
+                        .child(div().text_xs().text_color(p.text_muted).child(e))
                         .child(
                             div()
                                 .id("retry")
                                 .px_3()
                                 .py_1()
                                 .rounded_md()
-                                .bg(n900())
-                                .text_color(white())
+                                .bg(p.text)
+                                .text_color(p.bg)
                                 .text_xs()
                                 .cursor_pointer()
                                 .child("再試行")
@@ -489,14 +496,15 @@ impl Focusable for TrackApp {
 
 impl Render for TrackApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
         div()
             .id("track-app")
             .track_focus(&self.focus)
             .size_full()
             .flex()
             .flex_col()
-            .bg(white())
-            .text_color(n900())
+            .bg(p.bg)
+            .text_color(p.text)
             .font_family(".SystemUIFont")
             .on_action(cx.listener(|this, _: &ShowCalendar, _, cx| this.show(Page::Calendar, cx)))
             .on_action(cx.listener(|this, _: &InstallIntegrations, w, cx| this.open_integrations(w, cx)))

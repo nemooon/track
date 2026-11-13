@@ -2,7 +2,7 @@
 use super::theme::*;
 use gpui::{Div, ElementId, InteractiveElement, ParentElement, Stateful, Styled, div, prelude::FluentBuilder, px};
 
-pub fn toolbar() -> Div {
+pub fn toolbar(p: &Palette) -> Div {
     div()
         .flex()
         .flex_wrap()
@@ -12,16 +12,17 @@ pub fn toolbar() -> Div {
         .flex_shrink_0()
         .px_3()
         .py_2()
-        .bg(white())
+        .bg(p.bg)
         .border_b_1()
-        .border_color(n200())
+        .border_color(p.border)
 }
 
-pub fn group() -> Div {
-    div().flex().flex_shrink_0().items_center().gap(px(2.)).rounded_lg().bg(n100()).p(px(2.))
+pub fn group(p: &Palette) -> Div {
+    div().flex().flex_shrink_0().items_center().gap(px(2.)).rounded_md().bg(p.surface).border_1().border_color(p.border_subtle).p(px(2.))
 }
 
-pub fn button(id: impl Into<ElementId>, active: bool, icon_only: bool) -> Stateful<Div> {
+pub fn button(p: &Palette, id: impl Into<ElementId>, active: bool, icon_only: bool) -> Stateful<Div> {
+    let p = *p;
     div()
         .id(id)
         .flex()
@@ -29,23 +30,23 @@ pub fn button(id: impl Into<ElementId>, active: bool, icon_only: bool) -> Statef
         .items_center()
         .justify_center()
         .gap(px(6.))
-        .h(px(32.))
-        .rounded_md()
+        .h(px(28.))
+        .rounded(px(5.))
         .text_xs()
         .font_weight(gpui::FontWeight::MEDIUM)
         .cursor_pointer()
         .map(|d| if icon_only { d.w(px(32.)) } else { d.px(px(10.)) })
         .map(|d| {
             if active {
-                d.bg(white()).text_color(n900()).shadow_sm().border_1().border_color(black_a(0.05))
+                d.bg(p.bg).text_color(p.text).border_1().border_color(p.border)
             } else {
-                d.text_color(n500()).hover(|s| s.bg(white_a(0.7)).text_color(n900()))
+                d.text_color(p.text_muted).hover(move |s| s.bg(p.hover).text_color(p.text))
             }
         })
 }
 
 /// 「サーバーに接続できません」 strip with a 再試行 button (id `retry_id`).
-pub fn error_banner(retry_id: &'static str, message: &str) -> Stateful<Div> {
+pub fn error_banner(p: &Palette, retry_id: &'static str, message: &str) -> Stateful<Div> {
     div()
         .id(retry_id)
         .debug_selector(move || retry_id.into())
@@ -55,14 +56,14 @@ pub fn error_banner(retry_id: &'static str, message: &str) -> Stateful<Div> {
         .gap_3()
         .px_3()
         .py_2()
-        .bg(red50())
+        .bg(p.danger_bg)
         .border_b_1()
-        .border_color(gpui::rgb(0xfecaca))
+        .border_color(p.border)
         .text_xs()
-        .text_color(red700())
+        .text_color(p.danger)
         .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child("データを読み込めません"))
         .child(div().flex_1().truncate().child(message.to_string()))
-        .child(div().rounded_md().bg(n900()).text_color(white()).px_3().py_1().cursor_pointer().child("再試行"))
+        .child(div().rounded_md().bg(p.text).text_color(p.bg).px_3().py_1().cursor_pointer().child("再試行"))
 }
 
 #[allow(dead_code)]

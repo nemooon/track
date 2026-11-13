@@ -13,12 +13,13 @@ pub fn hex(s: &str) -> Rgba {
 }
 
 /// Linear sRGB mix like CSS `color-mix(in srgb, a p%, b)`.
-pub fn mix(a: Rgba, p: f32, b: Rgba) -> Rgba {
+pub fn mix(a: impl Into<Rgba>, p: f32, b: impl Into<Rgba>) -> Rgba {
+    let (a, b): (Rgba, Rgba) = (a.into(), b.into());
     Rgba { r: a.r * p + b.r * (1. - p), g: a.g * p + b.g * (1. - p), b: a.b * p + b.b * (1. - p), a: a.a * p + b.a * (1. - p) }
 }
 
-pub fn with_alpha(c: Rgba, a: f32) -> Hsla {
-    Rgba { a, ..c }.into()
+pub fn with_alpha(c: impl Into<Rgba>, a: f32) -> Hsla {
+    Rgba { a, ..c.into() }.into()
 }
 
 pub const NO_PROJECT: &str = "#9ca3af";
@@ -56,6 +57,12 @@ pub struct Palette {
     /// Calendar inside working hours (outside is `off_hours`).
     pub work_hours: Hsla,
     pub off_hours: Hsla,
+    /// Sunday / Saturday / holiday day names and numbers.
+    pub sunday: Hsla,
+    pub saturday: Hsla,
+    pub holiday: Hsla,
+    /// Drop shadows (used with `with_alpha`).
+    pub shadow: Hsla,
 }
 
 impl gpui::Global for Palette {}
@@ -86,6 +93,10 @@ impl Palette {
             now_line: c(0xef4444),
             work_hours: c(0xffffff),
             off_hours: c(0xf7f7f8),
+            sunday: c(0xdc2626),
+            saturday: c(0x2563eb),
+            holiday: c(0xd97706),
+            shadow: c(0x000000),
         }
     }
 }

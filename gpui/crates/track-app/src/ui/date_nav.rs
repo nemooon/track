@@ -58,19 +58,20 @@ pub trait HasDateNav: 'static + Sized {
 }
 
 pub fn render<V: HasDateNav>(nav: DateNav, anchor: NaiveDate, kind: NavKind, cx: &mut Context<V>) -> Div {
+    let p = palette(cx);
     let (start, end) = bounds(anchor, kind);
     let today = Local::now().date_naive();
     let includes_today = start <= today && today <= end;
     let label = range_label(start, end + Duration::days(1), kind == NavKind::Month);
-    controls::group()
+    controls::group(&p)
         .relative()
         .child(
-            controls::button("nav-prev", false, true)
+            controls::button(&p, "nav-prev", false, true)
                 .child(Icon::new(IconName::ChevronLeft).size_4())
                 .on_click(cx.listener(|this, _, w, cx| this.on_nav(NavEvent::Prev, w, cx))),
         )
         .child(
-            controls::button("nav-label", true, false)
+            controls::button(&p, "nav-label", true, false)
                 .debug_selector(|| "nav-label".into())
                 .w(px(176.))
                 .font_weight(gpui::FontWeight::SEMIBOLD)
@@ -83,12 +84,12 @@ pub fn render<V: HasDateNav>(nav: DateNav, anchor: NaiveDate, kind: NavKind, cx:
                 })),
         )
         .child(
-            controls::button("nav-next", false, true)
+            controls::button(&p, "nav-next", false, true)
                 .child(Icon::new(IconName::ChevronRight).size_4())
                 .on_click(cx.listener(|this, _, w, cx| this.on_nav(NavEvent::Next, w, cx))),
         )
         .child(
-            controls::button("nav-today", includes_today, false)
+            controls::button(&p, "nav-today", includes_today, false)
                 .child("今日")
                 .on_click(cx.listener(|this, _, w, cx| this.on_nav(NavEvent::Today, w, cx))),
         )
@@ -107,8 +108,8 @@ fn close<V: HasDateNav>(this: &mut V, cx: &mut Context<V>) {
     cx.notify();
 }
 
-fn nav_icon_button(id: &'static str, icon: IconName) -> Stateful<Div> {
-    div().id(id).rounded_sm().p_1().text_color(n600()).cursor_pointer().hover(|s| s.bg(n100())).child(Icon::new(icon).size_4())
+fn nav_icon_button(p: Palette, id: &'static str, icon: IconName) -> Stateful<Div> {
+    div().id(id).rounded_sm().p_1().text_color(p.text_muted).cursor_pointer().hover(|s| s.bg(p.hover)).child(Icon::new(icon).size_4())
 }
 
 fn add_months(d: NaiveDate, months: i32) -> NaiveDate {
@@ -117,6 +118,7 @@ fn add_months(d: NaiveDate, months: i32) -> NaiveDate {
 }
 
 fn picker<V: HasDateNav>(nav: DateNav, value: NaiveDate, kind: NavKind, cx: &mut Context<V>) -> Div {
+    let p = palette(cx);
     let today = Local::now().date_naive();
     let vm = nav.view_month;
     let shell = div()
@@ -125,8 +127,8 @@ fn picker<V: HasDateNav>(nav: DateNav, value: NaiveDate, kind: NavKind, cx: &mut
         .w(px(268.))
         .rounded_lg()
         .border_1()
-        .border_color(n200())
-        .bg(white())
+        .border_color(p.border)
+        .bg(p.bg)
         .p_3()
         .shadow_lg()
         .occlude()
@@ -137,7 +139,7 @@ fn picker<V: HasDateNav>(nav: DateNav, value: NaiveDate, kind: NavKind, cx: &mut
         .flex()
         .items_center()
         .justify_between()
-        .child(nav_icon_button("pick-prev", IconName::ChevronLeft).on_click(cx.listener(move |this, _, _, cx| {
+        .child(nav_icon_button(p, "pick-prev", IconName::ChevronLeft).on_click(cx.listener(move |this, _, _, cx| {
             let n = this.date_nav();
             n.view_month = add_months(n.view_month, -step);
             cx.notify();
@@ -148,7 +150,7 @@ fn picker<V: HasDateNav>(nav: DateNav, value: NaiveDate, kind: NavKind, cx: &mut
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .child(if kind == NavKind::Month { format!("{}年", vm.year()) } else { format!("{}年 {}月", vm.year(), vm.month()) }),
         )
-        .child(nav_icon_button("pick-next", IconName::ChevronRight).on_click(cx.listener(move |this, _, _, cx| {
+        .child(nav_icon_button(p, "pick-next", IconName::ChevronRight).on_click(cx.listener(move |this, _, _, cx| {
             let n = this.date_nav();
             n.view_month = add_months(n.view_month, step);
             cx.notify();
@@ -177,11 +179,11 @@ fn picker<V: HasDateNav>(nav: DateNav, value: NaiveDate, kind: NavKind, cx: &mut
                 .cursor_pointer()
                 .map(|s| {
                     if selected {
-                        s.bg(n900()).text_color(white()).font_weight(gpui::FontWeight::SEMIBOLD)
+                        s.bg(p.text).text_color(p.bg).font_weight(gpui::FontWeight::SEMIBOLD)
                     } else if this_month {
-                        s.text_color(amber600()).font_weight(gpui::FontWeight::BOLD).hover(|h| h.bg(amber50()))
+                        s.text_color(p.accent).font_weight(gpui::FontWeight::BOLD).hover(move |h| h.bg(p.hover))
                     } else {
-                        s.text_color(n700()).hover(|h| h.bg(n100()))
+                        s.text_color(p.text).hover(|h| h.bg(p.hover))
                     }
                 })
                 .child(format!("{}月", m + 1))
@@ -202,22 +204,22 @@ fn picker<V: HasDateNav>(nav: DateNav, value: NaiveDate, kind: NavKind, cx: &mut
             .py_1()
             .text_size(px(10.))
             .font_weight(gpui::FontWeight::MEDIUM)
-            .text_color(if i == 0 { red500() } else if i == 6 { blue500() } else { n500() })
+            .text_color(if i == 0 { p.sunday } else if i == 6 { p.saturday } else { p.text_muted })
             .child(*w)
     }));
     let day_color = move |d: NaiveDate, dow: usize, selected: bool| {
         if selected {
-            white()
+            p.bg
         } else if d.month() != vm.month() {
-            n300()
+            p.text_faint
         } else if d == today {
-            amber600()
+            p.accent
         } else if dow == 0 {
-            red500()
+            p.sunday
         } else if dow == 6 {
-            blue500()
+            p.saturday
         } else {
-            n700()
+            p.text
         }
     };
     let selected_week = week_start(value);
@@ -232,7 +234,7 @@ fn picker<V: HasDateNav>(nav: DateNav, value: NaiveDate, kind: NavKind, cx: &mut
                     .rounded_md()
                     .p(px(2.))
                     .cursor_pointer()
-                    .map(|s| if selected { s.bg(n900()).font_weight(gpui::FontWeight::SEMIBOLD) } else { s.hover(|h| h.bg(n100())) })
+                    .map(|s| if selected { s.bg(p.text).font_weight(gpui::FontWeight::SEMIBOLD) } else { s.hover(|h| h.bg(p.hover)) })
                     .children((0..7).map(|i| {
                         let d = ws + Duration::days(i);
                         div()
@@ -265,7 +267,7 @@ fn picker<V: HasDateNav>(nav: DateNav, value: NaiveDate, kind: NavKind, cx: &mut
                             .text_xs()
                             .cursor_pointer()
                             .text_color(day_color(d, i as usize, selected))
-                            .map(|s| if selected { s.bg(n900()).font_weight(gpui::FontWeight::SEMIBOLD) } else { s.hover(|h| h.bg(n100())) })
+                            .map(|s| if selected { s.bg(p.text).font_weight(gpui::FontWeight::SEMIBOLD) } else { s.hover(|h| h.bg(p.hover)) })
                             .when(!selected && d == today, |s| s.font_weight(gpui::FontWeight::BOLD))
                             .child(d.day().to_string())
                             .debug_selector(move || format!("pick-{d}"))
