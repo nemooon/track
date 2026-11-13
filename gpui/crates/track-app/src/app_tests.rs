@@ -322,3 +322,16 @@ fn header_has_only_tabs_and_settings(cx: &mut TestAppContext) {
     let nav = cx.debug_bounds("nav-label").expect("date label");
     assert!(nav.origin.y >= header.origin.y + header.size.height, "the date navigation stays below the header");
 }
+
+#[gpui::test]
+fn ai_notice_lives_in_the_status_bar(cx: &mut TestAppContext) {
+    let (app, cx, f) = seeded(cx, false);
+    refresh(&app, cx);
+    ai_rename(&mut f.db(), "a", "AI");
+    refresh(&app, cx);
+    let bar = cx.debug_bounds("status-bar").expect("status bar");
+    let notice = cx.debug_bounds("ai-op-banner").expect("notice");
+    assert!(bar.contains(&notice.center()), "the AI notice sits in the status bar");
+    let window_h = cx.update(|w, _| w.viewport_size().height);
+    assert!((bar.origin.y + bar.size.height - window_h).abs() <= gpui::px(1.), "the status bar is at the bottom");
+}

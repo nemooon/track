@@ -1,4 +1,4 @@
-pub mod ai_operation_banner;
+pub mod status_bar;
 pub mod controls;
 pub mod date_nav;
 pub mod integrations_dialog;

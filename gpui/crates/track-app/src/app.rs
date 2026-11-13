@@ -516,12 +516,17 @@ impl Render for TrackApp {
             .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.calendar.update(cx, |c, cx| c.zoom(1, cx))))
             .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.calendar.update(cx, |c, cx| c.zoom(-1, cx))))
             .child(self.render_header(window, cx))
-            .children(crate::ui::ai_operation_banner::render(self.state.read(cx).ai_op.clone(), cx))
             .child(div().flex_1().min_h_0().flex().flex_col().child(self.render_body(cx)))
+            .child(crate::ui::status_bar::render(self.status_left(cx), self.state.read(cx).ai_op.clone(), cx))
     }
 }
 
 impl TrackApp {
+    /// Page facts for the status bar (filled in by the calendar and reports).
+    fn status_left(&self, _cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
+        vec![]
+    }
+
     fn forward(&mut self, ev: crate::ui::date_nav::NavEvent, window: &mut Window, cx: &mut Context<Self>) {
         use crate::ui::date_nav::HasDateNav;
         match self.page {
