@@ -39,10 +39,16 @@ pub struct EditForm {
 
 impl EventEmitter<EditEvent> for EditForm {}
 
-/// `applyTime`: keep the date of `orig` (local), replace hour/minute.
-pub fn apply_time(orig: DateTime<Utc>, t: NaiveTime) -> DateTime<Utc> {
-    let local = orig.with_timezone(&Local).date_naive().and_time(NaiveTime::from_hms_opt(t.hour(), t.minute(), 0).unwrap());
-    Local.from_local_datetime(&local).earliest().unwrap().to_utc()
+/// Start and end typed in the dialog, both on the local day the entry starts. An end of 00:00
+/// is that day's 24:00 (the next midnight), since an entry never spans days.
+pub fn edited_span(entry_start: DateTime<Utc>, start: NaiveTime, end: NaiveTime) -> (DateTime<Utc>, DateTime<Utc>) {
+    let day = entry_start.with_timezone(&Local).date_naive();
+    let local = |d: chrono::NaiveDate, t: NaiveTime| {
+        let t = NaiveTime::from_hms_opt(t.hour(), t.minute(), 0).unwrap();
+        Local.from_local_datetime(&d.and_time(t)).earliest().unwrap().to_utc()
+    };
+    let end_day = if end.hour() == 0 && end.minute() == 0 { day.succ_opt().unwrap_or(day) } else { day };
+    (local(day, start), local(end_day, end))
 }
 
 /// Clamp like the React onChange: non-numbers become 0, then 0..=600.
@@ -106,10 +112,11 @@ impl EditForm {
         // React: [...new Set([...tagIds, ...lockedTagIds])]
         let mut tag_ids = merged_tag_ids(&locked, &self.tag_ids);
         tag_ids.sort_by_key(|id| self.tag_ids.iter().position(|t| t == id).unwrap_or(usize::MAX));
+        let span = edited_span(self.entry.start, self.start.read(cx).time(), self.end.read(cx).time());
         let patch = EntryPatch {
             title: Some((!title.is_empty()).then_some(title)),
-            start: Some(apply_time(self.entry.start, self.start.read(cx).time())),
-            end: Some(apply_time(self.entry.end, self.end.read(cx).time())),
+            start: Some(span.0),
+            end: Some(span.1),
             project_id: Some(self.project_id.clone()),
             tag_ids: Some(tag_ids),
             note: Some((!note.is_empty()).then_some(note)),
@@ -296,11 +303,32 @@ impl Render for EditForm {
 mod tests {
     use super::*;
 
+    fn at(d: u32, h: u32, m: u32) -> DateTime<Utc> {
+        Local.with_ymd_and_hms(2026, 11, d, h, m, 0).unwrap().to_utc()
+    }
+
+    fn hm(h: u32, m: u32) -> NaiveTime {
+        NaiveTime::from_hms_opt(h, m, 0).unwrap()
+    }
+
     #[test]
-    fn apply_time_keeps_original_date() {
-        let orig = Local.with_ymd_and_hms(2026, 11, 13, 0, 0, 0).unwrap().to_utc();
-        let t = apply_time(orig, NaiveTime::from_hms_opt(9, 45, 0).unwrap());
-        assert_eq!(t, Local.with_ymd_and_hms(2026, 11, 13, 9, 45, 0).unwrap().to_utc());
+    fn edited_span_moves_an_end_at_midnight_back_into_the_day() {
+        // 23:00–24:00 → end 23:45: same day, not the next day's 23:45.
+        assert_eq!(edited_span(at(12, 23, 0), hm(23, 0), hm(23, 45)), (at(12, 23, 0), at(12, 23, 45)));
+    }
+
+    #[test]
+    fn edited_span_end_at_0000_means_midnight_after_the_start() {
+        // 22:00–23:00 → end 00:00 is 24:00 of the same day.
+        assert_eq!(edited_span(at(12, 22, 0), hm(22, 0), hm(0, 0)), (at(12, 22, 0), at(13, 0, 0)));
+        // Unchanged 23:00–24:00 stays as it is.
+        assert_eq!(edited_span(at(12, 23, 0), hm(23, 0), hm(0, 0)), (at(12, 23, 0), at(13, 0, 0)));
+    }
+
+    #[test]
+    fn edited_span_start_at_0000_stays_on_its_day() {
+        assert_eq!(edited_span(at(12, 0, 0), hm(0, 0), hm(1, 0)), (at(12, 0, 0), at(12, 1, 0)));
+        assert_eq!(edited_span(at(12, 1, 0), hm(0, 0), hm(1, 0)), (at(12, 0, 0), at(12, 1, 0)));
     }
 
     #[test]
