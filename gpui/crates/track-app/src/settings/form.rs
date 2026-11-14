@@ -1,4 +1,5 @@
-//! Building blocks shared by the settings sections (SettingsCard / SettingsRow / SettingsActions).
+//! Building blocks shared by the settings sections: heading + form sections, fields, buttons and
+//! the save bar.
 use crate::ui::theme::*;
 use gpui::{AnyElement, Div, ElementId, FontWeight, InteractiveElement, IntoElement, ParentElement, Stateful, Styled, div, prelude::FluentBuilder, px};
 
@@ -36,44 +37,6 @@ pub fn field(p: Palette, id: &'static str, title: &str, description: &str, contr
                 .when(!description.is_empty(), |d| d.child(div().mt(px(2.)).text_xs().text_color(p.text_muted).child(description.to_string()))),
         )
         .child(control)
-}
-
-/// A titled card with a short description.
-pub fn card(p: Palette, title: &str, description: &str) -> Div {
-    div()
-        .flex()
-        .flex_col()
-        .mb_5()
-        .rounded_lg()
-        .border_1()
-        .border_color(p.border)
-        .child(
-            div()
-                .px_5()
-                .py_3()
-                .border_b_1()
-                .border_color(p.border_subtle)
-                .child(div().text_sm().font_weight(FontWeight::SEMIBOLD).child(title.to_string()))
-                .when(!description.is_empty(), |d| d.child(div().mt(px(2.)).text_xs().text_color(p.text_muted).child(description.to_string()))),
-        )
-}
-
-/// A row inside a card: label and help on the left, the control on the right.
-pub fn row(p: Palette, title: &str, description: &str, control: impl IntoElement) -> Div {
-    div()
-        .flex()
-        .items_start()
-        .gap_6()
-        .px_5()
-        .py_4()
-        .child(
-            div()
-                .w(px(180.))
-                .flex_shrink_0()
-                .child(div().text_sm().font_weight(FontWeight::MEDIUM).child(title.to_string()))
-                .when(!description.is_empty(), |d| d.child(div().mt(px(2.)).text_xs().text_color(p.text_muted).child(description.to_string()))),
-        )
-        .child(div().flex_1().min_w_0().child(control))
 }
 
 pub fn button(p: Palette, id: impl Into<ElementId>, label: &str, primary: bool, enabled: bool) -> Stateful<Div> {

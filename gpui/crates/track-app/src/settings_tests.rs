@@ -413,6 +413,23 @@ fn config_json(f: &crate::testing::Fixture) -> serde_json::Value {
 }
 
 #[gpui::test]
+fn every_settings_page_uses_heading_sections(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = open_app_db(cx, |_| {});
+    for (nav, sections) in [
+        ("settings-nav-appearance", vec!["appearance-section"]),
+        ("settings-nav-calendar", vec!["work-section"]),
+        ("settings-nav-reports", vec!["reports-section-formats", "reports-section-template"]),
+        ("settings-nav-backup", vec!["backup-section-settings", "backup-section-restore"]),
+    ] {
+        let (mut scx, _view) = open_section(cx, nav);
+        for id in sections {
+            assert!(scx.debug_bounds(id).is_some(), "{nav}: {id}");
+            assert!(scx.debug_bounds(sel(format!("{id}-heading"))).is_some(), "{nav}: {id} has a heading area");
+        }
+    }
+}
+
+#[gpui::test]
 fn ai_page_is_headings_and_fields_not_cards(cx: &mut TestAppContext) {
     let (_app, cx, _f) = open_app_db(cx, |_| {});
     let (mut scx, _ai) = ai_section(cx);

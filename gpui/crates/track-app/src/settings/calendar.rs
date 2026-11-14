@@ -160,8 +160,9 @@ impl Render for CalendarSettings {
         }));
         div()
             .child(
-                form::card(p, "勤務スケジュール", "")
-                    .child(form::row(p, 
+                form::section(p, "work-section", "勤務スケジュール", "", true)
+                    .child(form::field(p, 
+                        "work-field-hours",
                         "勤務時間",
                         "1日の標準的な開始・終了時刻です。",
                         div()
@@ -173,7 +174,7 @@ impl Render for CalendarSettings {
                             .child(div().text_xs().text_color(p.text_muted).child("勤務終了"))
                             .child(self.stepper("work-end", self.work_end, cx)),
                     ))
-                    .child(form::row(p, "勤務日", "勤務状況の判定対象にする曜日です。", days)),
+                    .child(form::field(p, "work-field-days", "勤務日", "勤務状況の判定対象にする曜日です。", days)),
             )
             .child(form::actions(p, 
                 Actions { prefix: "work", dirty, saving: self.saving, error: error.as_deref() },

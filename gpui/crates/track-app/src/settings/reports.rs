@@ -137,12 +137,12 @@ impl Render for ReportSettings {
                 .flex()
                 .items_center()
                 .gap_3()
-                .px_5()
+                .px_3()
                 .py_3()
                 .border_b_1()
                 .border_color(p.border_subtle)
                 .cursor_pointer()
-                .hover(|s| s.bg(p.surface))
+                .hover(|s| s.bg(p.hover))
                 .child(div().flex_1().text_sm().font_weight(FontWeight::MEDIUM).child(if f.name.is_empty() { "名前未設定".to_string() } else { f.name.clone() }))
                 .child(
                     div()
@@ -157,9 +157,10 @@ impl Render for ReportSettings {
                 .on_click(cx.listener(move |this, _, w, cx| this.open_format(open.clone(), w, cx)))
         });
         let can_add = formats.len() < 20 && !self.adding;
-        let formats_card = form::card(p, "出力フォーマット", "フォーマットを選択すると、専用の編集画面を開きます。")
-            .children(rows)
-            .child(div().px_5().py_3().child(form::button(p, "format-add", "出力フォーマットを追加", false, can_add).when(can_add, |d| {
+        let formats_card = form::section(p, "reports-section-formats", "出力フォーマット", "フォーマットを選択すると、専用の編集画面を開きます。", true)
+            // The list is ruled off above and between its rows (no box around it).
+            .child(div().flex().flex_col().border_t_1().border_color(p.border_subtle).children(rows))
+            .child(div().child(form::button(p, "format-add", "出力フォーマットを追加", false, can_add).when(can_add, |d| {
                 d.on_click(cx.listener(|this, _, w, cx| this.add_format(w, cx)))
             })));
         let value = self.template.read(cx).value().to_string();
@@ -170,7 +171,8 @@ impl Render for ReportSettings {
         div()
             .child(formats_card)
             .child(
-                form::card(p, "週報テンプレート", "AIが週の工数をまとめる際の出力構成を設定します。").child(form::row(p, 
+                form::section(p, "reports-section-template", "週報テンプレート", "AIが週の工数をまとめる際の出力構成を設定します。", false).child(form::field(p, 
+                    "reports-field-template",
                     "出力テンプレート",
                     "Markdownの見出しや固定文を利用できます。",
                     div()

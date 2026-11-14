@@ -224,7 +224,6 @@ impl FormatEditor {
             .flex()
             .flex_col()
             .gap_2()
-            .px_4()
             .py_3()
             .border_b_1()
             .border_color(p.border_subtle)
@@ -297,8 +296,7 @@ impl FormatEditor {
             .flex_wrap()
             .items_center()
             .gap_2()
-            .px_4()
-            .py_3()
+            .pt_1()
             .child(div().text_xs().text_color(p.text_muted).child("項目を追加:"))
             .children(FIELDS.iter().map(|f| {
                 let f = *f;
@@ -369,9 +367,10 @@ impl Render for FormatEditor {
                     .child(div().px_2().rounded_md().text_xs().bg(p.hover).text_color(p.text_muted).child(if report_copy_format_uses_ai(&current) { "AI使用" } else { "AIなし" })),
             )
             .child(
-                form::card(p, "基本設定", "")
-                    .child(form::row(p, "名前", "", div().w(px(320.)).child(Input::new(&self.name))))
-                    .child(form::row(p, 
+                form::section(p, "format-section-basics", "基本設定", "", true)
+                    .child(form::field(p, "format-field-name", "名前", "", div().w(px(320.)).child(Input::new(&self.name))))
+                    .child(form::field(p, 
+                        "format-field-delimiter",
                         "区切り文字",
                         "",
                         div()
@@ -386,7 +385,8 @@ impl Render for FormatEditor {
                                 cx.notify();
                             }))),
                     ))
-                    .child(form::row(p, 
+                    .child(form::field(p, 
+                        "format-field-header",
                         "見出し行",
                         "",
                         toggle("include-header", "先頭行に項目名を含める", current.include_header).on_click(cx.listener(|this, _, _, cx| {
@@ -396,47 +396,52 @@ impl Render for FormatEditor {
                     )),
             )
             .child(
-                form::card(p, "AIへの指示", "集計全体への指示です。空欄でもAI生成項目や概要項目があればAIを使用します。")
-                    .child(div().px_5().py_4().child(div().h(px(90.)).child(Textarea::new(&self.ai_prompt).h_full()))),
+                form::section(p, "format-section-ai", "AIへの指示", "集計全体への指示です。空欄でもAI生成項目や概要項目があればAIを使用します。", false)
+                    .child(div().h(px(90.)).child(Textarea::new(&self.ai_prompt).h_full())),
             )
             .child(
-                form::card(p, "出力項目", "追加後も見出しを変更できます。上下の矢印で出力順を変更します。")
-                    .children(columns)
+                form::section(p, "format-section-columns", "出力項目", "追加後も見出しを変更できます。上下の矢印で出力順を変更します。", false)
+                    // The list is ruled off above and between its rows (no box around it).
+                    .child(div().flex().flex_col().border_t_1().border_color(p.border_subtle).children(columns))
                     .child(self.add_buttons(cx)),
             )
-            .when(self.confirm_delete, |d| {
-                d.child(
-                    div()
-                        .mb_4()
-                        .p_4()
-                        .rounded_lg()
-                        .bg(p.danger_bg)
-                        .flex()
-                        .items_center()
-                        .gap_3()
-                        .child(div().flex_1().text_sm().child(format!("「{}」を削除しますか？", current.name)))
-                        .child(form::button(p, "format-delete-cancel", "キャンセル", false, true).on_click(cx.listener(|this, _, _, cx| {
-                            this.confirm_delete = false;
-                            cx.notify();
-                        })))
-                        .child(form::button(p, "format-delete-confirm", "削除", true, true).on_click(cx.listener(|this, _, _, cx| this.delete(cx)))),
-                )
-            })
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap_3()
                     .mb_8()
-                    .child(
-                        form::button(p, "format-delete", if can_delete { "このフォーマットを削除" } else { "最後の出力フォーマットは削除できません" }, false, can_delete)
-                            .when(can_delete, |d| {
-                                d.on_click(cx.listener(|this, _, _, cx| {
-                                    this.confirm_delete = true;
-                                    cx.notify();
-                                }))
-                            }),
-                    )
+                    .child({
+                        let button = form::button(p, "format-delete", if can_delete { "このフォーマットを削除" } else { "最後の出力フォーマットは削除できません" }, false, can_delete);
+                        if can_delete {
+                            // Confirms in a popover from the button.
+                            let (this, this2) = (cx.entity().downgrade(), cx.entity().downgrade());
+                            super::popover::confirm(
+                                "format-delete-pop",
+                                button,
+                                self.confirm_delete,
+                                move |open, _, cx| {
+                                    let _ = this.update(cx, |this, cx| {
+                                        this.confirm_delete = open;
+                                        cx.notify();
+                                    });
+                                },
+                                super::popover::Confirm {
+                                    message: format!("「{}」を削除しますか？", current.name),
+                                    cancel_id: "format-delete-cancel",
+                                    confirm_id: "format-delete-confirm",
+                                    confirm_label: "削除",
+                                },
+                                move |_, cx| {
+                                    let _ = this2.update(cx, |this, cx| this.delete(cx));
+                                },
+                                p,
+                            )
+                            .into_any_element()
+                        } else {
+                            button.into_any_element()
+                        }
+                    })
                     .child(div().flex_1().child(form::actions(p, 
                         form::Actions { prefix: "format", dirty, saving: self.saving, error: error.as_deref() },
                         form::button(p, "format-discard", "変更を破棄", false, !self.saving).on_click(cx.listener(|this, _, w, cx| this.discard(w, cx))),

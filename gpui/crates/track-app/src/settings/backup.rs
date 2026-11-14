@@ -216,7 +216,7 @@ impl Render for BackupSettings {
                 .flex()
                 .items_center()
                 .gap_3()
-                .px_5()
+                .px_3()
                 .py_3()
                 .border_b_1()
                 .border_color(p.border_subtle)
@@ -225,15 +225,45 @@ impl Render for BackupSettings {
                 .child(div().text_xs().text_color(p.text_muted).child(if s.auto { "自動バックアップ" } else { "手動バックアップ" }))
                 .child(div().flex_1())
                 .child(div().text_xs().text_color(p.text_muted).child(format!("{} KB", s.bytes / 1024)))
-                .child(form::button(p, format!("backup-restore-{i}"), "復元", false, !self.busy).on_click(cx.listener(move |this, _, _, cx| {
-                    this.restoring = Some(snap.clone());
-                    cx.notify();
-                })))
+                .child({
+                    let button = form::button(p, format!("backup-restore-{i}"), "復元", false, !self.busy);
+                    if self.busy {
+                        button.into_any_element()
+                    } else {
+                        // Confirms in a popover from the button.
+                        let open = self.restoring.as_ref() == Some(&snap);
+                        let message = format!(
+                            "{} の状態に戻します。現在のデータをこの時点の内容で置き換えます。実行直前の状態も自動でバックアップされます。",
+                            snap.created_at.with_timezone(&Local).format("%Y/%-m/%-d %-H:%M:%S")
+                        );
+                        let (this, this2, s1, s2) = (cx.entity().downgrade(), cx.entity().downgrade(), snap.clone(), snap.clone());
+                        super::popover::confirm(
+                            SharedString::from(format!("backup-restore-pop-{i}")),
+                            button,
+                            open,
+                            move |open, _, cx| {
+                                let snap = s1.clone();
+                                let _ = this.update(cx, |this, cx| {
+                                    this.restoring = open.then_some(snap);
+                                    cx.notify();
+                                });
+                            },
+                            super::popover::Confirm { message, cancel_id: "backup-restore-cancel", confirm_id: "backup-restore-confirm", confirm_label: "この時点へ復元" },
+                            move |_, cx| {
+                                let snap = s2.clone();
+                                let _ = this2.update(cx, |this, cx| this.restore(snap, cx));
+                            },
+                            p,
+                        )
+                        .into_any_element()
+                    }
+                })
         });
         div()
             .child(
-                form::card(p, "保存の設定", "iCloud Driveなど、普段同期されるフォルダも保存先にできます。")
-                    .child(form::row(p, 
+                form::section(p, "backup-section-settings", "保存の設定", "iCloud Driveなど、普段同期されるフォルダも保存先にできます。", true)
+                    .child(form::field(p, 
+                        "backup-field-dir",
                         "保存先フォルダ",
                         "Track本体ではなく、作成されるバックアップだけを同期してください。",
                         div()
@@ -262,68 +292,33 @@ impl Render for BackupSettings {
                                     }))),
                             ),
                     ))
-                    .child(form::row(p, "実行間隔", "0時間にすると自動バックアップを停止します。", number(&self.interval, "時間")))
-                    .child(form::row(p, "保存数", "手動で作成したバックアップは削除されません。", number(&self.keep, "件"))),
+                    .child(form::field(p, "backup-field-interval", "実行間隔", "0時間にすると自動バックアップを停止します。", number(&self.interval, "時間")))
+                    .child(form::field(p, "backup-field-keep", "保存数", "手動で作成したバックアップは削除されません。", number(&self.keep, "件"))),
             )
             .child(form::actions(p, 
                 Actions { prefix: "backup", dirty, saving: self.saving, error: error.as_deref() },
                 form::button(p, "backup-discard", "変更を破棄", false, !self.saving).on_click(cx.listener(|this, _, w, cx| this.reset(w, cx))),
                 form::button(p, "backup-save", if self.saving { "保存中…" } else { "変更を保存" }, true, can_save).on_click(cx.listener(|this, _, _, cx| this.save(cx))),
             ))
-            .when_some(self.restoring.clone(), |d, snap| {
-                d.child(
-                    div()
-                        .mb_5()
-                        .p_4()
-                        .rounded_lg()
-                        .border_1()
-                        .border_color(p.warning_border)
-                        .bg(p.warning_bg)
-                        .flex()
-                        .flex_col()
-                        .gap_3()
-                        .child(div().text_sm().font_weight(FontWeight::SEMIBOLD).child("この時点へ復元しますか？"))
-                        .child(div().text_xs().text_color(p.text).child(format!(
-                            "{} の状態に戻します。現在のデータをこの時点の内容で置き換えます。実行直前の状態も自動でバックアップされます。",
-                            snap.created_at.with_timezone(&Local).format("%Y/%-m/%-d %-H:%M:%S")
-                        )))
-                        .child(
-                            div()
-                                .flex()
-                                .justify_end()
-                                .gap_2()
-                                .child(form::button(p, "backup-restore-cancel", "キャンセル", false, true).on_click(cx.listener(|this, _, _, cx| {
-                                    this.restoring = None;
-                                    cx.notify();
-                                })))
-                                .child(form::button(p, "backup-restore-confirm", "この時点へ復元", true, true).on_click(cx.listener(move |this, _, _, cx| this.restore(snap.clone(), cx)))),
-                        ),
-                )
-            })
             .child(
-                form::card(p, "復元ポイント", "過去の状態を選ぶと、現在の状態を退避してから復元します。")
+                form::section(p, "backup-section-restore", "復元ポイント", "過去の状態を選ぶと、現在の状態を退避してから復元します。", false)
                     .child(
                         div()
                             .flex()
                             .items_center()
                             .gap_3()
-                            .px_5()
-                            .py_3()
-                            .border_b_1()
-                            .border_color(p.border_subtle)
                             .child(form::button(p, "backup-now", if self.busy { "処理中…" } else { "今すぐバックアップ" }, true, !self.busy).on_click(cx.listener(|this, _, _, cx| this.backup_now(cx))))
                             .when_some(self.notice.clone(), |d, n| d.child(div().text_xs().text_color(p.text_muted).child(n))),
                     )
                     .when(self.snapshots.is_empty(), |d| {
                         d.child(
                             div()
-                                .px_5()
-                                .py_4()
                                 .child(div().text_sm().text_color(p.text_muted).child("バックアップはまだありません"))
                                 .child(div().text_xs().text_color(p.text_muted).child("「今すぐバックアップ」から最初の復元ポイントを作成できます。")),
                         )
                     })
-                    .children(rows),
+                    // The list is ruled off above and between its rows (no box around it).
+                    .child(div().flex().flex_col().border_t_1().border_color(p.border_subtle).children(rows)),
             )
     }
 }
