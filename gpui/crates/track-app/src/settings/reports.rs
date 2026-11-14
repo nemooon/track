@@ -160,7 +160,8 @@ impl Render for ReportSettings {
         let formats_card = form::section(p, "reports-section-formats", "出力フォーマット", "フォーマットを選択すると、専用の編集画面を開きます。", true)
             // The list is ruled off above and between its rows (no box around it).
             .child(div().flex().flex_col().border_t_1().border_color(p.border_subtle).children(rows))
-            .child(div().child(form::button(p, "format-add", "出力フォーマットを追加", false, can_add).when(can_add, |d| {
+            // A row, so the button keeps its own width.
+            .child(div().flex().child(form::button(p, "format-add", "出力フォーマットを追加", false, can_add).when(can_add, |d| {
                 d.on_click(cx.listener(|this, _, w, cx| this.add_format(w, cx)))
             })));
         let value = self.template.read(cx).value().to_string();
