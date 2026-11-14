@@ -330,16 +330,10 @@ impl TagSettings {
     /// The trash icon (shown while the row is hovered), confirming in a popover.
     fn render_delete(&self, t: &Tag, confirming: bool, group: SharedString, p: Palette, cx: &mut Context<Self>) -> impl IntoElement {
         let sel = format!("tag-delete-{}", t.id);
-        let icon = div()
+        let icon = crate::ui::controls::icon_button(&p, SharedString::from(format!("tag-delete-icon-{}", t.id)), crate::ui::icons::trash(), "削除する")
             .debug_selector(move || sel.clone())
-            .p_1()
-            .rounded(RADIUS_SM)
-            .cursor_pointer()
-            .text_color(p.text_muted)
-            .hover(move |s| s.bg(p.hover).text_color(p.text))
             .opacity(if confirming { 1. } else { 0. })
-            .group_hover(group, |s| s.opacity(1.))
-            .child(crate::ui::icons::trash().size_4());
+            .group_hover(group, |s| s.opacity(1.));
         let (this, this2, id, id2) = (cx.entity().downgrade(), cx.entity().downgrade(), t.id.clone(), t.id.clone());
         popover::confirm(
             SharedString::from(format!("tag-delete-pop-{}", t.id)),

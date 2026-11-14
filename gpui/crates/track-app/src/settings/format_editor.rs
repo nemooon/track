@@ -207,17 +207,10 @@ impl FormatEditor {
 
     fn render_column(&self, index: usize, c: &ReportCopyColumn, count: usize, cx: &mut Context<Self>) -> AnyElement {
         let p = palette(cx);
-        let small = |id: String, icon: IconName, enabled: bool| {
+        // Icon buttons with the column's debug ids.
+        let column_icon = |id: String, icon: IconName, tip: &'static str, enabled: bool| {
             let sel = id.clone();
-            div()
-                .id(SharedString::from(id))
-                .debug_selector(move || sel.clone())
-                .p_1()
-                .rounded_md()
-                .text_color(p.text_muted)
-                .when(enabled, |d| d.cursor_pointer().hover(|s| s.bg(p.hover).text_color(p.text)))
-                .when(!enabled, |d| d.opacity(0.3))
-                .child(Icon::new(icon).size_4())
+            crate::ui::controls::disabled(crate::ui::controls::icon_button(&p, SharedString::from(id), Icon::new(icon), tip).debug_selector(move || sel.clone()), !enabled)
         };
         let inputs = self.inputs.get(c.id());
         let mut row = div()
@@ -234,9 +227,9 @@ impl FormatEditor {
                     .gap_3()
                     .child(div().w(px(70.)).flex_shrink_0().text_xs().font_weight(FontWeight::MEDIUM).text_color(p.text_muted).child(column_kind_label(c)))
                     .when_some(inputs.map(|i| i.header.clone()), |d, h| d.child(div().flex_1().child(Input::new(&h))))
-                    .child(small(format!("column-up-{index}"), IconName::ArrowUp, index > 0).on_click(cx.listener(move |this, _, _, cx| this.move_column(index, true, cx))))
-                    .child(small(format!("column-down-{index}"), IconName::ArrowDown, index + 1 < count).on_click(cx.listener(move |this, _, _, cx| this.move_column(index, false, cx))))
-                    .child(small(format!("column-remove-{index}"), IconName::Close, true).on_click(cx.listener(move |this, _, _, cx| {
+                    .child(column_icon(format!("column-up-{index}"), IconName::ArrowUp, "上へ", index > 0).on_click(cx.listener(move |this, _, _, cx| this.move_column(index, true, cx))))
+                    .child(column_icon(format!("column-down-{index}"), IconName::ArrowDown, "下へ", index + 1 < count).on_click(cx.listener(move |this, _, _, cx| this.move_column(index, false, cx))))
+                    .child(column_icon(format!("column-remove-{index}"), IconName::Close, "項目を外す", true).on_click(cx.listener(move |this, _, _, cx| {
                         let removed = this.draft.columns.remove(index);
                         this.inputs.remove(removed.id());
                         cx.notify();

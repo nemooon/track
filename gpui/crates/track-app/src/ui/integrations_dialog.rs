@@ -71,7 +71,7 @@ impl Render for IntegrationsDialog {
                         .child("インストールしました")
                         .children(paths.into_iter().map(|p| div().child(p.display().to_string()))),
                 ),
-                Err(e) => d.child(div().debug_selector(|| "install-error".into()).rounded_md().bg(p.danger_bg).px_3().py_2().text_xs().text_color(p.danger).child(e)),
+                Err(e) => d.child(div().debug_selector(|| "install-error".into()).text_xs().text_color(p.danger).child(e)),
             })
     }
 }

@@ -495,16 +495,10 @@ impl ProjectSettings {
                 .child(div().min_w_0().truncate().text_sm().child(pj.name.clone()))
                 .on_click(cx.listener(move |this, _, window, cx| this.select(Selection::Project(id.clone()), window, cx)))
         };
-        let icon_button = |id: String, icon: Icon, tip: &'static str| {
+        // Icon buttons with the tree's debug ids.
+        let tree_icon = |id: String, icon: Icon, tip: &'static str| {
             let sel = id.clone();
-            div()
-                .id(SharedString::from(id))
-                .debug_selector(move || sel.clone())
-                .px_1()
-                .rounded(RADIUS_SM)
-                .hover(move |s| s.bg(p.hover))
-                .child(icon.size_3p5())
-                .tooltip(move |window, cx| gpui_component::tooltip::Tooltip::new(tip).build(window, cx))
+            crate::ui::controls::icon_button(&p, SharedString::from(id), icon, tip).debug_selector(move || sel.clone())
         };
         let client_block = |c: &Client, projects: Vec<&Project>, cx: &mut Context<Self>| {
             let (id, add_id, arch_id, del_id) = (c.id.clone(), c.id.clone(), c.id.clone(), c.id.clone());
@@ -546,7 +540,7 @@ impl ProjectSettings {
                             let deletable = !self.projects.iter().any(|pj| pj.client_id == c.id && self.with_entries.contains(&pj.id));
                             let tip = if deletable { "削除する" } else { "工数のあるプロジェクトがあるため削除できません" };
                             let shown = if deletable { 1. } else { 0.35 };
-                            let icon = icon_button(format!("tree-client-delete-{}", c.id), crate::ui::icons::trash(), tip)
+                            let icon = tree_icon(format!("tree-client-delete-{}", c.id), crate::ui::icons::trash(), tip)
                                 .text_color(p.text_muted)
                                 .opacity(if confirming { shown } else { 0. })
                                 .group_hover(group.clone(), move |st| st.opacity(shown));
@@ -583,7 +577,7 @@ impl ProjectSettings {
                             }
                         })
                         .child(
-                            icon_button(format!("tree-client-archive-{}", c.id), archive_icon, archive_tip)
+                            tree_icon(format!("tree-client-archive-{}", c.id), archive_icon, archive_tip)
                                 .text_color(p.text_muted)
                                 // Shown while the heading is hovered (like the delete icon).
                                 .opacity(if confirming { 1. } else { 0. })
@@ -596,7 +590,7 @@ impl ProjectSettings {
                         // An archived client takes no new projects.
                         .when(!archived, |d| {
                             d.child(
-                                icon_button(format!("tree-client-add-{}", c.id), Icon::new(IconName::Plus), "プロジェクトを追加")
+                                tree_icon(format!("tree-client-add-{}", c.id), Icon::new(IconName::Plus), "プロジェクトを追加")
                                     .text_color(p.accent)
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         cx.stop_propagation();

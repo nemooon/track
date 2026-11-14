@@ -52,6 +52,22 @@ pub fn chip(p: &Palette, id: impl Into<ElementId>, on: bool) -> Stateful<Div> {
         })
 }
 
+/// An icon-only button. The tooltip is required: an icon alone does not say what it does.
+pub fn icon_button(p: &Palette, id: impl Into<ElementId>, icon: gpui_component::Icon, tooltip: &'static str) -> Stateful<Div> {
+    use gpui::StatefulInteractiveElement;
+    let p = *p;
+    div()
+        .id(id)
+        .flex_shrink_0()
+        .p_1()
+        .rounded(RADIUS_SM)
+        .text_color(p.text_muted)
+        .cursor_pointer()
+        .hover(move |s| s.bg(p.hover).text_color(p.text))
+        .child(icon.size_4())
+        .tooltip(move |window, cx| gpui_component::tooltip::Tooltip::new(tooltip).build(window, cx))
+}
+
 pub fn button(p: &Palette, id: impl Into<ElementId>, active: bool, icon_only: bool) -> Stateful<Div> {
     let p = *p;
     div()
@@ -87,7 +103,7 @@ pub fn error_banner(p: &Palette, retry_id: &'static str, message: &str) -> State
         .gap_3()
         .px_3()
         .py_2()
-        .bg(p.danger_bg)
+        .bg(p.danger_bg) // keep: the connection banner across the window
         .border_b_1()
         .border_color(p.danger_border)
         .text_xs()

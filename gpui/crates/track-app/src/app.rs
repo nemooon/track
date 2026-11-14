@@ -432,16 +432,9 @@ impl TrackApp {
                     .child(tab("tab-reports", "レポート", IconName::ChartPie, Page::Reports, self.page == Page::Reports)),
             )
             .child(
-                div()
-                    .id("open-settings")
+                crate::ui::controls::icon_button(&p, "open-settings", Icon::new(IconName::Settings), "設定（⌘,）")
                     .debug_selector(|| "open-settings".into())
                     .ml_auto()
-                    .p_1()
-                    .rounded_md()
-                    .cursor_pointer()
-                    .text_color(p.text_muted)
-                    .hover(move |s| s.text_color(p.text).bg(p.hover))
-                    .child(Icon::new(IconName::Settings).size_4())
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(cx.listener(|this, _, _, cx| crate::settings::open_settings(this.state.clone(), cx))),
             )

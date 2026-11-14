@@ -323,14 +323,7 @@ impl Render for ProjectPicker {
                     .px_2()
                     .py(px(6.))
                     .child(
-                        div()
-                            .id("picker-back")
-                            .rounded(RADIUS_SM)
-                            .p_1()
-                            .text_color(p.text_muted)
-                            .cursor_pointer()
-                            .hover(move |s| s.bg(p.hover).text_color(p.text))
-                            .child(Icon::new(IconName::ChevronLeft).size_3p5())
+                        crate::ui::controls::icon_button(&p, "picker-back", Icon::new(IconName::ChevronLeft), "戻る")
                             .on_click(cx.listener(|this, _, w, cx| this.back(w, cx))),
                     )
                     .child(div().size(px(10.)).flex_shrink_0().rounded_full().bg(hex(&picked.color)))

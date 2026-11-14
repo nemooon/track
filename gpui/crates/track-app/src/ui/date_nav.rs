@@ -3,7 +3,7 @@ use super::{controls, theme::*};
 use crate::core::time::{month_range, range_label, week_start};
 use chrono::{Datelike, Duration, Local, NaiveDate};
 use gpui::{
-    AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement, Stateful, StatefulInteractiveElement, Styled,
+    AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled,
     Window, anchored, deferred, div, prelude::FluentBuilder, px,
 };
 use gpui_component::{Icon, IconName};
@@ -68,6 +68,7 @@ pub fn render<V: HasDateNav>(nav: DateNav, anchor: NaiveDate, kind: NavKind, cx:
         .child(
             controls::button(&p, "nav-prev", false, true)
                 .child(Icon::new(IconName::ChevronLeft).size_4())
+                .tooltip(|window, cx| gpui_component::tooltip::Tooltip::new("前の期間（⌘[）").build(window, cx))
                 .on_click(cx.listener(|this, _, w, cx| this.on_nav(NavEvent::Prev, w, cx))),
         )
         .child(
@@ -86,6 +87,7 @@ pub fn render<V: HasDateNav>(nav: DateNav, anchor: NaiveDate, kind: NavKind, cx:
         .child(
             controls::button(&p, "nav-next", false, true)
                 .child(Icon::new(IconName::ChevronRight).size_4())
+                .tooltip(|window, cx| gpui_component::tooltip::Tooltip::new("次の期間（⌘]）").build(window, cx))
                 .on_click(cx.listener(|this, _, w, cx| this.on_nav(NavEvent::Next, w, cx))),
         )
         .child(
@@ -106,10 +108,6 @@ pub fn below(content: impl IntoElement) -> Div {
 fn close<V: HasDateNav>(this: &mut V, cx: &mut Context<V>) {
     this.date_nav().open = false;
     cx.notify();
-}
-
-fn nav_icon_button(p: Palette, id: &'static str, icon: IconName) -> Stateful<Div> {
-    div().id(id).rounded(RADIUS_SM).p_1().text_color(p.text_muted).cursor_pointer().hover(|s| s.bg(p.hover)).child(Icon::new(icon).size_4())
 }
 
 fn add_months(d: NaiveDate, months: i32) -> NaiveDate {
@@ -139,7 +137,7 @@ fn picker<V: HasDateNav>(nav: DateNav, value: NaiveDate, kind: NavKind, cx: &mut
         .flex()
         .items_center()
         .justify_between()
-        .child(nav_icon_button(p, "pick-prev", IconName::ChevronLeft).on_click(cx.listener(move |this, _, _, cx| {
+        .child(controls::icon_button(&p, "pick-prev", Icon::new(IconName::ChevronLeft), "前の月").on_click(cx.listener(move |this, _, _, cx| {
             let n = this.date_nav();
             n.view_month = add_months(n.view_month, -step);
             cx.notify();
@@ -150,7 +148,7 @@ fn picker<V: HasDateNav>(nav: DateNav, value: NaiveDate, kind: NavKind, cx: &mut
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .child(if kind == NavKind::Month { format!("{}年", vm.year()) } else { format!("{}年 {}月", vm.year(), vm.month()) }),
         )
-        .child(nav_icon_button(p, "pick-next", IconName::ChevronRight).on_click(cx.listener(move |this, _, _, cx| {
+        .child(controls::icon_button(&p, "pick-next", Icon::new(IconName::ChevronRight), "次の月").on_click(cx.listener(move |this, _, _, cx| {
             let n = this.date_nav();
             n.view_month = add_months(n.view_month, step);
             cx.notify();

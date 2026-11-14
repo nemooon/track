@@ -358,7 +358,7 @@ impl Render for AiSettings {
                         .rounded_md()
                         .text_sm()
                         .when(s.available, |d| d.bg(p.success_bg).text_color(p.success))
-                        .when(!s.available, |d| d.bg(p.warning_bg).text_color(p.warning_text))
+                        .when(!s.available, |d| d.bg(p.warning_bg).text_color(p.warning_text)) // keep: a status, not an error
                         .child(s.detail),
                 ))
             }))

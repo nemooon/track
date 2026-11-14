@@ -271,7 +271,7 @@ impl Render for EditForm {
                             .border_1()
                             .border_color(p.danger_border)
                             .text_color(p.danger)
-                            .hover(|s| s.bg(p.danger_bg))
+                            .hover(|s| s.bg(p.danger_bg)) // keep: hover on 削除
                             .child("削除")
                             .on_click(cx.listener(|this, _, _, cx| cx.emit(EditEvent::Delete(this.entry.id.clone())))),
                     )

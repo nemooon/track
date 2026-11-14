@@ -378,6 +378,19 @@ mod tests {
     }
 
     #[test]
+    fn icon_buttons_come_from_one_helper() {
+        // controls::icon_button (which also gives every one a tooltip); no local copies.
+        let found = source_lines_with(&|l| l.contains("fn nav_icon_button") || l.contains("let icon_button = |") || l.contains("let small = |id: String, icon"));
+        assert!(found.is_empty(), "local icon buttons:\n{}", found.join("\n"));
+    }
+
+    #[test]
+    fn errors_are_a_line_of_text_not_a_box() {
+        let found = source_lines_with(&|l| l.contains(".bg(p.danger_bg)") || l.contains(".bg(p.warning_bg)"));
+        assert!(found.is_empty(), "coloured boxes:\n{}", found.join("\n"));
+    }
+
+    #[test]
     fn rows_hover_with_the_hover_colour() {
         let found = source_lines_with(&|l| l.contains("s.bg(p.surface)") || l.contains("h.bg(p.surface)"));
         assert!(found.is_empty(), "hover with p.surface:\n{}", found.join("\n"));

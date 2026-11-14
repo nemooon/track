@@ -307,7 +307,7 @@ impl Render for CustomOutput {
                 })
                 .into_any_element()
         } else if let Some(err) = &self.error {
-            div().debug_selector(|| "output-error".into()).rounded_md().border_1().border_color(p.danger_border).bg(p.danger_bg).px_4().py_3().text_sm().text_color(p.danger).child(err.clone()).into_any_element()
+            div().debug_selector(|| "output-error".into()).text_sm().text_color(p.danger).child(err.clone()).into_any_element()
         } else if !self.result.is_empty() {
             let f = format.clone().unwrap();
             let sum: i64 = self.result.iter().map(|r| r.minutes).sum();
@@ -379,7 +379,7 @@ impl Render for CustomOutput {
                     .gap(px(6.))
                     .child(div().text_sm().font_weight(FontWeight::MEDIUM).text_color(p.text).child("出力形式"))
                     .map(|d| match &format {
-                        None => d.child(div().rounded_md().border_1().border_color(p.warning_border).bg(p.warning_bg).px_3().py_2().text_sm().text_color(p.warning_text).child("設定の「レポート」で出力フォーマットを登録してください。")),
+                        None => d.child(div().text_sm().text_color(p.warning_text).child("設定の「レポート」で出力フォーマットを登録してください。")),
                         Some(f) => d.child(
                             div()
                                 .relative()
