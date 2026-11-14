@@ -9,7 +9,7 @@ use gpui::{
     AnyElement, AppContext, Context, Div, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px,
 };
-use gpui_component::color_picker::{ColorPicker, ColorPickerEvent, ColorPickerState};
+use gpui_component::color_picker::{ColorPickerEvent, ColorPickerState};
 use gpui_component::input::{Input, InputState};
 use gpui_component::{Icon, IconName};
 use std::future::Future;
@@ -229,26 +229,9 @@ impl ProjectSettings {
                     cx.notify();
                 }))
         }))
-        .when(custom, |d| d.child(div().debug_selector(|| "editor-color-current".into()).size(px(24.)).rounded_full().bg(hex(&ed.color)).border_2().border_color(p.text)))
         .when_some(ed.picker.clone(), |d, picker| {
-            let featured = COLORS.iter().map(|c| gpui::Hsla::from(hex(c))).collect();
-            // Same circle as the swatches, with an eyedropper: any colour.
-            d.child(
-                div().debug_selector(|| "editor-color-custom".into()).child(
-                    ColorPicker::new(&picker)
-                        .featured_colors(featured)
-                        .accessibility_label("色を選ぶ")
-                        .icon(crate::ui::icons::pipette().size(px(14.)).text_color(p.text_muted))
-                        .size(px(24.))
-                        .rounded_full()
-                        .border_1()
-                        .border_color(p.border)
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .cursor_pointer(),
-                ),
-            )
+            let fill = custom.then(|| gpui::Hsla::from(hex(&ed.color)));
+            d.child(super::color_field::eyedropper("editor-color-popover", &picker, fill, p, cx))
         });
         let chip = |id: String, label: String, on: bool| {
             let sel = id.clone();

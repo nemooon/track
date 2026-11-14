@@ -652,3 +652,35 @@ fn colour_picker_button_is_a_swatch_sized_circle(cx: &mut TestAppContext) {
     let picker = scx.debug_bounds("editor-color-custom").expect("picker button").size;
     assert_eq!(picker, swatch, "same circle as the colour swatches, no label");
 }
+
+fn open_p1_editor(cx: &mut TestAppContext) -> (VisualTestContext, Entity<crate::settings::projects::ProjectSettings>, crate::testing::Fixture, gpui::Entity<crate::app::TrackApp>) {
+    let (app, vcx, f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(vcx);
+    let b = scx.debug_bounds("project-edit-p1").expect("edit");
+    scx.simulate_click(b.center(), Modifiers::none());
+    wait_io(&mut scx);
+    (scx, p, f, app)
+}
+
+#[gpui::test]
+fn picked_colour_fills_the_eyedropper_button_without_an_extra_swatch(cx: &mut TestAppContext) {
+    let (mut scx, p, _f, _app) = open_p1_editor(cx);
+    let picker = p.read_with(&scx, |s, _| s.editor.as_ref().and_then(|e| e.picker.clone())).expect("picker state");
+    let c: gpui::Hsla = gpui::rgb(0x123456).into();
+    scx.update(|_, cx| picker.update(cx, |_, cx| cx.emit(gpui_component::color_picker::ColorPickerEvent::Change(Some(c)))));
+    scx.run_until_parked();
+    assert!(scx.debug_bounds("editor-color-current").is_none(), "no extra swatch");
+    assert_eq!(p.read_with(&scx, |s, _| s.editor.as_ref().map(|e| e.color.clone())), Some("#123456".into()));
+    assert!(scx.debug_bounds("editor-color-custom").is_some());
+}
+
+#[gpui::test]
+fn colour_popover_has_hue_saturation_lightness_and_hex_only(cx: &mut TestAppContext) {
+    let (mut scx, _p, _f, _app) = open_p1_editor(cx);
+    click(&mut scx, "editor-color-custom");
+    scx.run_until_parked();
+    for id in ["picker-hue", "picker-saturation", "picker-lightness", "picker-hex"] {
+        assert!(scx.debug_bounds(id).is_some(), "{id}");
+    }
+    assert!(scx.debug_bounds("picker-alpha").is_none());
+}

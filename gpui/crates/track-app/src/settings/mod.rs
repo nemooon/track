@@ -13,6 +13,7 @@ pub mod ai;
 pub mod appearance;
 pub mod backup;
 pub mod calendar;
+pub mod color_field;
 pub mod form;
 pub mod format_editor;
 pub mod projects;
