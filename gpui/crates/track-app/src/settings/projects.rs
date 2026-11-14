@@ -429,60 +429,6 @@ impl Render for ProjectSettings {
             ))
             .child(if self.projects.is_empty() { div().mb_8().text_sm().text_color(p.text_faint).child("プロジェクトがありません") } else { projects });
 
-        // Tags
-        let tags = list(p).children(self.tags.iter().map(|t| {
-            let (edit_t, del_t) = (t.clone(), t.clone());
-            list_row(p, format!("tag-row-{}", t.id), false)
-                .child(div().size(px(10.)).rounded_full().bg(hex(&t.color)))
-                .child(div().flex_1().child(t.name.clone()))
-                .child(icon_button(p, format!("tag-edit-{}", t.id), IconName::Settings, "編集", true).on_click(cx.listener(move |this, _, w, cx| {
-                    this.open_editor(Draft { id: Some(edit_t.id.clone()), name: edit_t.name.clone(), color: edit_t.color.clone(), ..Draft::new(EditKind::Tag) }, w, cx)
-                })))
-                .child(icon_button(p, format!("tag-delete-{}", t.id), IconName::Delete, "削除", true).on_click(cx.listener(move |this, _, _, cx| {
-                    this.deleting_tag = Some(del_t.clone());
-                    cx.notify();
-                })))
-        }));
-        root = root
-            .child(section_header(
-                "タグ",
-                form::button(p, "tag-add", "＋ 追加", true, true).on_click(cx.listener(|this, _, w, cx| {
-                    this.open_editor(Draft { color: random_color(), ..Draft::new(EditKind::Tag) }, w, cx)
-                })),
-            ))
-            .child(if self.tags.is_empty() { div().mb_8().text_sm().text_color(p.text_faint).child("タグがありません") } else { tags });
-
-        if let Some(t) = self.deleting_tag.clone() {
-            root = root.child(
-                div()
-                    .mb_8()
-                    .p_4()
-                    .rounded_lg()
-                    .border_1()
-                    .border_color(p.danger_border)
-                    .bg(p.danger_bg)
-                    .flex()
-                    .flex_col()
-                    .gap_3()
-                    .child(div().text_sm().font_weight(FontWeight::SEMIBOLD).child("タグを削除しますか？"))
-                    .child(div().text_xs().text_color(p.text).child(format!("「{}」を削除します。記録した時間は残りますが、エントリーとプロジェクトからこのタグが外れます。", t.name)))
-                    .child(
-                        div()
-                            .flex()
-                            .justify_end()
-                            .gap_2()
-                            .child(form::button(p, "tag-delete-cancel", "キャンセル", false, true).on_click(cx.listener(|this, _, _, cx| {
-                                this.deleting_tag = None;
-                                cx.notify();
-                            })))
-                            .child(form::button(p, "tag-delete-confirm", "タグを削除", true, true).on_click(cx.listener(move |this, _, _, cx| {
-                                this.deleting_tag = None;
-                                let api = api(&this.state, cx);
-                                this.write(api.delete_tag(t.id.clone()), false, cx)
-                            }))),
-                    ),
-            );
-        }
         root
     }
 }

@@ -179,6 +179,17 @@ fn projects_section(cx: &mut VisualTestContext) -> (VisualTestContext, Entity<cr
     (scx, p)
 }
 
+fn tags_section(cx: &mut VisualTestContext) -> (VisualTestContext, Entity<crate::settings::tags::TagSettings>) {
+    let (scx, view) = open_section(cx, "settings-nav-tags");
+    let t = view.read_with(&scx, |v, _| v.tags.clone().expect("tags section"));
+    (scx, t)
+}
+
+fn type_tag_name(scx: &mut VisualTestContext, t: &Entity<crate::settings::tags::TagSettings>, text: &str) {
+    let input = t.read_with(scx, |t, _| t.editor.as_ref().expect("editor open").name.clone());
+    scx.update(|w, cx| input.update(cx, |i, cx| i.set_value(text.to_string(), w, cx)));
+}
+
 fn type_name(scx: &mut VisualTestContext, p: &Entity<crate::settings::projects::ProjectSettings>, text: &str) {
     let input = p.read_with(scx, |p, _| p.editor.as_ref().expect("editor open").name.clone());
     scx.update(|w, cx| input.update(cx, |i, cx| i.set_value(text.to_string(), w, cx)));
@@ -235,15 +246,22 @@ fn archive_hides_project_until_restored(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn tags_are_not_on_the_projects_page(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = open_app_db(cx, |_| {});
+    let (mut scx, _p) = projects_section(cx);
+    assert!(scx.debug_bounds("tag-add").is_none());
+}
+
+#[gpui::test]
 fn tag_crud(cx: &mut TestAppContext) {
     let (_app, cx, f) = open_app_db(cx, |_| {});
-    let (mut scx, p) = projects_section(cx);
+    let (mut scx, p) = tags_section(cx);
     click(&mut scx, "tag-add");
-    type_name(&mut scx, &p, "定例");
+    type_tag_name(&mut scx, &p, "定例");
     click(&mut scx, "editor-save");
     wait_io(&mut scx);
     assert!(scx.debug_bounds("editor-error").is_some(), "同じ名前のタグが既にあります");
-    type_name(&mut scx, &p, "新タグ");
+    type_tag_name(&mut scx, &p, "新タグ");
     click(&mut scx, "editor-save");
     wait_io(&mut scx);
     let tag = f.db().tags().unwrap().into_iter().find(|t| t.name == "新タグ").expect("tag created");

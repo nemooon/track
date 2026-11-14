@@ -18,6 +18,7 @@ pub mod form;
 pub mod format_editor;
 pub mod projects;
 pub mod reports;
+pub mod tags;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsSection {
@@ -25,12 +26,13 @@ pub enum SettingsSection {
     Calendar,
     Reports,
     Projects,
+    Tags,
     Ai,
     Backup,
 }
 
 impl SettingsSection {
-    pub const ALL: [SettingsSection; 6] = [Self::Appearance, Self::Calendar, Self::Reports, Self::Projects, Self::Ai, Self::Backup];
+    pub const ALL: [SettingsSection; 7] = [Self::Appearance, Self::Calendar, Self::Reports, Self::Projects, Self::Tags, Self::Ai, Self::Backup];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -38,6 +40,7 @@ impl SettingsSection {
             Self::Calendar => "カレンダー",
             Self::Reports => "レポート",
             Self::Projects => "プロジェクト",
+            Self::Tags => "タグ",
             Self::Ai => "AI",
             Self::Backup => "バックアップと復元",
         }
@@ -47,7 +50,7 @@ impl SettingsSection {
     pub fn group(self) -> &'static str {
         match self {
             Self::Appearance | Self::Calendar | Self::Reports => "ビュー",
-            Self::Projects | Self::Ai => "共通",
+            Self::Projects | Self::Tags | Self::Ai => "共通",
             Self::Backup => "データ",
         }
     }
@@ -62,6 +65,7 @@ impl SettingsSection {
             Self::Calendar => "calendar",
             Self::Reports => "reports",
             Self::Projects => "projects",
+            Self::Tags => "tags",
             Self::Ai => "ai",
             Self::Backup => "backup",
         }
@@ -73,6 +77,7 @@ impl SettingsSection {
             Self::Calendar => IconName::Calendar,
             Self::Reports => IconName::ChartPie,
             Self::Projects => IconName::Folder,
+            Self::Tags => IconName::Star,
             Self::Ai => IconName::Bot,
             Self::Backup => IconName::HardDrive,
         }
@@ -87,6 +92,7 @@ pub struct SettingsWindow {
     pub calendar: Option<Entity<calendar::CalendarSettings>>,
     pub reports: Option<Entity<reports::ReportSettings>>,
     pub projects: Option<Entity<projects::ProjectSettings>>,
+    pub tags: Option<Entity<tags::TagSettings>>,
     pub ai: Option<Entity<ai::AiSettings>>,
     pub backup: Option<Entity<backup::BackupSettings>>,
 }
@@ -95,7 +101,7 @@ impl SettingsWindow {
     pub fn new(state: Entity<AppState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         cx.observe(&state, |_, _, cx| cx.notify()).detach();
         cx.observe_window_appearance(window, |this, window, cx| this.on_system_appearance(is_dark(window.appearance()), cx)).detach();
-        SettingsWindow { state, section: SettingsSection::ALL[0], appearance: None, calendar: None, reports: None, projects: None, ai: None, backup: None }
+        SettingsWindow { state, section: SettingsSection::ALL[0], appearance: None, calendar: None, reports: None, projects: None, tags: None, ai: None, backup: None }
     }
 
     /// macOS switched light/dark: follow it (when 自動) even if the main window is closed.
@@ -124,6 +130,7 @@ impl SettingsWindow {
                 self.reports.clone().map(Into::into)
             }
             SettingsSection::Projects => Some(self.projects.get_or_insert_with(|| cx.new(|cx| projects::ProjectSettings::new(state, cx))).clone().into()),
+            SettingsSection::Tags => Some(self.tags.get_or_insert_with(|| cx.new(|cx| tags::TagSettings::new(state, cx))).clone().into()),
             SettingsSection::Ai => Some(self.ai.get_or_insert_with(|| cx.new(|cx| ai::AiSettings::new(state, window, cx))).clone().into()),
             SettingsSection::Backup => Some(self.backup.get_or_insert_with(|| cx.new(|cx| backup::BackupSettings::new(state, window, cx))).clone().into()),
         }
