@@ -9,18 +9,18 @@ use crate::core::interaction::{self, DragState, Edge, EntryCache};
 use crate::core::geometry::{BUFFER_PX, GUTTER_PX, ZOOM_LEVELS, at_minutes, minutes_to_y, y_to_minutes};
 use crate::core::holidays::holiday_name;
 use crate::core::layout::{day_total_minutes, entries_for_day, entry_span_minutes, layout_blocks};
-use crate::core::time::{DAY_MINUTES, DayCount, effective_day_count, format_duration_calendar, step_days, visible_days, weekday_ja};
+use crate::core::time::{DAY_MINUTES, DayCount, effective_day_count, format_duration, step_days, visible_days, weekday_ja};
 use crate::ui::{controls, date_nav::{self, DateNav, HasDateNav, NavEvent, NavKind}, theme::*};
 use chrono::{Datelike, Duration, Local, NaiveDate, Timelike};
 use edit_dialog::{EditEvent, EditForm};
-use entry_block::{BlockGeometry, lane_slot, render_block};
+use entry_block::{BlockGeometry, BlockLook, duration_beside_title, lane_slot, render_block, sticky_title_offset};
 use picker::{PICKER_WIDTH, PickerEvent, ProjectPicker};
 use gpui::{
     AnyElement, App, AppContext, Bounds, Context, Entity, FocusHandle, Focusable, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
     MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollHandle,
     StatefulInteractiveElement, Styled, Subscription, Task, Window, anchored, canvas, deferred, div, point, prelude::FluentBuilder, px,
 };
-use gpui_component::{WindowExt, button::Button, notification::Notification};
+use gpui_component::{Icon, IconName, WindowExt, button::Button, notification::Notification};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -95,6 +95,11 @@ impl CalendarView {
             s.update_persist(|p| p.zoom_index = (p.zoom_index as i32 + delta).clamp(0, ZOOM_LEVELS.len() as i32 - 1) as usize)
         });
         cx.notify();
+    }
+
+    /// A duration as the reports show it (the user's 「1.5h」/「1h 30m」 choice).
+    pub fn duration(&self, minutes: i64, cx: &gpui::App) -> String {
+        format_duration(minutes, self.state.read(cx).persist.duration_style)
     }
 
     fn hour_px(&self, cx: &gpui::App) -> f32 {
@@ -177,7 +182,7 @@ impl CalendarView {
         self.initial_scroll_done = true;
     }
 
-    fn render_toolbar(&mut self, eff: DayCount, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_toolbar(&mut self, eff: DayCount, zoom_index: usize, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = palette(cx);
         let kind = match eff {
             DayCount::One => NavKind::Day,
@@ -186,100 +191,84 @@ impl CalendarView {
         };
         let width = f32::from(window.viewport_size().width);
         let options = [(DayCount::One, 0.), (DayCount::Three, 640.), (DayCount::Workdays, 768.), (DayCount::Seven, 768.)];
-        controls::toolbar(&p).child(date_nav::render(self.nav, self.anchor, kind, cx)).child(
-            controls::group(&p).children(options.into_iter().filter(|(_, min)| width >= *min).map(|(dc, _)| {
+        // Zoom sits beside the day count, like the other view controls.
+        let zoom_btn = |id: &'static str, icon: IconName, tip: &'static str, disabled: bool, delta: i32, cx: &mut Context<Self>| {
+            controls::disabled(
+                controls::button(&p, id, false, true)
+                    .debug_selector(move || id.into())
+                    .child(Icon::new(icon).size_4())
+                    .tooltip(move |window, cx| gpui_component::tooltip::Tooltip::new(tip).build(window, cx))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        if !disabled {
+                            this.zoom(delta, cx)
+                        }
+                    })),
+                disabled,
+            )
+        };
+        let zoom_out = zoom_btn("zoom-out", IconName::Minus, "縮小（⌘-）", zoom_index == 0, -1, cx);
+        let zoom_in = zoom_btn("zoom-in", IconName::Plus, "拡大（⌘+）", zoom_index == ZOOM_LEVELS.len() - 1, 1, cx);
+        controls::toolbar(&p)
+            .child(date_nav::render(self.nav, self.anchor, kind, cx))
+            .child(controls::group(&p).children(options.into_iter().filter(|(_, min)| width >= *min).map(|(dc, _)| {
                 controls::button(&p, dc.label(), eff == dc, false).child(dc.label()).on_click(cx.listener(move |this, _, _, cx| {
                     this.day_count = dc;
                     cx.notify();
                 }))
-            })),
-        )
+            })))
+            .child(
+                controls::group(&p)
+                    .child(zoom_out)
+                    .child(zoom_in),
+            )
     }
 
-    fn render_day_header(&self, days: &[NaiveDate], zoom_index: usize, cx: &mut Context<Self>) -> impl IntoElement {
+    /// One row per day: the date (a pill for today), weekday, holiday and the day's total.
+    fn render_day_header(&self, days: &[NaiveDate], cx: &mut Context<Self>) -> impl IntoElement {
         let p = palette(cx);
         let today = Local::now().date_naive();
-        let zoom_btn = |id: &'static str, label: &'static str, disabled: bool, delta: i32| {
-            div()
-                .id(id)
-                .size(px(20.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(RADIUS_SM)
-                .text_sm()
-                .font_weight(FontWeight::BOLD)
-                .text_color(p.text_muted)
-                .map(|d| if disabled { d.opacity(0.3) } else { d.cursor_pointer().hover(|s| s.bg(p.hover)) })
-                .child(label)
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    if !disabled {
-                        this.zoom(delta, cx)
-                    }
-                }))
-        };
         div()
+            .debug_selector(|| "day-header".into())
             .flex()
             .flex_shrink_0()
             .border_b_1()
             .border_color(p.border)
-            .child(
-                div()
-                    .w(px(GUTTER_PX))
-                    .flex_shrink_0()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .gap(px(2.))
-                    .child(zoom_btn("zoom-out", "−", zoom_index == 0, -1))
-                    .child(zoom_btn("zoom-in", "+", zoom_index == ZOOM_LEVELS.len() - 1, 1)),
-            )
+            .child(div().w(px(GUTTER_PX)).flex_shrink_0())
             .children(days.iter().map(|&d| {
                 let total = day_total_minutes(self.cache.entries(), d);
                 let holiday = holiday_name(d);
                 div()
                     .flex_1()
                     .min_w_0()
+                    .h(px(36.))
+                    .flex()
+                    .items_center()
+                    .gap_2()
                     .border_l_1()
                     .border_color(p.border)
                     .px_2()
-                    .py_2()
                     .text_xs()
                     .child(
                         div()
+                            .h(px(24.))
+                            .min_w(px(24.))
+                            .px_1()
                             .flex()
-                            .items_start()
-                            .gap_2()
-                            .child(
-                                div()
-                                    .size(px(40.))
-                                    .flex_shrink_0()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .rounded_full()
-                                    .map(|c| if d == today { c.bg(p.accent).text_color(p.accent_text) } else { c.bg(with_alpha(p.border, 0.5)) })
-                                    .text_lg()
-                                    .font_weight(FontWeight::BOLD)
-                                    .child(d.day().to_string()),
-                            )
-                            .child(
-                                div().flex().min_w_0().flex_1().flex_col().gap(px(2.)).child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .gap_2()
-                                        .h(px(20.))
-                                        .child(div().text_color(p.text_muted).font_weight(FontWeight::SEMIBOLD).child(weekday_ja(d)))
-                                        .when_some(holiday, |s, name| {
-                                            s.child(div().rounded(RADIUS_SM).bg(p.holiday).px_1().py(px(2.)).text_size(px(10.)).line_height(px(12.)).text_color(p.on_color).truncate().child(name))
-                                        }),
-                                ),
-                            )
-                            .when(total > 0, |s| {
-                                s.child(div().self_end().text_xs().text_color(p.text_muted).font_weight(FontWeight::SEMIBOLD).child(format_duration_calendar(total)))
-                            }),
+                            .flex_shrink_0()
+                            .items_center()
+                            .justify_center()
+                            .rounded_full()
+                            .when(d == today, |c| c.bg(p.accent).text_color(p.accent_text))
+                            .text_base()
+                            .font_weight(FontWeight::BOLD)
+                            .child(d.day().to_string()),
                     )
+                    .child(div().flex_shrink_0().text_color(p.text_muted).font_weight(FontWeight::SEMIBOLD).child(weekday_ja(d)))
+                    .when_some(holiday, |s, name| {
+                        s.child(div().min_w_0().rounded(RADIUS_SM).bg(p.holiday).px_1().py(px(2.)).text_size(px(10.)).line_height(px(12.)).text_color(p.on_color).truncate().child(name))
+                    })
+                    .child(div().flex_1())
+                    .when(total > 0, |s| s.child(div().flex_shrink_0().text_color(p.text_muted).font_weight(FontWeight::SEMIBOLD).child(self.duration(total, cx))))
             }))
     }
 
@@ -321,6 +310,10 @@ impl CalendarView {
         // GPUI paints in child order: draw the selected block last so it sits on top (z-index: 2).
         laid.sort_by_key(|l| self.selected.as_deref() == Some(day_entries[l.index].id.as_str()));
         let now = Local::now();
+        let style = state.persist.duration_style;
+        // The top of the scrolled view in this column's coordinates (the body starts below the buffer).
+        let visible_top = -f32::from(self.scroll.offset().y) - BUFFER_PX;
+        let col_width = self.column_bounds.borrow().get(day_index).map(|b| f32::from(b.size.width)).unwrap_or(200.);
         let hover = self.display_hover().filter(|(i, _)| *i == day_index).map(|(_, m)| m);
 
         let hatch = || canvas(|_, _, _| (), |b, _, w, cx| grid::paint_hatch(b, w, cx)).w_full().h(px(BUFFER_PX));
@@ -347,7 +340,13 @@ impl CalendarView {
             .child(canvas(|_, _, _| (), move |b, _, w, cx| grid::paint_grid_lines(b, hour_px, w, cx)).absolute().size_full())
             .children(laid.iter().map(|l| {
                 let e = day_entries[l.index];
-                let g = BlockGeometry { start_min: spans[l.index].0, end_min: spans[l.index].1, lane: l.lane, lane_count: l.lane_count };
+                let g = BlockGeometry { start_min: spans[l.index].0, end_min: spans[l.index].1, lane: l.lane, lane_count: l.lane_count, span: l.span };
+                // The title stays in view while the block's top is scrolled out; a narrow block puts
+                // its duration under the title.
+                let block_top = minutes_to_y(g.start_min, hour_px) + 2.;
+                let block_h = (minutes_to_y(g.end_min - g.start_min, hour_px) - 5.).max(14.);
+                let width = col_width * g.span.max(1) as f32 / g.lane_count.max(1) as f32 - 6.;
+                let look = BlockLook { style, title_top: sticky_title_offset(block_top, block_h, visible_top), beside: duration_beside_title(width) };
                 let ghost = ghost_id == Some(e.id.as_str());
                 let selected = !ghost && self.selected.as_deref() == Some(e.id.as_str());
                 let (id_hover, id_down, id_click, id_top, id_bottom) = (e.id.clone(), e.id.clone(), e.id.clone(), e.id.clone(), e.id.clone());
@@ -365,7 +364,7 @@ impl CalendarView {
                         }))
                 };
                 lane_slot(&g, hour_px).child(
-                    render_block(p, e, selected, ghost, &self.hovered_entry)
+                    render_block(p, e, selected, ghost, &self.hovered_entry, look)
                         .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                             if *hovered {
                                 this.hovered_entry = id_hover.clone();
@@ -874,11 +873,11 @@ impl Render for CalendarView {
             .size_full()
             .flex()
             .flex_col()
-            .child(self.render_toolbar(eff, window, cx))
+            .child(self.render_toolbar(eff, zoom_index, window, cx))
             .when_some(self.load_error.clone(), |d, msg| {
                 d.child(controls::error_banner(&p, "calendar-retry", &msg).on_click(cx.listener(|this, _, _, cx| this.reload(cx))))
             })
-            .child(self.render_day_header(&days, zoom_index, cx))
+            .child(self.render_day_header(&days, cx))
             .child(
                 div()
                     .id("calendar-scroll")
@@ -886,6 +885,8 @@ impl Render for CalendarView {
                     .min_h_0()
                     .overflow_y_scroll()
                     .track_scroll(&self.scroll)
+                    // Long blocks keep their titles in view: redraw as the view scrolls.
+                    .on_scroll(cx.listener(|_, _, _, cx| cx.notify()))
                     .child(div().flex().items_start().child(self.render_gutter(p, hour_px)).child(div().flex_1().flex().items_start().children(columns))),
             )
             .children(picker_overlay)

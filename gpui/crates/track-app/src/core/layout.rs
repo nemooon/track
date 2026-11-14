@@ -7,6 +7,9 @@ pub struct Laid {
     pub index: usize,
     pub lane: usize,
     pub lane_count: usize,
+    /// Lanes the block covers from `lane` rightwards: the ones beside it that are free for its
+    /// whole span (at least 1).
+    pub span: usize,
 }
 
 /// Sweep-line lane assignment (same algorithm as `calendar/layout.ts`).
@@ -19,11 +22,20 @@ pub fn layout_blocks<T>(items: &[T], span: impl Fn(&T) -> (i64, i64)) -> Vec<Lai
         sa.cmp(&sb).then(eb.cmp(&ea))
     });
     let mut out = Vec::with_capacity(items.len());
-    let mut group: Vec<(usize, usize, i64)> = Vec::new(); // (index, lane, end)
+    let mut group: Vec<(usize, usize, i64, i64)> = Vec::new(); // (index, lane, start, end)
     let mut group_end = i64::MIN;
-    let flush = |group: &mut Vec<(usize, usize, i64)>, out: &mut Vec<Laid>| {
+    let flush = |group: &mut Vec<(usize, usize, i64, i64)>, out: &mut Vec<Laid>| {
         let count = group.iter().map(|g| g.1 + 1).max().unwrap_or(0);
-        out.extend(group.drain(..).map(|(index, lane, _)| Laid { index, lane, lane_count: count }));
+        let busy = |lane: usize, s: i64, e: i64| group.iter().any(|g| g.1 == lane && g.2 < e && s < g.3);
+        let laid: Vec<Laid> = group
+            .iter()
+            .map(|&(index, lane, s, e)| {
+                let span = 1 + (lane + 1..count).take_while(|&l| !busy(l, s, e)).count();
+                Laid { index, lane, lane_count: count, span }
+            })
+            .collect();
+        group.clear();
+        out.extend(laid);
     };
     for i in order {
         let (s, e) = span(&items[i]);
@@ -31,9 +43,9 @@ pub fn layout_blocks<T>(items: &[T], span: impl Fn(&T) -> (i64, i64)) -> Vec<Lai
             flush(&mut group, &mut out);
             group_end = i64::MIN;
         }
-        let used: Vec<usize> = group.iter().filter(|g| g.2 > s).map(|g| g.1).collect();
+        let used: Vec<usize> = group.iter().filter(|g| g.3 > s).map(|g| g.1).collect();
         let lane = (0..).find(|l| !used.contains(l)).unwrap();
-        group.push((i, lane, e));
+        group.push((i, lane, s, e));
         group_end = group_end.max(e);
     }
     flush(&mut group, &mut out);
@@ -79,6 +91,18 @@ mod tests {
         assert_eq!((get(3).lane, get(3).lane_count), (1, 2)); // B
         assert_eq!((get(1).lane, get(1).lane_count), (0, 2)); // C
         assert_eq!((get(0).lane, get(0).lane_count), (0, 1)); // D
+    }
+
+    #[test]
+    fn a_block_spreads_over_free_lanes_to_its_right() {
+        // A 9–11 (lane 0), B 9–9:30 (lane 1), C 9–9:30 (lane 2), D 10–11 (lane 1; lane 2 is free then).
+        let spans = vec![(540, 660), (540, 570), (540, 570), (600, 660)];
+        let laid = layout_blocks(&spans, |s| *s);
+        let get = |i: usize| laid.iter().find(|l| l.index == i).unwrap();
+        assert_eq!((get(3).lane, get(3).span, get(3).lane_count), (1, 2, 3), "D takes lanes 1 and 2");
+        assert_eq!(get(1).span, 1, "B: C is beside it");
+        assert_eq!(get(2).span, 1, "C is in the last lane");
+        assert_eq!(get(0).span, 1, "A: B and D are beside it");
     }
 
     #[test]

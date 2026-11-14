@@ -337,3 +337,22 @@ fn entry_block_puts_duration_beside_title_and_project_below(cx: &mut TestAppCont
     assert!((project.origin.x - title.origin.x).abs() <= px(1.), "project left-aligned with the title");
     assert!(cx.debug_bounds("entry-a-span").is_none(), "no start–end time in the block");
 }
+
+#[gpui::test]
+fn calendar_durations_follow_the_report_style(cx: &mut TestAppContext) {
+    use crate::persist::DurationStyle;
+    let (app, cx, _f) = setup(cx);
+    for (style, want) in [(DurationStyle::Decimal, "1.5h"), (DurationStyle::HoursMinutes, "1h 30m")] {
+        app.update(cx, |a, cx| a.state.update(cx, |s, _| s.update_persist(|p| p.duration_style = style)));
+        assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).duration(90, cx)), want);
+    }
+}
+
+#[gpui::test]
+fn the_day_header_is_one_row_and_zoom_sits_in_the_toolbar(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = setup(cx);
+    let header = cx.debug_bounds("day-header").expect("day header");
+    assert!(header.size.height <= px(40.), "{:?}", header.size.height);
+    let zoom = cx.debug_bounds("zoom-in").expect("zoom button");
+    assert!(zoom.bottom() <= header.top(), "zoom is in the toolbar above the header");
+}

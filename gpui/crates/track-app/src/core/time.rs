@@ -74,10 +74,14 @@ pub fn range_label(from: NaiveDate, to_exclusive: NaiveDate, is_month: bool) -> 
     }
 }
 
-/// `ReportsPage.tsx` formatDuration: "Xh Ym", or "Xh" when minutes are 0.
+/// "Xh Ym": "Xh" when minutes are 0, "Ym" under an hour (calendar and reports alike).
 pub fn format_duration_report(minutes: i64) -> String {
     let (h, m) = (minutes / 60, minutes % 60);
-    if m > 0 { format!("{h}h {m}m") } else { format!("{h}h") }
+    match (h, m) {
+        (0, m) => format!("{m}m"),
+        (h, 0) => format!("{h}h"),
+        (h, m) => format!("{h}h {m}m"),
+    }
 }
 
 /// Report durations in the user's chosen style: "1.5h" or "1h 30m".
@@ -85,16 +89,6 @@ pub fn format_duration(minutes: i64, style: crate::persist::DurationStyle) -> St
     match style {
         crate::persist::DurationStyle::Decimal => format!("{}h", track_core::report::view::decimal_hours(minutes)),
         crate::persist::DurationStyle::HoursMinutes => format_duration_report(minutes),
-    }
-}
-
-/// `EntryBlock.tsx` label: "Xh", "Xh Ym", or "Ym" under an hour.
-pub fn format_duration_calendar(minutes: i64) -> String {
-    let (h, m) = (minutes / 60, minutes % 60);
-    if h > 0 {
-        if m > 0 { format!("{h}h {m}m") } else { format!("{h}h") }
-    } else {
-        format!("{m}m")
     }
 }
 
@@ -150,11 +144,10 @@ mod tests {
 
     #[test]
     fn duration_formats() {
-        assert_eq!(format_duration_report(30), "0h 30m");
         assert_eq!(format_duration_report(120), "2h");
-        assert_eq!(format_duration_calendar(30), "30m");
-        assert_eq!(format_duration_calendar(90), "1h 30m");
-        assert_eq!(format_duration_calendar(60), "1h");
+        assert_eq!(format_duration_report(30), "30m");
+        assert_eq!(format_duration_report(90), "1h 30m");
+        assert_eq!(format_duration_report(60), "1h");
     }
 
     #[test]

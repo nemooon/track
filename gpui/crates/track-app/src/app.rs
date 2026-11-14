@@ -537,7 +537,7 @@ impl TrackApp {
                     .flex()
                     .gap_1()
                     .child("合計")
-                    .child(mono(format!("{}:{:02}", total / 60, total % 60)))
+                    .child(mono(cal.duration(total, cx)))
                     .into_any_element()];
                 if let Some(label) = cal.selection_label() {
                     items.push(div().debug_selector(|| "status-selection".into()).min_w_0().truncate().child(format!("選択: {label}")).into_any_element());
