@@ -353,3 +353,12 @@ fn the_heatmap_slides_by_the_weeks_it_moved(cx: &mut TestAppContext) {
     let now_first = app.read_with(cx, |a, cx| a.reports.read(cx).heatmap.clone()).unwrap()[0].0;
     assert_eq!((first - now_first).num_weeks(), 26);
 }
+
+#[test]
+fn the_period_is_strong_and_the_hovered_range_in_between() {
+    use crate::reports::heatmap::cell_opacity;
+    assert_eq!(cell_opacity(true, false), 1.0, "the report's period");
+    assert_eq!(cell_opacity(true, true), 1.0, "hovering the period changes nothing");
+    let (hover, faded) = (cell_opacity(false, true), cell_opacity(false, false));
+    assert!(faded < hover && hover < 1.0, "hover {hover} sits between faded {faded} and the period");
+}

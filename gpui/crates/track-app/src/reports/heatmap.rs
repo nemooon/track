@@ -15,6 +15,8 @@ const WEEKDAYS: [&str; 7] = ["日", "月", "火", "水", "木", "金", "土"];
 const GAP: f32 = 3.;
 /// How faded the days around the period are.
 const FADED: f32 = 0.35;
+/// How strong the days under the pointer are (what a click would pick): between faded and the period.
+const HOVERED: f32 = 0.65;
 /// How long a cell takes to fade in or out when the period moves.
 const FADE: std::time::Duration = std::time::Duration::from_millis(220);
 /// How long the grid takes to slide when its range moves.
@@ -31,6 +33,18 @@ pub fn pick_range(range: ReportRange, day: NaiveDate) -> (NaiveDate, NaiveDate) 
     match range {
         ReportRange::Week => track_core::dates::week_range(day),
         ReportRange::Month => track_core::dates::month_range(day),
+    }
+}
+
+/// A cell's opacity: the report's period is strong, the range under the pointer is in between,
+/// and the rest is faded.
+pub fn cell_opacity(active: bool, picked: bool) -> f32 {
+    if active {
+        1.
+    } else if picked {
+        HOVERED
+    } else {
+        FADED
     }
 }
 
@@ -102,9 +116,7 @@ impl ReportsView {
                 let id = format!("heat-{d}");
                 let sel = id.clone();
                 let tip = format!("{}（{}） {}", d.format("%-m/%-d"), WEEKDAYS[wd], crate::core::time::format_duration(minutes, style));
-                // The report's period is strong; the weeks around it are faded. Under the pointer,
-                // the days a click would show are not faded.
-                let target = if active || picked { 1. } else { FADED };
+                let target = cell_opacity(active, picked);
                 let square = div()
                     .debug_selector(move || sel.clone())
                     .size(px(side))
@@ -112,8 +124,9 @@ impl ReportsView {
                     .bg(shade(level(minutes)))
                     .when(d == today, |c| c.border_1().border_color(p.text_muted));
                 let square = match was {
-                    // Moved into or out of the period: fade over FADE.
-                    Some(was) if was != active && !picked => {
+                    // Moved into or out of the period: fade over FADE. The cell stays in this
+                    // branch whatever the pointer does, so leaving it does not restart the fade.
+                    Some(was) if was != active => {
                         let start = if was { 1. } else { FADED };
                         square
                             .with_animation(SharedString::from(format!("heat-fade-{d}-{generation}")), Animation::new(FADE).with_easing(gpui::ease_out_quint()), move |c, t| {
