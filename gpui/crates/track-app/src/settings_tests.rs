@@ -648,6 +648,50 @@ fn double_click_renames_a_client(cx: &mut TestAppContext) {
     assert!(p.read_with(&scx, |p, _| p.client_edit.is_none()), "the field closes after saving");
 }
 
+/// Double-clicks the client heading and types without pressing Enter.
+fn type_client_name(scx: &mut VisualTestContext, p: &Entity<crate::settings::projects::ProjectSettings>, text: &str) -> Entity<gpui_component::input::InputState> {
+    double_click(scx, "tree-client-c1");
+    let input = p.read_with(scx, |p, _| p.client_edit.as_ref().map(|(_, i)| i.clone()).expect("client name field"));
+    scx.update(|w, cx| input.update(cx, |i, cx| {
+        i.focus(w, cx);
+        i.set_value(text.to_string(), w, cx)
+    }));
+    input
+}
+
+#[gpui::test]
+fn escape_cancels_a_client_rename(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    type_client_name(&mut scx, &p, "取り消す");
+    scx.dispatch_action(gpui_component::input::Escape);
+    wait_io(&mut scx);
+    assert!(p.read_with(&scx, |p, _| p.client_edit.is_none()), "the field closes");
+    assert_eq!(f.db().client("c1").unwrap().name, "Acme");
+}
+
+#[gpui::test]
+fn clicking_elsewhere_cancels_a_client_rename(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    type_client_name(&mut scx, &p, "取り消す");
+    click(&mut scx, "tree-project-p2");
+    wait_io(&mut scx);
+    assert!(p.read_with(&scx, |p, _| p.client_edit.is_none()));
+    assert_eq!(f.db().client("c1").unwrap().name, "Acme");
+}
+
+#[gpui::test]
+fn leaving_the_field_cancels_a_client_rename(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    let input = type_client_name(&mut scx, &p, "取り消す");
+    scx.update(|_, cx| input.update(cx, |_, cx| cx.emit(gpui_component::input::InputEvent::Blur)));
+    wait_io(&mut scx);
+    assert!(p.read_with(&scx, |p, _| p.client_edit.is_none()));
+    assert_eq!(f.db().client("c1").unwrap().name, "Acme");
+}
+
 #[gpui::test]
 fn single_click_on_a_client_keeps_the_project(cx: &mut TestAppContext) {
     use crate::settings::projects::Selection;

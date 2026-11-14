@@ -184,7 +184,7 @@ impl ProjectSettings {
     fn select(&mut self, s: Selection, window: &mut Window, cx: &mut Context<Self>) {
         // Clicking another row does not blur the field, so save what was typed first.
         self.commit_name(window, cx);
-        self.commit_client_edit(window, cx);
+        self.cancel_client_edit(cx);
         self.save_pending_color(cx);
         self.selected = Some(s);
         self.error = None;
@@ -380,12 +380,15 @@ impl ProjectSettings {
         if self.client_edit.as_ref().is_some_and(|(e, _)| *e == id) {
             return;
         }
-        self.commit_client_edit(window, cx);
+        self.cancel_client_edit(cx);
         let Some(name) = self.client(&id).map(|c| c.name.clone()) else { return };
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("クライアント名").default_value(name));
         cx.subscribe_in(&input, window, |this, _, ev: &InputEvent, window, cx| {
-            if matches!(ev, InputEvent::PressEnter { .. } | InputEvent::Blur) {
-                this.commit_client_edit(window, cx);
+            // Only Enter saves; leaving the field cancels (so do Escape and clicking elsewhere).
+            match ev {
+                InputEvent::PressEnter { .. } => this.commit_client_edit(window, cx),
+                InputEvent::Blur => this.cancel_client_edit(cx),
+                _ => {}
             }
         })
         .detach();
@@ -404,6 +407,13 @@ impl ProjectSettings {
             self.write(api.update_client(id, ClientPatch { name: Some(value), ..Default::default() }), cx);
         }
         cx.notify();
+    }
+
+    /// Closes the client name field without saving.
+    fn cancel_client_edit(&mut self, cx: &mut Context<Self>) {
+        if self.client_edit.take().is_some() {
+            cx.notify();
+        }
     }
 
     fn toggle_client_archive(&mut self, id: &str, cx: &mut Context<Self>) {
@@ -452,7 +462,15 @@ impl ProjectSettings {
             let archived = c.archived;
             let editing = self.client_edit.as_ref().filter(|(e, _)| *e == c.id).map(|(_, i)| i.clone());
             let name = match editing {
-                Some(input) => div().flex_1().min_w_0().debug_selector(|| "tree-client-name".into()).child(Input::new(&input).small()).into_any_element(),
+                Some(input) => div()
+                    .flex_1()
+                    .min_w_0()
+                    .debug_selector(|| "tree-client-name".into())
+                    // The input lets Escape through when it has nothing of its own to close.
+                    .on_action(cx.listener(|this, _: &gpui_component::input::Escape, _, cx| this.cancel_client_edit(cx)))
+                    .on_mouse_down_out(cx.listener(|this, _, _, cx| this.cancel_client_edit(cx)))
+                    .child(Input::new(&input).small())
+                    .into_any_element(),
                 None => div().flex_1().min_w_0().truncate().text_xs().font_weight(FontWeight::SEMIBOLD).text_color(p.text_muted).child(c.name.clone()).into_any_element(),
             };
             let archive_icon = if archived { crate::ui::icons::archive_restore() } else { crate::ui::icons::archive() };
