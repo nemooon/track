@@ -14,7 +14,7 @@ use gpui_component::{Icon, IconName};
 use std::future::Future;
 use track_core::model::{Client, ClientPatch, Project, ProjectPatch, Tag, TagPatch};
 
-/// `PROJECT_COLORS` in src/client/lib/utils.ts (shared with track-cli).
+/// The project colours (shared with track-cli).
 pub use track_core::edit::PROJECT_COLORS as COLORS;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

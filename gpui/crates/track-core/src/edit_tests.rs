@@ -187,3 +187,16 @@ fn undo_of_tag_delete_conflicts_when_a_tagged_entry_is_gone() {
     assert_eq!(err.details()["changed"][0]["key"], e.id.as_str());
     assert!(db.tags().unwrap().is_empty(), "nothing restored");
 }
+
+#[test]
+fn project_colours_are_twenty_distinct_and_keep_the_first_ten() {
+    use crate::edit::PROJECT_COLORS;
+    assert_eq!(PROJECT_COLORS.len(), 20);
+    let mut seen = std::collections::HashSet::new();
+    for c in PROJECT_COLORS {
+        assert!(c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|x| x.is_ascii_hexdigit()), "{c}");
+        assert!(seen.insert(c.to_lowercase()), "duplicate {c}");
+    }
+    // Existing projects and the CLI's automatic choice keep their colours.
+    assert_eq!(&PROJECT_COLORS[..10], &["#ef4444", "#f97316", "#eab308", "#22c55e", "#06b6d4", "#3b82f6", "#6366f1", "#a855f7", "#ec4899", "#64748b"]);
+}

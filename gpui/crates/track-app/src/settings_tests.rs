@@ -608,3 +608,17 @@ fn settings_open_on_the_first_section(cx: &mut TestAppContext) {
     let (mut scx, _view) = settings_cx(cx);
     assert!(scx.debug_bounds("appearance-system").is_some(), "外観 is first in the list, so it opens first");
 }
+
+#[gpui::test]
+fn project_editor_offers_the_added_colours(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, _p) = projects_section(cx);
+    let b = scx.debug_bounds("project-edit-p1").expect("edit");
+    scx.simulate_click(b.center(), Modifiers::none());
+    wait_io(&mut scx);
+    assert!(scx.debug_bounds("editor-color-19").is_some(), "20 colours to choose from");
+    click(&mut scx, "editor-color-19");
+    click(&mut scx, "editor-save");
+    wait_io(&mut scx);
+    assert_eq!(f.db().project("p1").unwrap().color, "#78716c");
+}
