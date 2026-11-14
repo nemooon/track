@@ -8,6 +8,7 @@ pub mod edit;
 pub mod db;
 pub mod error;
 pub mod guard;
+pub mod holidays;
 pub mod integrations;
 pub mod ids;
 pub mod migrate;

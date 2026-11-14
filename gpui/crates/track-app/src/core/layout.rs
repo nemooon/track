@@ -77,7 +77,7 @@ mod tests {
         let t = |(d, h, m): (u32, u32, u32)| Local.with_ymd_and_hms(2026, 11, d, h, m, 0).unwrap().to_utc();
         TimeEntry {
             id: id.into(), project_id: None, start: t(s), end: t(e), title: None, note: None, project: None,
-            tags: vec![], external_event_id: None, external_event_source: None, break_minutes: brk,
+            tags: vec![], external_event_id: None, external_event_source: None, break_minutes: brk, kind: Default::default(),
         }
     }
 

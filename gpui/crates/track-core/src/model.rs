@@ -65,6 +65,70 @@ pub struct TimeEntry {
     pub external_event_source: Option<String>,
     #[serde(default)]
     pub break_minutes: i64,
+    /// `direct` for a 直行直帰 day; everything else is `normal`.
+    #[serde(default)]
+    pub kind: EntryKind,
+}
+
+/// What a time entry is: an ordinary record, or a 直行直帰 day (one day of scheduled work for a
+/// project, made from the calendar's day menu).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EntryKind {
+    #[default]
+    Normal,
+    Direct,
+}
+
+impl EntryKind {
+    pub fn as_db(self) -> &'static str {
+        match self {
+            EntryKind::Normal => "normal",
+            EntryKind::Direct => "direct",
+        }
+    }
+
+    pub fn from_db(s: &str) -> Self {
+        if s == "direct" { EntryKind::Direct } else { EntryKind::Normal }
+    }
+}
+
+/// A day's leave. `None` is stored only on a holiday, to cancel its automatic leave.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LeaveKind {
+    Full,
+    Am,
+    Pm,
+    None,
+}
+
+impl LeaveKind {
+    pub fn as_db(self) -> &'static str {
+        match self {
+            LeaveKind::Full => "full",
+            LeaveKind::Am => "am",
+            LeaveKind::Pm => "pm",
+            LeaveKind::None => "none",
+        }
+    }
+
+    pub fn from_db(s: &str) -> Option<Self> {
+        Some(match s {
+            "full" => LeaveKind::Full,
+            "am" => LeaveKind::Am,
+            "pm" => LeaveKind::Pm,
+            "none" => LeaveKind::None,
+            _ => return None,
+        })
+    }
+}
+
+/// A row of the `Leave` table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct Leave {
+    pub date: chrono::NaiveDate,
+    pub kind: LeaveKind,
 }
 
 /// `PATCH /api/settings`

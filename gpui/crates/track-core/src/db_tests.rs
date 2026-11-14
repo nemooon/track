@@ -6,12 +6,12 @@ fn tmp() -> tempfile::TempDir {
 }
 
 #[test]
-fn fresh_db_applies_all_16_migrations() {
+fn fresh_db_applies_all_17_migrations() {
     let dir = tmp();
     let db = Db::open(dir.path()).unwrap();
     let n: i64 = db.conn().query_row("SELECT COUNT(*) FROM _local_migrations", [], |r| r.get(0)).unwrap();
-    assert_eq!(n, 16);
-    for t in ["TimeEntry", "AiRegistration", "Settings", "Project", "Client", "Tag", "TagOnEntry", "TagOnProject"] {
+    assert_eq!(n, 17);
+    for t in ["TimeEntry", "AiRegistration", "Settings", "Project", "Client", "Tag", "TagOnEntry", "TagOnProject", "Leave"] {
         let c: i64 = db.conn().query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", [t], |r| r.get(0)).unwrap();
         assert_eq!(c, 1, "{t}");
     }
@@ -78,4 +78,21 @@ fn opens_copy_db_without_migrating() {
     let db = Db::open(&dir).unwrap();
     assert!(db.applied_now.is_empty(), "applied: {:?}", db.applied_now);
     assert!(!db.read_only);
+}
+
+#[test]
+fn a_db_from_before_leave_gets_the_column_and_table() {
+    let dir = tmp();
+    let id = {
+        let mut db = Db::open(dir.path()).unwrap();
+        let local = crate::repo::repo_tests::local;
+        let id = db.create_entry(crate::model::NewEntry { start: local(12, 9, 0), end: local(12, 10, 0), title: Some("x".into()), ..Default::default() }).unwrap().id;
+        // Back to the shape before 0017.
+        db.conn().execute_batch(r#"DELETE FROM _local_migrations WHERE name = '0017_leave_and_direct.sql'; DROP TABLE "Leave"; ALTER TABLE "TimeEntry" DROP COLUMN "kind";"#).unwrap();
+        id
+    };
+    let db = Db::open(dir.path()).unwrap();
+    let n: i64 = db.conn().query_row(r#"SELECT COUNT(*) FROM "Leave""#, [], |r| r.get(0)).unwrap();
+    assert_eq!(n, 0);
+    assert_eq!(db.entry(&id).unwrap().unwrap().kind, crate::model::EntryKind::Normal, "existing entries are normal");
 }

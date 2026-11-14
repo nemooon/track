@@ -26,7 +26,7 @@ pub fn entry(id: &str, day: u32, (sh, sm): (u32, u32), (eh, em): (u32, u32), pro
     let t = |h, m| Local.with_ymd_and_hms(2026, 11, day, h, m, 0).unwrap().to_utc();
     TimeEntry {
         id: id.into(), project_id: project.map(|p| p.id.clone()), start: t(sh, sm), end: t(eh, em), title: Some(format!("作業{id}")),
-        note: None, project: project.cloned(), tags: vec![], external_event_id: None, external_event_source: None, break_minutes: 0,
+        note: None, project: project.cloned(), tags: vec![], external_event_id: None, external_event_source: None, break_minutes: 0, kind: Default::default(),
     }
 }
 

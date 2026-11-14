@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::{OptionalExtension, Row, params};
 
 const ENTRY_SELECT: &str = r#"SELECT e.id, e.projectId, e.start, e."end", e.title, e.note, e.externalEventId, e.externalEventSource, e.breakMinutes,
-       p.id, p.clientId, p.name, p.color, p.archived, c.id, c.name, c.archived
+       p.id, p.clientId, p.name, p.color, p.archived, c.id, c.name, c.archived, e.kind
 FROM "TimeEntry" e LEFT JOIN "Project" p ON p.id = e.projectId LEFT JOIN "Client" c ON c.id = p.clientId"#;
 
 fn parse_time(s: String) -> rusqlite::Result<DateTime<Utc>> {
@@ -39,6 +39,7 @@ fn entry_from_row(r: &Row) -> rusqlite::Result<TimeEntry> {
         external_event_id: r.get(6)?,
         external_event_source: r.get(7)?,
         break_minutes: r.get(8)?,
+        kind: crate::model::EntryKind::from_db(&r.get::<_, String>(17)?),
     })
 }
 

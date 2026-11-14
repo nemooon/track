@@ -70,6 +70,8 @@ model TimeEntry {
   externalEventId     String?
   externalEventSource String?
   breakMinutes        Int          @default(0)
+  /// "normal", or "direct" for a 直行直帰 day (the GPUI app's one-day entry for a project).
+  kind                String       @default("normal")
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
   tags                TagOnEntry[]
@@ -125,4 +127,14 @@ model AiRegistration {
   entry         TimeEntry? @relation(fields: [entryId], references: [id], onDelete: SetNull)
 
   @@index([source, sessionId, recordedUntil])
+}
+
+/// 休暇 (GPUI app): one row per local date (YYYY-MM-DD). kind is "full", "am", "pm",
+/// or "none" (cancels a holiday's automatic leave).
+model Leave {
+  id        String   @id @default(cuid())
+  date      String   @unique
+  kind      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

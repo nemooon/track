@@ -154,3 +154,30 @@ fn read_only_db_refuses_writes() {
     db.read_only = true;
     assert_eq!(db.create_entry(new_entry(local(12, 10, 0), local(12, 11, 0))).unwrap_err().code(), "schema_too_new");
 }
+
+#[test]
+fn entries_are_normal_unless_marked() {
+    let (_d, mut db) = db();
+    let e = db.create_entry(NewEntry { start: local(12, 9, 0), end: local(12, 10, 0), title: Some("作業".into()), ..Default::default() }).unwrap();
+    assert_eq!(e.kind, EntryKind::Normal);
+}
+
+#[test]
+fn kind_column_survives_a_raw_direct_row() {
+    let (_d, mut db) = db();
+    let e = db.create_entry(NewEntry { start: local(12, 9, 0), end: local(12, 10, 0), title: Some("作業".into()), ..Default::default() }).unwrap();
+    db.conn().execute(r#"UPDATE "TimeEntry" SET kind = 'direct' WHERE id = ?1"#, [&e.id]).unwrap();
+    assert_eq!(db.entry(&e.id).unwrap().unwrap().kind, EntryKind::Direct);
+}
+
+#[test]
+fn leave_table_exists() {
+    let (_d, db) = db();
+    let n: i64 = db.conn().query_row(r#"SELECT COUNT(*) FROM "Leave""#, [], |r| r.get(0)).unwrap();
+    assert_eq!(n, 0);
+}
+
+#[test]
+fn holidays_moved_to_core() {
+    assert_eq!(crate::holidays::holiday_name(chrono::NaiveDate::from_ymd_opt(2026, 11, 3).unwrap()), Some("文化の日"));
+}
