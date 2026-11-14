@@ -116,7 +116,17 @@ pub fn render_block(p: Palette, entry: &TimeEntry, selected: bool, ghost: bool, 
             // A long block scrolled past its top keeps its title in view (pushed down by title_top);
             // a narrow one puts the duration under the title so the title keeps the width.
             let duration = div().debug_selector(sel("duration")).flex_shrink_0().text_size(px(11.)).line_height(px(15.)).font_family(MONO).text_color(p.text_muted).child(dur);
-            let title_el = div().debug_selector(sel("title")).flex_1().min_w_0().truncate().font_weight(FontWeight::SEMIBOLD).line_height(px(15.)).child(title.clone().unwrap_or(project_name.clone()));
+            // Beside the duration the title takes the row's free width; stacked, it keeps its line
+            // (a grow in a column would squeeze it to nothing in a short block).
+            let title_el = div()
+                .debug_selector(sel("title"))
+                .min_w_0()
+                .flex_shrink_0()
+                .when(look.beside, |d| d.flex_1())
+                .truncate()
+                .font_weight(FontWeight::SEMIBOLD)
+                .line_height(px(15.))
+                .child(title.clone().unwrap_or(project_name.clone()));
             div()
                 .flex()
                 .flex_col()

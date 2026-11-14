@@ -356,3 +356,16 @@ fn the_day_header_is_one_row_and_zoom_sits_in_the_toolbar(cx: &mut TestAppContex
     let zoom = cx.debug_bounds("zoom-in").expect("zoom button");
     assert!(zoom.bottom() <= header.top(), "zoom is in the toolbar above the header");
 }
+
+#[gpui::test]
+fn a_narrow_short_block_still_shows_its_title(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
+    // Three 15-minute entries side by side on Thursday: each is narrow.
+    for id in ["n-a", "n-b", "n-c"] {
+        insert_entry(&f.db(), id, at(12, 10, 0), at(12, 10, 15), Some("p1"), "狭いエントリー");
+    }
+    app.update(cx, |a, cx| a.calendar.update(cx, |c, cx| c.reload(cx)));
+    wait_io(cx);
+    let title = cx.debug_bounds("entry-n-b-title").expect("title rendered");
+    assert!(title.size.height >= px(10.), "{:?}", title.size);
+}
