@@ -393,3 +393,18 @@ fn leave_row_does_not_expand(cx: &mut TestAppContext) {
     wait_io(cx);
     assert!(app.read_with(cx, |a, cx| a.reports.read(cx).children.is_empty()), "nothing to open under 休暇");
 }
+
+#[gpui::test]
+fn custom_outputs_never_get_leave(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
+    f.db().set_leave(Local::now().date_naive(), Some(track_core::model::LeaveKind::Full)).unwrap();
+    click(cx, "include-leave");
+    wait_io(cx);
+    let (ctx, shown_total) = app.read_with(cx, |a, cx| {
+        let r = a.reports.read(cx);
+        (r.output_context(), r.data.as_ref().unwrap().total_minutes)
+    });
+    assert!(ctx.rows.iter().all(|r| r.key != track_core::reports::LEAVE_KEY), "no 休暇 row");
+    assert_eq!(ctx.total, shown_total - 450, "the total without leave");
+    assert!(!ctx.query.include_leave);
+}

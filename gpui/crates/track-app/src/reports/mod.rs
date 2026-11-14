@@ -862,14 +862,22 @@ impl ReportsView {
             .into_any_element()
     }
 
+    /// What the custom output works from: the report's rows and total, never with leave (the
+    /// spec keeps 休暇 out of output formats).
+    pub fn output_context(&self) -> custom_output::OutputContext {
+        let rows: Vec<_> = self.data.as_ref().map(|d| d.rows.clone()).unwrap_or_default();
+        let leave: i64 = rows.iter().filter(|r| r.key == track_core::reports::LEAVE_KEY).map(|r| r.total_minutes).sum();
+        custom_output::OutputContext {
+            query: ReportQuery { include_leave: false, ..self.current_query() },
+            anchor: self.anchor,
+            rows: rows.into_iter().filter(|r| r.key != track_core::reports::LEAVE_KEY).collect(),
+            total: self.data.as_ref().map(|d| d.total_minutes).unwrap_or(0) - leave,
+        }
+    }
+
     pub fn open_output(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         use gpui_component::WindowExt as _;
-        let ctx = custom_output::OutputContext {
-            query: self.current_query(),
-            anchor: self.anchor,
-            rows: self.data.as_ref().map(|d| d.rows.clone()).unwrap_or_default(),
-            total: self.data.as_ref().map(|d| d.total_minutes).unwrap_or(0),
-        };
+        let ctx = self.output_context();
         let state = self.state.clone();
         let view = cx.new(|cx| custom_output::CustomOutput::new(state, ctx, cx));
         self.output = Some(view.clone());

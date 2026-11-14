@@ -162,3 +162,13 @@ fn remove_direct_deletes_it() {
     db.remove_direct(d).unwrap();
     assert!(db.direct_entry(d).unwrap().is_none());
 }
+
+#[test]
+fn removing_a_holidays_direct_brings_its_leave_back() {
+    let (_d, mut db) = db();
+    schedule(&mut db);
+    let (p, _, _) = crate::repo::repo_tests::seed(&mut db);
+    db.set_direct(day(11, 3), &p).unwrap();
+    db.remove_direct(day(11, 3)).unwrap();
+    assert_eq!(minutes(&db, day(11, 3)), 450, "文化の日 is leave again");
+}

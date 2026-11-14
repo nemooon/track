@@ -102,10 +102,19 @@ impl Db {
         })
     }
 
-    /// Removes the day's 直行直帰, if any.
+    /// Removes the day's 直行直帰, if any. On a holiday the `none` the direct visit left goes too,
+    /// so the day is the holiday's leave again.
     pub fn remove_direct(&mut self, date: NaiveDate) -> Result<()> {
         self.ensure_writable()?;
-        self.remove_direct_inner(date)
+        let settings = self.settings()?;
+        self.in_savepoint(|db| {
+            let had = db.direct_entry(date)?.is_some();
+            db.remove_direct_inner(date)?;
+            if had && is_auto_leave(&settings, date) && db.leaves(date, date + chrono::Duration::days(1))?.first().map(|l| l.kind) == Some(LeaveKind::None) {
+                db.write_leave_row(date, None)?;
+            }
+            Ok(())
+        })
     }
 
     fn remove_direct_inner(&mut self, date: NaiveDate) -> Result<()> {

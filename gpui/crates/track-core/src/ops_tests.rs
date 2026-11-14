@@ -222,3 +222,24 @@ fn undo_without_id_takes_latest_not_undone() {
     assert_eq!(db.entry(&e.id).unwrap().unwrap().title.as_deref(), Some("旧"));
     assert_eq!(code(db.undo_operation(None)), "nothing_to_undo");
 }
+
+#[test]
+fn an_operation_recorded_before_the_kind_column_still_undoes() {
+    let (_d, mut db) = db();
+    let e = one_entry(&mut db);
+    rename(&mut db, &e.id, "新").unwrap();
+    // Recorded before migration 0017: the rows had no "kind".
+    let raw: String = db.conn().query_row(r#"SELECT changes FROM "AiOperation""#, [], |r| r.get(0)).unwrap();
+    let mut changes: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    for c in changes.as_array_mut().unwrap() {
+        for side in ["before", "after"] {
+            for row in c[side].as_array_mut().unwrap() {
+                row.as_object_mut().unwrap().remove("kind");
+            }
+        }
+    }
+    db.conn().execute(r#"UPDATE "AiOperation" SET changes = ?1"#, [changes.to_string()]).unwrap();
+    db.undo_operation(None).unwrap();
+    assert_eq!(db.entry(&e.id).unwrap().unwrap().title.as_deref(), Some("旧"));
+    assert_eq!(db.entry(&e.id).unwrap().unwrap().kind, crate::model::EntryKind::Normal);
+}

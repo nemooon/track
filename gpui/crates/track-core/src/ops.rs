@@ -45,6 +45,16 @@ impl Table {
 
 pub type Row = Map<String, Value>;
 
+/// A row still as an operation recorded it: the columns the record has match. Columns added by a
+/// later migration (absent from older records, such as `TimeEntry.kind`) are not compared.
+fn same_as_recorded(now: Option<&Row>, recorded: Option<&Row>) -> bool {
+    match (now, recorded) {
+        (None, None) => true,
+        (Some(now), Some(rec)) => rec.iter().all(|(k, v)| now.get(k) == Some(v)),
+        _ => false,
+    }
+}
+
 /// Rows matching `column = value` in `table`, before and after the operation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Change {
@@ -309,7 +319,7 @@ impl Db {
             keys.sort();
             keys.dedup();
             for k in keys {
-                if find(&now, c.table, &k) != find(&c.after, c.table, &k) {
+                if !same_as_recorded(find(&now, c.table, &k), find(&c.after, c.table, &k)) {
                     changed.push(serde_json::json!({ "table": c.table.name(), "key": k }));
                 }
             }
