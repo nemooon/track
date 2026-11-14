@@ -54,7 +54,7 @@ impl Render for AppearanceSettings {
             .child(option(Appearance::Dark, "暗い", cx));
         div().flex().flex_col().gap_3().child(
             form::section(p, "appearance-section", "外観", "画面の明るさです。自動は macOS の設定に合わせます。", true)
-                .child(form::field(p, "appearance-field-scheme", "配色", "明るい配色と暗い配色を切り替えます。", buttons)),
+                .child(form::field(p, "appearance-field-scheme", "配色", "明るい配色と暗い配色を切り替えます。", div().flex().child(buttons))),
         )
         .when_some(appearance_override(), |d, v| {
             d.child(div().debug_selector(|| "appearance-override".into()).text_sm().text_color(p.text_muted).child(format!(
