@@ -189,6 +189,13 @@ impl Db {
         self.project(id)
     }
 
+    /// Ids of projects that have at least one entry (these cannot be deleted).
+    pub fn projects_with_entries(&self) -> Result<Vec<String>> {
+        let mut st = self.conn().prepare(r#"SELECT DISTINCT projectId FROM "TimeEntry" WHERE projectId IS NOT NULL ORDER BY projectId"#)?;
+        let rows = st.query_map([], |r| r.get(0))?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
     pub fn delete_project(&mut self, id: &str) -> Result<()> {
         self.ensure_writable()?;
         self.exists("Project", id)?;

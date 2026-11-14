@@ -116,3 +116,14 @@ fn writes_refused_when_schema_too_new() {
     assert_eq!(code(db.update_project(&p, ProjectPatch { name: Some("x".into()), ..Default::default() })), "schema_too_new");
     assert_eq!(code(db.delete_tag("whatever")), "schema_too_new");
 }
+
+#[test]
+fn projects_with_entries_lists_only_projects_that_have_some() {
+    let (_d, mut db) = db();
+    let (p1, _, _) = seed(&mut db);
+    let c = db.projects(true).unwrap()[0].client_id.clone();
+    let _p2 = db.create_project(&c, "Empty", "#ef4444").unwrap();
+    entry(&mut db, &p1);
+    entry(&mut db, &p1);
+    assert_eq!(db.projects_with_entries().unwrap(), vec![p1]);
+}

@@ -752,16 +752,18 @@ fn deleting_a_project_asks_first(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn a_project_with_entries_is_not_deleted(cx: &mut TestAppContext) {
+fn a_project_with_entries_cannot_be_deleted(cx: &mut TestAppContext) {
     use crate::testing::{insert_entry, local, visible_weekday};
     let day = visible_weekday();
     let (_app, cx, f) = open_app_db(cx, move |db| insert_entry(db, "e1", local(day, 9, 0), local(day, 10, 0), Some("p1"), "作業"));
     let (mut scx, _p) = projects_section(cx);
+    assert!(scx.debug_bounds("detail-delete-disabled").is_some(), "says why it is off");
     click(&mut scx, "detail-delete");
-    click(&mut scx, "detail-delete-confirm");
-    wait_io(&mut scx);
+    assert!(scx.debug_bounds("detail-delete-confirm").is_none(), "the button is disabled");
     assert!(f.db().project("p1").is_ok());
-    assert!(scx.debug_bounds("detail-error").is_some(), "says to archive instead");
+    // A project without entries can still be deleted.
+    click(&mut scx, "tree-project-p2");
+    assert!(scx.debug_bounds("detail-delete-disabled").is_none());
 }
 
 #[gpui::test]
@@ -793,16 +795,14 @@ fn deleting_a_client_removes_its_projects_without_entries(cx: &mut TestAppContex
 }
 
 #[gpui::test]
-fn a_client_with_entries_is_not_deleted(cx: &mut TestAppContext) {
+fn a_client_with_entries_cannot_be_deleted(cx: &mut TestAppContext) {
     use crate::testing::{insert_entry, local, visible_weekday};
     let day = visible_weekday();
     let (_app, cx, f) = open_app_db(cx, move |db| insert_entry(db, "e1", local(day, 9, 0), local(day, 10, 0), Some("p1"), "作業"));
     let (mut scx, _p) = projects_section(cx);
     click(&mut scx, "tree-client-delete-c1");
-    click(&mut scx, "tree-client-delete-confirm");
-    wait_io(&mut scx);
-    assert!(f.db().client("c1").is_ok() && f.db().project("p2").is_ok(), "nothing is deleted");
-    assert!(scx.debug_bounds("tree-client-error-c1").is_some(), "the refusal shows under the client");
+    assert!(scx.debug_bounds("tree-client-delete-confirm").is_none(), "the icon is disabled");
+    assert!(f.db().client("c1").is_ok());
 }
 
 #[gpui::test]

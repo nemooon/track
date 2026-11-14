@@ -52,6 +52,8 @@ pub struct ProjectSettings {
     pub clients: Vec<Client>,
     pub projects: Vec<Project>,
     pub tags: Vec<Tag>,
+    /// Projects with entries: they (and their clients) cannot be deleted.
+    with_entries: std::collections::HashSet<String>,
     pub selected: Option<Selection>,
     /// The name field of the selected item, and which item it was made for.
     pub name: Option<Entity<InputState>>,
@@ -99,6 +101,7 @@ impl ProjectSettings {
             clients: vec![],
             projects: vec![],
             tags: vec![],
+            with_entries: Default::default(),
             selected: None,
             name: None,
             name_for: None,
@@ -127,13 +130,14 @@ impl ProjectSettings {
     /// Re-reads clients, projects (archived included) and tags, keeping the selection by id.
     pub fn reload(&mut self, cx: &mut Context<Self>) {
         let api = api(&self.state, cx);
-        let (c, p, t) = (api.clients(), api.projects_all(), api.tags());
+        let (c, p, t, e) = (api.clients(), api.projects_all(), api.tags(), api.projects_with_entries());
         cx.spawn(async move |this, cx| {
-            let result = async { Ok::<_, crate::data::DataError>((c.await?, p.await?, t.await?)) }.await;
+            let result = async { Ok::<_, crate::data::DataError>((c.await?, p.await?, t.await?, e.await?)) }.await;
             let _ = this.update(cx, |this, cx| {
                 match result {
-                    Ok((c, p, t)) => {
+                    Ok((c, p, t, e)) => {
                         (this.clients, this.projects, this.tags) = (c, p, t);
+                        this.with_entries = e.into_iter().collect();
                         if !this.loaded {
                             this.loaded = true;
                             if this.selected.is_none() {
@@ -556,16 +560,22 @@ impl ProjectSettings {
                         .mt_2()
                         .cursor_default()
                         .child(name)
-                        .child(
-                            icon_button(format!("tree-client-delete-{}", c.id), crate::ui::icons::trash(), "削除する")
+                        .child({
+                            // Deletable only when none of its projects has entries.
+                            let deletable = !self.projects.iter().any(|pj| pj.client_id == c.id && self.with_entries.contains(&pj.id));
+                            let tip = if deletable { "削除する" } else { "工数のあるプロジェクトがあるため削除できません" };
+                            icon_button(format!("tree-client-delete-{}", c.id), crate::ui::icons::trash(), tip)
                                 .text_color(p.text_muted)
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    cx.stop_propagation();
-                                    this.client_error = None;
-                                    this.client_delete = Some(del_id.clone());
-                                    cx.notify();
-                                })),
-                        )
+                                .when(!deletable, |d| d.opacity(0.35))
+                                .when(deletable, |d| {
+                                    d.on_click(cx.listener(move |this, _, _, cx| {
+                                        cx.stop_propagation();
+                                        this.client_error = None;
+                                        this.client_delete = Some(del_id.clone());
+                                        cx.notify();
+                                    }))
+                                })
+                        })
                         .child(
                             icon_button(format!("tree-client-archive-{}", c.id), archive_icon, archive_tip)
                                 .text_color(p.text_muted)
@@ -716,14 +726,20 @@ impl ProjectSettings {
                             .items_center()
                             .gap_2()
                             .child(archive_button(pj.archived, !(pj.archived && client_archived), (pj.archived && client_archived).then_some("クライアントのアーカイブを先に戻してください"), cx))
-                            .child(
-                                super::form::button_with_icon(p, "detail-delete", crate::ui::icons::trash(), "削除", false, true)
+                            .child({
+                                let deletable = !self.with_entries.contains(&pj.id);
+                                super::form::button_with_icon(p, "detail-delete", crate::ui::icons::trash(), "削除", false, deletable)
                                     .text_color(p.danger)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.confirm_delete = Some(id.clone());
-                                        cx.notify();
-                                    })),
-                            ),
+                                    .when(deletable, |d| {
+                                        d.on_click(cx.listener(move |this, _, _, cx| {
+                                            this.confirm_delete = Some(id.clone());
+                                            cx.notify();
+                                        }))
+                                    })
+                            })
+                            .when(self.with_entries.contains(&pj.id), |d| {
+                                d.child(div().debug_selector(|| "detail-delete-disabled".into()).text_xs().text_color(p.text_faint).child("工数があるため削除できません"))
+                            }),
                     )
                     .children(self.confirm_delete.as_ref().filter(|d| **d == pj.id).map(|_| self.render_delete_confirm(&pj, p, cx)))
                     .children(error)
@@ -787,7 +803,7 @@ impl ProjectSettings {
             .flex_col()
             .gap_3()
             .child(div().text_sm().font_weight(FontWeight::SEMIBOLD).child("プロジェクトを削除しますか？"))
-            .child(div().text_xs().text_color(p.text).child(format!("「{}」を削除します。元に戻せません。工数が登録されているプロジェクトは削除できないので、アーカイブしてください。", pj.name)))
+            .child(div().text_xs().text_color(p.text).child(format!("「{}」を削除します。元に戻せません。", pj.name)))
             .child(
                 div()
                     .flex()
