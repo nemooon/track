@@ -68,6 +68,16 @@ pub struct SettingsPatch {
     pub report_copy_formats: Option<Vec<ReportCopyFormat>>,
 }
 
+/// Time spent on a project in a range, and when it was last recorded (any time).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectActivity {
+    pub project_id: String,
+    /// Net minutes (breaks removed) of entries overlapping the range.
+    pub minutes: i64,
+    pub last_start: Option<DateTime<Utc>>,
+}
+
 /// `PATCH /api/clients/:id`
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ClientPatch {

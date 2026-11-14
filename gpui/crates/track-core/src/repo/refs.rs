@@ -107,6 +107,24 @@ impl Db {
         Ok(n > 0)
     }
 
+    /// Every project's net minutes in `[from, to)` and its latest entry start (projects without
+    /// entries are listed with 0 / None).
+    pub fn project_activity(&self, from: chrono::DateTime<chrono::Utc>, to: chrono::DateTime<chrono::Utc>) -> Result<Vec<crate::model::ProjectActivity>> {
+        let mut st = self.conn().prepare(
+            r#"SELECT p.id,
+                      COALESCE(SUM(CASE WHEN e.start < ?2 AND e."end" > ?1
+                          THEN MAX(0, CAST(ROUND((julianday(e."end") - julianday(e.start)) * 1440) AS INTEGER) - e.breakMinutes) END), 0),
+                      MAX(e.start)
+               FROM "Project" p LEFT JOIN "TimeEntry" e ON e.projectId = p.id
+               GROUP BY p.id"#,
+        )?;
+        let rows = st.query_map(params![time::to_db(from), time::to_db(to)], |r| {
+            let last: Option<String> = r.get(2)?;
+            Ok(crate::model::ProjectActivity { project_id: r.get(0)?, minutes: r.get(1)?, last_start: last.as_deref().and_then(time::from_db) })
+        })?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
     pub fn client(&self, id: &str) -> Result<Client> {
         self.conn()
             .query_row(r#"SELECT id, name, archived FROM "Client" WHERE id = ?1"#, [id], |r| Ok(Client { id: r.get(0)?, name: r.get(1)?, archived: r.get::<_, i64>(2)? != 0 }))

@@ -116,3 +116,21 @@ fn writes_refused_when_schema_too_new() {
     assert_eq!(code(db.update_project(&p, ProjectPatch { name: Some("x".into()), ..Default::default() })), "schema_too_new");
     assert_eq!(code(db.delete_tag("whatever")), "schema_too_new");
 }
+
+#[test]
+fn project_activity_sums_the_range_and_finds_the_last_entry() {
+    use chrono::{Local, TimeZone};
+    let (_d, mut db) = db();
+    let (p1, _, _) = seed(&mut db);
+    let c = db.projects(true).unwrap()[0].client_id.clone();
+    let p2 = db.create_project(&c, "Empty", "#ef4444").unwrap();
+    db.create_entry(NewEntry { project_id: Some(p1.clone()), start: local(12, 10, 0), end: local(12, 11, 0), break_minutes: 15, ..Default::default() }).unwrap();
+    let oct = |h| Local.with_ymd_and_hms(2026, 10, 30, h, 0, 0).unwrap().to_utc();
+    db.create_entry(NewEntry { project_id: Some(p1.clone()), start: oct(9), end: oct(10), ..Default::default() }).unwrap();
+    let nov = Local.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap().to_utc();
+    let dec = Local.with_ymd_and_hms(2026, 12, 1, 0, 0, 0).unwrap().to_utc();
+    let acts = db.project_activity(nov, dec).unwrap();
+    let get = |id: &str| acts.iter().find(|a| a.project_id == id).cloned().unwrap_or_else(|| panic!("{id} missing"));
+    assert_eq!((get(&p1).minutes, get(&p1).last_start), (45, Some(local(12, 10, 0))));
+    assert_eq!((get(&p2).minutes, get(&p2).last_start), (0, None), "projects without entries are listed too");
+}
