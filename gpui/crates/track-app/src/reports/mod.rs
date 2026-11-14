@@ -48,6 +48,8 @@ pub struct ReportsView {
     pub data: Option<ReportResponse>,
     /// Minutes per day for the activity heatmap (around the period, same filters).
     pub heatmap: Option<Vec<(NaiveDate, i64)>>,
+    /// The heatmap day under the pointer: its week (or month) is marked as what a click picks.
+    pub heat_hover: Option<NaiveDate>,
     pub loading: bool,
     pub error: Option<String>,
     requested: Option<ReportQuery>,
@@ -81,6 +83,7 @@ impl ReportsView {
             nav: DateNav::default(),
             data: None,
             heatmap: None,
+            heat_hover: None,
             loading: false,
             error: None,
             requested: None,

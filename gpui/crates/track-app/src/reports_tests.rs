@@ -297,3 +297,23 @@ fn heatmap_labels_the_week_that_holds_a_months_first_day() {
     assert_eq!(month_label(d(11, 29)), Some("12月".to_string()), "holds 12/1");
     assert_eq!(month_label(d(11, 8)), None);
 }
+
+#[test]
+fn a_heatmap_day_picks_its_week_or_month() {
+    use crate::reports::heatmap::pick_range;
+    use track_core::model::ReportRange;
+    let d = |m, day| chrono::NaiveDate::from_ymd_opt(2026, m, day).unwrap();
+    assert_eq!(pick_range(ReportRange::Week, d(11, 11)), (d(11, 8), d(11, 15)), "Sunday-start week");
+    assert_eq!(pick_range(ReportRange::Month, d(11, 11)), (d(11, 1), d(12, 1)));
+}
+
+#[gpui::test]
+fn hovering_a_heatmap_day_marks_what_a_click_would_pick(cx: &mut TestAppContext) {
+    let (app, cx, _f) = setup(cx);
+    let first = app.read_with(cx, |a, cx| a.reports.read(cx).heatmap.clone()).unwrap()[0].0;
+    let b = cx.debug_bounds(leak(format!("heat-{first}"))).expect("cell");
+    cx.simulate_mouse_move(b.center(), None, Modifiers::none());
+    assert_eq!(app.read_with(cx, |a, cx| a.reports.read(cx).heat_hover), Some(first));
+    cx.simulate_mouse_move(gpui::point(gpui::px(5.), gpui::px(5.)), None, Modifiers::none());
+    assert_eq!(app.read_with(cx, |a, cx| a.reports.read(cx).heat_hover), None, "leaving the cell clears it");
+}

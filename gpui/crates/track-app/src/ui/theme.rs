@@ -85,6 +85,8 @@ pub struct Palette {
     pub warning_border: Hsla,
     /// Success / ready (AI available, latest backup, weekly report).
     pub success: Hsla,
+    /// The activity heatmap's green (GitHub's contributions graph), shaded by alpha.
+    pub heat: Hsla,
     pub success_bg: Hsla,
     pub success_border: Hsla,
     pub success_hover: Hsla,
@@ -141,6 +143,7 @@ impl Palette {
             warning_text: c(0xe5c07b),
             warning_border: c(0x5a4b2c),
             success: c(0x98c379),
+            heat: c(0x39d353),
             success_bg: c(0x2a3428),
             success_border: c(0x3f5236),
             success_hover: c(0x33402f),
@@ -186,6 +189,7 @@ impl Palette {
             warning_text: c(0x92400e),
             warning_border: c(0xfde68a),
             success: c(0x047857),
+            heat: c(0x216e39),
             success_bg: c(0xecfdf5),
             success_border: c(0xa7f3d0),
             success_hover: c(0xd1fae5),
