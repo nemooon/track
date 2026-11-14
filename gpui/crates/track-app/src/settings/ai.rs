@@ -6,7 +6,10 @@ use gpui::{
     AppContext, Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task,
     Window, div, prelude::FluentBuilder, px,
 };
+use gpui_component::IndexPath;
 use gpui_component::input::{Input, InputState, Textarea, TextareaState};
+use gpui_component::searchable_list::SearchableListItem;
+use gpui_component::select::{Select, SelectEvent, SelectState};
 use std::time::Duration;
 use track_core::ai::models::{CodexModelCatalog, codex_models, default_codex_home};
 use track_core::ai::{AiStatus, provider_from_config};
@@ -16,10 +19,33 @@ const PROVIDERS: [(&str, &str); 3] = [("apple-intelligence", "Apple Intelligence
 /// models.ts: the catalog refreshes every 5 minutes while shown.
 const MODELS_REFRESH: Duration = Duration::from_secs(5 * 60);
 
+/// A model in the Codex model select (`""` = Codex's default model).
+#[derive(Clone)]
+pub struct ModelItem {
+    id: String,
+    label: SharedString,
+}
+
+impl SearchableListItem for ModelItem {
+    type Value = String;
+
+    fn title(&self) -> SharedString {
+        self.label.clone()
+    }
+
+    fn value(&self) -> &String {
+        &self.id
+    }
+}
+
 pub struct AiSettings {
     state: Entity<AppState>,
     pub provider: String,
-    pub codex_model: Entity<InputState>,
+    /// The chosen Codex model (`""` = Codex's default).
+    pub codex_model: String,
+    /// The model select and the choices it was built with.
+    pub model_select: Option<Entity<SelectState<Vec<ModelItem>>>>,
+    model_choices: Vec<(String, String)>,
     pub codex_executable: Entity<InputState>,
     pub command_executable: Entity<InputState>,
     pub command_args: Entity<TextareaState>,
@@ -44,7 +70,7 @@ impl AiSettings {
             cx.observe(&e, |_, _, cx| cx.notify()).detach();
             e
         };
-        let codex_model = input(&saved.ai_codex_model, "Codexの既定モデル", window, cx);
+        let codex_model = saved.ai_codex_model.clone();
         let codex_executable = input(&saved.ai_codex_executable, "自動検出", window, cx);
         let command_executable = input(&saved.ai_command_executable, "/path/to/command", window, cx);
         let command_args = cx.new(|cx| TextareaState::new(window, cx).rows(4).default_value(saved.ai_command_args.join("\n")));
@@ -53,6 +79,8 @@ impl AiSettings {
             state,
             provider: saved.ai_provider.clone(),
             codex_model,
+            model_select: None,
+            model_choices: vec![],
             codex_executable,
             command_executable,
             command_args,
@@ -74,7 +102,7 @@ impl AiSettings {
     fn draft(&self, cx: &gpui::App) -> ConfigPatch {
         ConfigPatch {
             ai_provider: Some(self.provider.clone()),
-            ai_codex_model: Some(self.codex_model.read(cx).value().trim().to_string()),
+            ai_codex_model: Some(self.codex_model.trim().to_string()),
             ai_codex_executable: Some(self.codex_executable.read(cx).value().trim().to_string()),
             ai_command_executable: Some(self.command_executable.read(cx).value().trim().to_string()),
             ai_command_args: Some(args_from_text(&self.command_args.read(cx).value())),
@@ -153,7 +181,7 @@ impl AiSettings {
     fn reset(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let s = self.saved.clone();
         self.provider = s.ai_provider.clone();
-        self.codex_model.update(cx, |i, cx| i.set_value(s.ai_codex_model.clone(), window, cx));
+        self.codex_model = s.ai_codex_model.clone();
         self.codex_executable.update(cx, |i, cx| i.set_value(s.ai_codex_executable.clone(), window, cx));
         self.command_executable.update(cx, |i, cx| i.set_value(s.ai_command_executable.clone(), window, cx));
         self.command_args.update(cx, |i, cx| i.set_value(s.ai_command_args.join("\n"), window, cx));
@@ -191,29 +219,37 @@ impl AiSettings {
         cx.notify();
     }
 
+    /// The model select: Codex's default, the catalog's models, and the chosen model when the
+    /// catalog does not list it. Rebuilt when those change; picking one is a change to save.
+    fn sync_model_select(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let mut choices = vec![(String::new(), "Codexの既定モデル".to_string())];
+        choices.extend(self.models.iter().flat_map(|c| c.models.iter().cloned()));
+        if !self.codex_model.is_empty() && !choices.iter().any(|(id, _)| *id == self.codex_model) {
+            choices.push((self.codex_model.clone(), self.codex_model.clone()));
+        }
+        if self.model_select.is_none() || choices != self.model_choices {
+            let at = choices.iter().position(|(id, _)| *id == self.codex_model).map(IndexPath::new);
+            let items: Vec<ModelItem> = choices.iter().map(|(id, label)| ModelItem { id: id.clone(), label: label.clone().into() }).collect();
+            let select = cx.new(|cx| SelectState::new(items, at, window, cx));
+            cx.subscribe(&select, |this, _, ev: &SelectEvent<Vec<ModelItem>>, cx| {
+                if let SelectEvent::Confirm(Some(id)) = ev {
+                    this.codex_model = id.clone();
+                    cx.notify();
+                }
+            })
+            .detach();
+            (self.model_select, self.model_choices) = (Some(select), choices);
+        } else if let Some(select) = self.model_select.clone()
+            && select.read(cx).selected_value() != Some(&self.codex_model)
+        {
+            // 変更を破棄 put the saved model back.
+            let model = self.codex_model.clone();
+            select.update(cx, |s, cx| s.set_selected_value(&model, window, cx));
+        }
+    }
+
     fn render_codex(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let p = palette(cx);
-        let models = self.models.clone();
-        let candidates = div().flex().flex_wrap().gap_2().children(models.iter().flat_map(|c| c.models.iter().cloned()).enumerate().map(|(i, (id, label))| {
-            let sel = format!("codex-model-{i}");
-            let sel2 = sel.clone();
-            div()
-                .id(SharedString::from(sel))
-                .debug_selector(move || sel2.clone())
-                .px_2()
-                .py(px(2.))
-                .rounded_md()
-                .border_1()
-                .border_color(p.border)
-                .text_xs()
-                .cursor_pointer()
-                .hover(|s| s.bg(p.hover))
-                .child(label)
-                .on_click(cx.listener(move |this, _, w, cx| {
-                    this.codex_model.update(cx, |m, cx| m.set_value(id.clone(), w, cx));
-                    cx.notify();
-                }))
-        }));
         let detail = match (&self.models, self.models_loading) {
             (Some(c), _) => c.detail.clone(),
             (None, true) => "Codexのモデル一覧を取得しています…".into(),
@@ -223,21 +259,20 @@ impl AiSettings {
             .child(form::field(p, 
                 "ai-field-codex-model",
                 "モデル",
-                "空欄ではCodex側の既定モデルを使います。任意のモデルIDも入力できます。",
+                "Codexから取得した候補から選びます。既定ではCodex側の既定モデルを使います。",
                 div()
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .child(div().w_full().child(Input::new(&self.codex_model)))
-                    .child(candidates)
                     .child(
                         div()
                             .flex()
-                            .items_start()
+                            .items_center()
                             .gap_2()
-                            .child(div().flex_1().min_w_0().text_xs().text_color(p.text_muted).child(detail))
+                            .child(div().debug_selector(|| "ai-codex-model".into()).w(px(320.)).children(self.model_select.as_ref().map(Select::new)))
                             .child(form::button(p, "codex-models-refresh", "更新", false, !self.models_loading).on_click(cx.listener(|this, _, _, cx| this.load_models(cx)))),
                     )
+                    .child(div().text_xs().text_color(p.text_muted).child(detail))
                     .child(div().text_xs().text_color(p.text_muted).child("実行ファイルの変更を保存すると、そのCodexから候補を取得します。")),
             ))
             .child(form::field(p, 
@@ -255,8 +290,11 @@ impl AiSettings {
 }
 
 impl Render for AiSettings {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = palette(cx);
+        if self.provider == "codex" {
+            self.sync_model_select(window, cx);
+        }
         let dirty = self.dirty(cx);
         let validation = self.validation(cx);
         let error = validation.map(str::to_string).or(self.save_error.clone());

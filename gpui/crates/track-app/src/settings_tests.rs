@@ -487,9 +487,13 @@ fn codex_model_candidates_fill_the_model(cx: &mut TestAppContext) {
     for _ in 0..5 {
         wait_io(&mut scx);
     }
-    click(&mut scx, "codex-model-0");
-    let model = a.read_with(&scx, |a, _| a.codex_model.clone());
-    assert_eq!(model.read_with(&scx, |m, _| m.value().to_string()), "gpt-x");
+    assert!(scx.debug_bounds("ai-codex-model").is_some(), "the model is a select");
+    let select = a.read_with(&scx, |a, _| a.model_select.clone()).expect("model select");
+    assert_eq!(select.read_with(&scx, |s, _| s.selected_value().cloned()), Some(String::new()), "starts on Codex's default model");
+    scx.update(|_, cx| select.update(cx, |_, cx| cx.emit(gpui_component::select::SelectEvent::Confirm(Some("gpt-x".to_string())))));
+    scx.run_until_parked();
+    assert_eq!(a.read_with(&scx, |a, _| a.codex_model.clone()), "gpt-x");
+    assert!(scx.debug_bounds("ai-save").is_some(), "picking a model is a change to save");
 }
 
 fn snapshots(f: &crate::testing::Fixture) -> Vec<track_core::backup::SnapshotInfo> {
