@@ -180,18 +180,17 @@ fn day(y: i32, m: u32, d: u32) -> NaiveDate {
 }
 
 #[test]
-fn heatmap_range_is_five_weeks_centred_on_the_week() {
-    // 11/11 is a Wednesday; its week starts on Sunday 11/8.
-    assert_eq!(crate::reports::heatmap_range(&q(ReportRange::Week, GroupBy::Project, 11)), (day(2026, 10, 25), day(2026, 11, 29)));
+fn heatmap_range_is_53_weeks_centred_on_the_week() {
+    // 11/11 is a Wednesday; its week starts on Sunday 11/8: 26 weeks before it, 26 after.
+    let (from, to) = crate::reports::heatmap_range(&q(ReportRange::Week, GroupBy::Project, 11));
+    assert_eq!((from, to), (day(2026, 5, 10), day(2027, 5, 16)));
+    assert_eq!((to - from).num_days(), 53 * 7);
 }
 
 #[test]
-fn heatmap_range_covers_the_months_weeks() {
-    // November 2026 starts on a Sunday and ends on a Monday: five weeks.
-    assert_eq!(crate::reports::heatmap_range(&q(ReportRange::Month, GroupBy::Project, 11)), (day(2026, 11, 1), day(2026, 12, 6)));
-    // August 2026 starts on a Saturday and ends on a Monday: six weeks.
-    let aug = ReportQuery { anchor: Local.from_local_datetime(&day(2026, 8, 10).and_hms_opt(0, 0, 0).unwrap()).unwrap().to_utc(), ..q(ReportRange::Month, GroupBy::Project, 1) };
-    assert_eq!(crate::reports::heatmap_range(&aug), (day(2026, 7, 26), day(2026, 9, 6)));
+fn heatmap_range_centres_the_months_first_week() {
+    // November 2026 starts on Sunday 11/1.
+    assert_eq!(crate::reports::heatmap_range(&q(ReportRange::Month, GroupBy::Project, 20)), (day(2026, 5, 3), day(2027, 5, 9)));
 }
 
 #[test]
@@ -203,7 +202,7 @@ fn heatmap_sums_each_day_with_the_filters() {
     add(&mut db, (20, 10, 0), (20, 10, 30), Some(&p), &[], 0);
     let query = ReportQuery { project_ids: vec![p.clone()], ..q(ReportRange::Week, GroupBy::Project, 11) };
     let days = db.heatmap(&query).unwrap();
-    assert_eq!(days.len(), 35, "one cell per day of the five weeks");
+    assert_eq!(days.len(), 53 * 7, "one cell per day of the 53 weeks");
     let get = |d: NaiveDate| days.iter().find(|(x, _)| *x == d).map(|(_, m)| *m);
     assert_eq!(get(day(2026, 11, 10)), Some(120));
     assert_eq!(get(day(2026, 11, 20)), Some(30), "days outside the report's week count too");

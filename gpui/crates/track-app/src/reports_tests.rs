@@ -254,10 +254,10 @@ fn leak(s: String) -> &'static str {
 }
 
 #[gpui::test]
-fn heatmap_shows_five_weeks_between_the_filters_and_the_table(cx: &mut TestAppContext) {
+fn heatmap_shows_a_year_between_the_filters_and_the_table(cx: &mut TestAppContext) {
     let (app, cx, _f) = setup(cx);
     let days = app.read_with(cx, |a, cx| a.reports.read(cx).heatmap.clone()).expect("heatmap loaded");
-    assert_eq!(days.len(), 35, "five weeks for the week view");
+    assert_eq!(days.len(), 53 * 7, "53 weeks, like GitHub's year");
     let today = Local::now().date_naive();
     assert_eq!(days.iter().find(|(d, _)| *d == today).map(|(_, m)| *m), Some(120), "today's 2h");
     assert!(cx.debug_bounds(leak(format!("heat-{today}"))).is_some());
@@ -279,4 +279,21 @@ fn clicking_a_heatmap_day_moves_to_its_period(cx: &mut TestAppContext) {
 fn heatmap_levels_by_hours() {
     use crate::reports::heatmap::level;
     assert_eq!([level(0), level(1), level(119), level(120), level(239), level(240), level(359), level(360), level(600)], [0, 1, 1, 2, 2, 3, 3, 4, 4]);
+}
+
+#[gpui::test]
+fn heatmap_cells_are_square(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = setup(cx);
+    let today = Local::now().date_naive();
+    let cell = cx.debug_bounds(leak(format!("heat-{today}"))).expect("today's cell").size;
+    assert!((cell.width - cell.height).abs() < gpui::px(0.5), "{cell:?}");
+}
+
+#[test]
+fn heatmap_labels_the_week_that_holds_a_months_first_day() {
+    use crate::reports::heatmap::month_label;
+    let d = |m, day| chrono::NaiveDate::from_ymd_opt(2026, m, day).unwrap();
+    assert_eq!(month_label(d(11, 1)), Some("11月".to_string()), "starts on the 1st");
+    assert_eq!(month_label(d(11, 29)), Some("12月".to_string()), "holds 12/1");
+    assert_eq!(month_label(d(11, 8)), None);
 }

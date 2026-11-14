@@ -852,7 +852,7 @@ pub fn shift_month(d: NaiveDate, delta: i32) -> NaiveDate {
 }
 
 impl Render for ReportsView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = palette(cx);
         self.ensure_loaded(cx);
         let error_banner = self.error.clone().map(|msg| controls::error_banner(&p, "reports-retry", &msg).on_click(cx.listener(|this, _, _, cx| this.reload(cx))));
@@ -881,7 +881,7 @@ impl Render for ReportsView {
                     .bg(p.bg)
                     .child(self.render_filter_bar(cx))
                     .children(error_banner)
-                    .children(self.render_heatmap(cx))
+                    .children(self.render_heatmap(window, cx))
                     .child(body),
             )
     }

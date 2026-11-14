@@ -18,19 +18,18 @@ pub fn query_range(q: &ReportQuery) -> (DateTime<Utc>, DateTime<Utc>) {
     (local_midnight(f), local_midnight(t))
 }
 
-/// The days the activity heatmap shows, `[from, to)`, whole Sunday-start weeks: five weeks with
-/// the query's week in the middle, or the weeks the query's month touches.
+/// Weeks in the activity heatmap (about a year, like GitHub's).
+pub const HEATMAP_WEEKS: i64 = 53;
+
+/// The days the activity heatmap shows, `[from, to)`: `HEATMAP_WEEKS` Sunday-start weeks with the
+/// week of the period's first day in the middle (26 weeks before it, 26 after).
 pub fn heatmap_range(q: &ReportQuery) -> (chrono::NaiveDate, chrono::NaiveDate) {
     use crate::dates::week_start;
     use chrono::Duration;
-    let day = q.anchor.with_timezone(&Local).date_naive();
-    if q.range == ReportRange::Week {
-        let ws = week_start(day);
-        (ws - Duration::days(14), ws + Duration::days(21))
-    } else {
-        let (f, t) = month_range(day);
-        (week_start(f), week_start(t - Duration::days(1)) + Duration::days(7))
-    }
+    let first = query_range(q).0.with_timezone(&Local).date_naive();
+    let centre = week_start(first);
+    let before = HEATMAP_WEEKS / 2;
+    (centre - Duration::weeks(before), centre + Duration::weeks(HEATMAP_WEEKS - before))
 }
 
 fn split_none(ids: &[String]) -> (Vec<&String>, bool) {
