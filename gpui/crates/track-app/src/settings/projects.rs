@@ -232,7 +232,23 @@ impl ProjectSettings {
         .when(custom, |d| d.child(div().debug_selector(|| "editor-color-current".into()).size(px(24.)).rounded_full().bg(hex(&ed.color)).border_2().border_color(p.text)))
         .when_some(ed.picker.clone(), |d, picker| {
             let featured = COLORS.iter().map(|c| gpui::Hsla::from(hex(c))).collect();
-            d.child(div().debug_selector(|| "editor-color-custom".into()).child(ColorPicker::new(&picker).featured_colors(featured).label("その他の色…")))
+            // Same circle as the swatches, with an eyedropper: any colour.
+            d.child(
+                div().debug_selector(|| "editor-color-custom".into()).child(
+                    ColorPicker::new(&picker)
+                        .featured_colors(featured)
+                        .accessibility_label("色を選ぶ")
+                        .icon(crate::ui::icons::pipette().size(px(14.)).text_color(p.text_muted))
+                        .size(px(24.))
+                        .rounded_full()
+                        .border_1()
+                        .border_color(p.border)
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .cursor_pointer(),
+                ),
+            )
         });
         let chip = |id: String, label: String, on: bool| {
             let sel = id.clone();

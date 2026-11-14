@@ -22,7 +22,7 @@ use gpui::{App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions
 use gpui_component::Root;
 
 fn main() {
-    gpui_platform::application().with_assets(gpui_kit_assets::Assets::new("")).run(|cx: &mut App| {
+    gpui_platform::application().with_assets(crate::ui::icons::AppAssets(gpui_kit_assets::Assets::new(""))).run(|cx: &mut App| {
         gpui_component::init(cx);
         let setting = track_core::config::load_config(&track_core::guard::data_dir_from_env()).appearance;
         crate::ui::theme::apply_setting(setting, crate::ui::theme::is_dark(cx.window_appearance()), cx);

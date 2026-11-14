@@ -640,3 +640,15 @@ fn project_editor_takes_any_colour_from_the_picker(cx: &mut TestAppContext) {
     wait_io(&mut scx);
     assert_eq!(f.db().project("p1").unwrap().color, "#123456");
 }
+
+#[gpui::test]
+fn colour_picker_button_is_a_swatch_sized_circle(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = open_app_db(cx, |_| {});
+    let (mut scx, _p) = projects_section(cx);
+    let b = scx.debug_bounds("project-edit-p1").expect("edit");
+    scx.simulate_click(b.center(), Modifiers::none());
+    wait_io(&mut scx);
+    let swatch = scx.debug_bounds("editor-color-0").expect("swatch").size;
+    let picker = scx.debug_bounds("editor-color-custom").expect("picker button").size;
+    assert_eq!(picker, swatch, "same circle as the colour swatches, no label");
+}
