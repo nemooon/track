@@ -121,7 +121,7 @@ fn write_object(data_dir: &Path, obj: Map<String, Value>) -> Result<()> {
 /// Seeds `gpui-config.json` from the Tauri app's `config.json` the first time (or with the
 /// defaults when there is none). Once the file exists — even unreadable — it is left alone.
 /// A backup folder outside `dev_root` is not carried over (the real backups live there).
-pub(crate) fn migrate_in(data_dir: &Path, dev_root: &Path) -> Result<()> {
+pub fn migrate_in(data_dir: &Path, dev_root: &Path) -> Result<()> {
     if path_of(data_dir).exists() {
         return Ok(());
     }
@@ -134,9 +134,9 @@ pub(crate) fn migrate_in(data_dir: &Path, dev_root: &Path) -> Result<()> {
     write_object(data_dir, obj)
 }
 
-/// Reads `gpui-config.json` (seeding it on first use), normalised like `loadConfig`.
+/// Reads `gpui-config.json`, normalised like `loadConfig` (defaults when missing). Never writes:
+/// seeding is `migrate_in`, run by the app only once the development guard has passed.
 pub fn load_config(data_dir: &Path) -> Config {
-    let _ = migrate_in(data_dir, &crate::guard::allowed_root());
     normalize(data_dir, read_object(data_dir))
 }
 
@@ -209,7 +209,18 @@ pub fn save_config(data_dir: &Path, patch: ConfigPatch) -> Result<Config> {
 /// Validates like `updateSchema`, checks the backup folder is writable, then merges into the
 /// existing JSON so keys this version does not know survive.
 pub fn save_config_in(data_dir: &Path, patch: ConfigPatch, dev_root: &Path) -> Result<Config> {
-    let _ = migrate_in(data_dir, dev_root);
+    // A file that exists but cannot be read is the user's to fix: saving over it would drop
+    // every value it held.
+    if let Ok(text) = std::fs::read_to_string(path_of(data_dir))
+        && !serde_json::from_str::<Value>(&text).is_ok_and(|v| v.is_object())
+    {
+        return Err(CoreError::with_details(
+            "config_unreadable",
+            format!("{FILE} を読めないため保存できません。ファイルを直すか削除してください。"),
+            serde_json::json!({ "path": path_of(data_dir) }),
+        ));
+    }
+    migrate_in(data_dir, dev_root)?;
     let mut next = normalize(data_dir, read_object(data_dir));
     if let Some(a) = patch.appearance {
         next.appearance = a;

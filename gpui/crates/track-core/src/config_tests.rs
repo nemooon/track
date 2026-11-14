@@ -159,3 +159,21 @@ fn suggestions_hidden_in_dev() {
     assert_eq!(s, vec![("iCloud Drive".to_string(), home.path().join("Library/Mobile Documents/com~apple~CloudDocs/Track"))]);
     assert!(export_dir_suggestions(tempfile::tempdir().unwrap().path(), false).is_empty());
 }
+
+/// Reading never writes: only the guarded app (DataClient) and saves seed the file.
+#[test]
+fn load_config_never_writes() {
+    let d = tempfile::tempdir().unwrap();
+    write_legacy(d.path(), serde_json::json!({"aiProvider": "codex"}));
+    let _ = load_config(d.path());
+    assert!(!d.path().join(FILE).exists());
+}
+
+#[test]
+fn save_refuses_to_replace_a_broken_file() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(d.path().join(FILE), "{").unwrap();
+    let err = save_config_in(d.path(), ConfigPatch { appearance: Some(Appearance::Dark), ..Default::default() }, d.path()).unwrap_err();
+    assert_eq!(err.code(), "config_unreadable");
+    assert_eq!(std::fs::read_to_string(d.path().join(FILE)).unwrap(), "{", "the broken file is left for the user to fix");
+}

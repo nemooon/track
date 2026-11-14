@@ -59,12 +59,19 @@ impl DataClient {
     /// Opens `data_dir` behind the development guard.
     pub fn open_guarded(data_dir: &Path) -> Self {
         let guard = dev_guard(data_dir).err().map(DataError::from);
-        Self::start(data_dir.to_path_buf(), track_core::guard::allowed_root(), guard)
+        let root = track_core::guard::allowed_root();
+        // Seed gpui-config.json only where the guard lets us write (never the real ~/.track
+        // while in development).
+        if guard.is_none() {
+            let _ = track_core::config::migrate_in(data_dir, &root);
+        }
+        Self::start(data_dir.to_path_buf(), root, guard)
     }
 
     /// Opens `data_dir` without the development guard (tests use temp dirs).
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn open_unguarded(data_dir: &Path) -> Self {
+        let _ = track_core::config::migrate_in(data_dir, data_dir);
         Self::start(data_dir.to_path_buf(), data_dir.to_path_buf(), None)
     }
 
