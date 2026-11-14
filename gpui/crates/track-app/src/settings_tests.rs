@@ -694,3 +694,14 @@ fn opening_the_picker_redraws_the_editor(cx: &mut TestAppContext) {
     scx.run_until_parked();
     assert!(scx.debug_bounds("picker-hue").is_some(), "the popover shows once the picker opens");
 }
+
+#[gpui::test]
+fn colour_sliders_have_gradient_tracks(cx: &mut TestAppContext) {
+    let (mut scx, _p, _f, _app) = open_p1_editor(cx);
+    click(&mut scx, "editor-color-custom");
+    scx.run_until_parked();
+    for id in ["picker-hue-track", "picker-saturation-track", "picker-lightness-track"] {
+        let t = scx.debug_bounds(id).unwrap_or_else(|| panic!("{id}"));
+        assert!(t.size.width > gpui::px(100.), "{id} spans the slider: {t:?}");
+    }
+}
