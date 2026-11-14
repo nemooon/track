@@ -699,7 +699,9 @@ fn picker_colour_saves_and_fills_the_eyedropper(cx: &mut TestAppContext) {
     let (mut scx, p) = projects_section(cx);
     let picker = p.read_with(&scx, |s, _| s.picker.clone()).expect("picker state");
     let c: gpui::Hsla = gpui::rgb(0x123456).into();
+    scx.update(|_, cx| picker.update(cx, |s, cx| s.set_open(true, cx)));
     scx.update(|_, cx| picker.update(cx, |_, cx| cx.emit(gpui_component::color_picker::ColorPickerEvent::Change(Some(c)))));
+    scx.update(|_, cx| picker.update(cx, |s, cx| s.set_open(false, cx)));
     wait_io(&mut scx);
     assert_eq!(f.db().project("p1").unwrap().color, "#123456");
     assert!(scx.debug_bounds("editor-color-custom").is_some());
@@ -709,6 +711,56 @@ fn picker_colour_saves_and_fills_the_eyedropper(cx: &mut TestAppContext) {
     for id in ["picker-hue", "picker-saturation", "picker-lightness", "picker-hex", "picker-hue-track"] {
         assert!(scx.debug_bounds(sel(id.to_string())).is_some(), "{id}");
     }
+}
+
+#[gpui::test]
+fn switching_selection_saves_the_typed_name(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    let input = p.read_with(&scx, |p, _| p.name.clone().expect("name field"));
+    scx.update(|w, cx| input.update(cx, |i, cx| {
+        i.focus(w, cx);
+        i.set_value("入力途中".to_string(), w, cx)
+    }));
+    // Clicking another row does not blur the field in GPUI.
+    click(&mut scx, "tree-project-p2");
+    wait_io(&mut scx);
+    assert_eq!(f.db().project("p1").unwrap().name, "入力途中");
+}
+
+#[gpui::test]
+fn outside_rename_survives_a_focused_untouched_field(cx: &mut TestAppContext) {
+    let (app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    let input = p.read_with(&scx, |p, _| p.name.clone().expect("name field"));
+    scx.update(|w, cx| input.update(cx, |i, cx| i.focus(w, cx)));
+    f.db().update_project("p1", track_core::model::ProjectPatch { name: Some("外で変更".into()), ..Default::default() }).unwrap();
+    let state = app.read_with(cx, |a, _| a.state.clone());
+    state.update(cx, |s, cx| s.refresh_all(cx));
+    wait_io(cx);
+    wait_io(&mut scx);
+    assert_eq!(name_value(&mut scx, &p), "外で変更", "an untouched field follows the saved name");
+    scx.update(|_, cx| input.update(cx, |_, cx| cx.emit(gpui_component::input::InputEvent::Blur)));
+    wait_io(&mut scx);
+    assert_eq!(f.db().project("p1").unwrap().name, "外で変更");
+}
+
+#[gpui::test]
+fn picker_saves_when_closed_not_while_dragging(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    let before = f.db().project("p1").unwrap().color;
+    let picker = p.read_with(&scx, |s, _| s.picker.clone()).expect("picker state");
+    scx.update(|_, cx| picker.update(cx, |s, cx| s.set_open(true, cx)));
+    for v in [0x111111, 0x123456] {
+        let c: gpui::Hsla = gpui::rgb(v).into();
+        scx.update(|_, cx| picker.update(cx, |_, cx| cx.emit(gpui_component::color_picker::ColorPickerEvent::Change(Some(c)))));
+    }
+    wait_io(&mut scx);
+    assert_eq!(f.db().project("p1").unwrap().color, before, "nothing saved while the popover is open");
+    scx.update(|_, cx| picker.update(cx, |s, cx| s.set_open(false, cx)));
+    wait_io(&mut scx);
+    assert_eq!(f.db().project("p1").unwrap().color, "#123456");
 }
 
 #[gpui::test]

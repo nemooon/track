@@ -34,11 +34,15 @@ pub struct ProjectSettings {
     /// The name field of the selected item, and which item it was made for.
     pub name: Option<Entity<InputState>>,
     name_for: Option<Selection>,
+    /// The saved name the field last showed; a field still holding it has not been typed in.
+    name_synced: String,
     /// Focus the name field once it exists (just added).
     focus_name: bool,
     /// The eyedropper's state for the selected project.
     pub picker: Option<Entity<ColorPickerState>>,
     picker_for: Option<String>,
+    /// The colour being picked; saved when the popover closes, not on every slider step.
+    pending_color: Option<(String, gpui::Hsla)>,
     pub error: Option<String>,
     /// A save failed: put the saved name back even while the field is focused.
     revert_name: bool,
@@ -79,9 +83,11 @@ impl ProjectSettings {
             selected: None,
             name: None,
             name_for: None,
+            name_synced: String::new(),
             focus_name: false,
             picker: None,
             picker_for: None,
+            pending_color: None,
             error: None,
             revert_name: false,
             show_archived: false,
@@ -159,7 +165,10 @@ impl ProjectSettings {
         .detach();
     }
 
-    fn select(&mut self, s: Selection, cx: &mut Context<Self>) {
+    fn select(&mut self, s: Selection, window: &mut Window, cx: &mut Context<Self>) {
+        // Clicking another row does not blur the field, so save what was typed first.
+        self.commit_name(window, cx);
+        self.save_pending_color(cx);
         self.selected = Some(s);
         self.error = None;
         cx.notify();
@@ -229,7 +238,11 @@ impl ProjectSettings {
         if self.name_for.as_ref() != Some(&sel) {
             return;
         }
-        let value = input.read(cx).value().trim().to_string();
+        let raw = input.read(cx).value().to_string();
+        if raw == self.name_synced {
+            return;
+        }
+        let value = raw.trim().to_string();
         if value.is_empty() {
             input.update(cx, |i, cx| i.set_value(saved, window, cx));
             return;
@@ -241,6 +254,13 @@ impl ProjectSettings {
         match sel {
             Selection::Project(id) => self.write(api.update_project(id, ProjectPatch { name: Some(value), ..Default::default() }), cx),
             Selection::Client(id) => self.write(api.update_client(id, ClientPatch { name: Some(value), ..Default::default() }), cx),
+        }
+    }
+
+    fn save_pending_color(&mut self, cx: &mut Context<Self>) {
+        if let Some((id, c)) = self.pending_color.take() {
+            let api = api(&self.state, cx);
+            self.write(api.update_project(id, ProjectPatch { color: Some(to_hex(c)), ..Default::default() }), cx);
         }
     }
 
@@ -259,12 +279,17 @@ impl ProjectSettings {
                 }
             })
             .detach();
-            (self.name, self.name_for) = (Some(input), Some(sel.clone()));
+            (self.name, self.name_for, self.name_synced) = (Some(input), Some(sel.clone()), saved);
         } else if let Some(input) = self.name.clone() {
-            // Not being typed in: show what is saved (after a failed save, an outside change...).
+            // Show what is saved (a failed save, an outside change...) unless the user is typing.
+            let value = input.read(cx).value().to_string();
             let focused = input.read(cx).focus_handle(cx).is_focused(window);
-            if (!focused || self.revert_name) && input.read(cx).value().as_ref() != saved {
-                input.update(cx, |i, cx| i.set_value(saved, window, cx));
+            let typed = value != self.name_synced;
+            if value == saved {
+                self.name_synced = saved;
+            } else if !focused || !typed || self.revert_name {
+                input.update(cx, |i, cx| i.set_value(saved.clone(), window, cx));
+                self.name_synced = saved;
             }
         }
         self.revert_name = false;
@@ -280,10 +305,15 @@ impl ProjectSettings {
                     let initial = self.project(id).map(|p| hex(&p.color)).unwrap_or_else(|| hex(COLORS[0]));
                     let picker = cx.new(|cx| ColorPickerState::new(window, cx).default_value(initial));
                     let pid = id.clone();
-                    cx.subscribe(&picker, move |this, _, ev: &ColorPickerEvent, cx| {
+                    cx.subscribe(&picker, move |this, _, ev: &ColorPickerEvent, _| {
                         if let ColorPickerEvent::Change(Some(c)) = ev {
-                            let api = api(&this.state, cx);
-                            this.write(api.update_project(pid.clone(), ProjectPatch { color: Some(to_hex(*c)), ..Default::default() }), cx);
+                            this.pending_color = Some((pid.clone(), *c));
+                        }
+                    })
+                    .detach();
+                    cx.observe(&picker, |this, picker, cx| {
+                        if !picker.read(cx).is_open() {
+                            this.save_pending_color(cx);
                         }
                     })
                     .detach();
@@ -316,7 +346,7 @@ impl ProjectSettings {
                 .pl(px(22.))
                 .child(div().size(px(9.)).flex_none().rounded_full().bg(hex(&pj.color)))
                 .child(div().min_w_0().truncate().text_sm().child(pj.name.clone()))
-                .on_click(cx.listener(move |this, _, _, cx| this.select(Selection::Project(id.clone()), cx)))
+                .on_click(cx.listener(move |this, _, window, cx| this.select(Selection::Project(id.clone()), window, cx)))
         };
         let client_block = |c: &Client, projects: Vec<&Project>, cx: &mut Context<Self>| {
             let (id, add_id) = (c.id.clone(), c.id.clone());
@@ -344,7 +374,7 @@ impl ProjectSettings {
                                     this.add_project(add_id.clone(), cx)
                                 })),
                         )
-                        .on_click(cx.listener(move |this, _, _, cx| this.select(Selection::Client(id.clone()), cx))),
+                        .on_click(cx.listener(move |this, _, window, cx| this.select(Selection::Client(id.clone()), window, cx))),
                 )
                 .children(projects.into_iter().map(|pj| project_row(pj, cx)))
         };
