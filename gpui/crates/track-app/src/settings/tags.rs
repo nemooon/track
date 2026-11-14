@@ -32,7 +32,7 @@ pub struct TagSettings {
     rename_next: Option<String>,
     /// The tag whose colours are open under its row, and the eyedropper for it.
     colors_for: Option<String>,
-    picker: Option<Entity<ColorPickerState>>,
+    pub picker: Option<Entity<ColorPickerState>>,
     pending_color: Option<(String, gpui::Hsla)>,
     /// The tag whose delete is being confirmed.
     deleting: Option<String>,
@@ -205,6 +205,8 @@ impl TagSettings {
         self.save_pending_color(cx);
         let Some(color) = self.tags.iter().find(|t| t.id == id).map(|t| t.color.clone()) else { return };
         let picker = cx.new(|cx| ColorPickerState::new(window, cx).default_value(hex(&color)));
+        // Put the colour into the sliders and the hex field (the eyedropper does this when it opens).
+        picker.update(cx, |s, cx| s.sync_pending_value(window, cx));
         let tid = id.clone();
         // Slider steps are kept and saved once, when the popover closes.
         cx.subscribe(&picker, move |this, _, ev: &ColorPickerEvent, _| {

@@ -259,6 +259,16 @@ fn the_colour_dot_opens_swatches_that_save_at_once(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn the_colour_popover_starts_at_the_tag_colour(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = open_app_db(cx, |_| {});
+    let (mut scx, t) = tags_section(cx);
+    click(&mut scx, "tag-color-t1");
+    let picker = t.read_with(&scx, |t, _| t.picker.clone()).expect("picker");
+    let hex = picker.read_with(&scx, |s, _| s.hex_input().clone());
+    assert_eq!(hex.read_with(&scx, |i, _| i.value().to_string()).to_lowercase(), "#22c55e", "the hex field shows the tag colour");
+}
+
+#[gpui::test]
 fn a_tag_row_shows_how_much_it_is_used(cx: &mut TestAppContext) {
     use crate::testing::{insert_entry, local, visible_weekday};
     let day = visible_weekday();
