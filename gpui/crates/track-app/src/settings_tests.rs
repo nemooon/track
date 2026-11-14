@@ -765,6 +765,47 @@ fn a_project_with_entries_is_not_deleted(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn deleting_a_client_asks_first(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |db| {
+        db.conn().execute(r#"INSERT INTO "Client"(id, name, createdAt) VALUES ('c2', 'Bolt', '2026-11-01T00:00:00.000+00:00')"#, []).unwrap();
+    });
+    let (mut scx, _p) = projects_section(cx);
+    click(&mut scx, "tree-client-delete-c2");
+    assert!(f.db().client("c2").is_ok(), "nothing is deleted before confirming");
+    click(&mut scx, "tree-client-delete-cancel");
+    assert!(scx.debug_bounds("tree-client-delete-confirm").is_none());
+    click(&mut scx, "tree-client-delete-c2");
+    click(&mut scx, "tree-client-delete-confirm");
+    wait_io(&mut scx);
+    assert!(f.db().client("c2").is_err());
+    assert!(scx.debug_bounds("tree-client-c2").is_none(), "gone from the list");
+}
+
+#[gpui::test]
+fn deleting_a_client_removes_its_projects_without_entries(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    click(&mut scx, "tree-client-delete-c1");
+    click(&mut scx, "tree-client-delete-confirm");
+    wait_io(&mut scx);
+    assert!(f.db().client("c1").is_err() && f.db().project("p1").is_err() && f.db().project("p2").is_err());
+    assert_eq!(selected(&mut scx, &p), None, "the deleted project is no longer selected");
+}
+
+#[gpui::test]
+fn a_client_with_entries_is_not_deleted(cx: &mut TestAppContext) {
+    use crate::testing::{insert_entry, local, visible_weekday};
+    let day = visible_weekday();
+    let (_app, cx, f) = open_app_db(cx, move |db| insert_entry(db, "e1", local(day, 9, 0), local(day, 10, 0), Some("p1"), "作業"));
+    let (mut scx, _p) = projects_section(cx);
+    click(&mut scx, "tree-client-delete-c1");
+    click(&mut scx, "tree-client-delete-confirm");
+    wait_io(&mut scx);
+    assert!(f.db().client("c1").is_ok() && f.db().project("p2").is_ok(), "nothing is deleted");
+    assert!(scx.debug_bounds("tree-client-error-c1").is_some(), "the refusal shows under the client");
+}
+
+#[gpui::test]
 fn empty_name_is_not_saved(cx: &mut TestAppContext) {
     let (_app, cx, f) = open_app_db(cx, |_| {});
     let (mut scx, p) = projects_section(cx);

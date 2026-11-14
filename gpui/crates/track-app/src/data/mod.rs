@@ -240,6 +240,12 @@ impl DataClient {
         self.call("delete_project", move |db| db.delete_project(&id))
     }
 
+    /// Deletes the client and its projects; refused (`client_has_entries`) while any of those
+    /// projects has entries.
+    pub fn delete_client(&self, id: String) -> impl Future<Output = DataResult<()>> + Send + 'static {
+        self.call("delete_client", move |db| db.delete_client(&id))
+    }
+
     pub fn create_tag(&self, name: String, color: String) -> impl Future<Output = DataResult<String>> + Send + 'static {
         self.call("create_tag", move |db| db.create_tag(&name, &color))
     }

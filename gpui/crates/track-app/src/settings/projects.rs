@@ -1,8 +1,8 @@
 //! 「プロジェクト」: clients with their projects in one list (left) and the selected project's form
 //! (right). Changes save at once: colour, client and archive on click, the name on Enter or when
 //! the field loses focus. A client is renamed in the list (double-click) and archived with the icon
-//! beside its ＋. A project without entries can be deleted (after a confirmation); one with entries
-//! is archived instead. Clients are only archived.
+//! beside its ＋. A project or client without entries can be deleted (after a confirmation; a client takes
+//! its projects with it); one with entries is archived instead.
 use crate::app::AppState;
 use crate::data::{DataClient, DataResult};
 use crate::ui::theme::*;
@@ -81,6 +81,9 @@ pub struct ProjectSettings {
     rename_next: Option<String>,
     /// The project waiting for 「プロジェクトを削除」 to be confirmed.
     confirm_delete: Option<String>,
+    /// The client whose delete is being confirmed in the list, and a refusal shown under one.
+    client_delete: Option<String>,
+    client_error: Option<(String, String)>,
 }
 
 fn api(state: &Entity<AppState>, cx: &gpui::App) -> DataClient {
@@ -114,6 +117,8 @@ impl ProjectSettings {
             client_edit: None,
             rename_next: None,
             confirm_delete: None,
+            client_delete: None,
+            client_error: None,
         };
         s.reload(cx);
         s
@@ -193,6 +198,7 @@ impl ProjectSettings {
         self.cancel_client_edit(cx);
         self.save_pending_color(cx);
         self.confirm_delete = None;
+        (self.client_delete, self.client_error) = (None, None);
         self.selected = Some(s);
         self.error = None;
         cx.notify();
@@ -437,10 +443,56 @@ impl ProjectSettings {
         self.write(api.update_project(project_id.to_string(), ProjectPatch { tag_ids: Some(ids), ..Default::default() }), cx);
     }
 
+    /// Deletes a confirmed client; a refusal (projects with entries) shows under its heading.
+    fn delete_client(&mut self, id: String, cx: &mut Context<Self>) {
+        (self.client_delete, self.client_error) = (None, None);
+        let fut = api(&self.state, cx).delete_client(id.clone());
+        cx.spawn(async move |this, cx| {
+            let result = fut.await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    // The refresh re-reads this page too (StateEvent).
+                    Ok(()) => this.state.update(cx, |s, cx| s.refresh_all(cx)),
+                    Err(e) => this.client_error = Some((id, e.message)),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn toggle_client_archive(&mut self, id: &str, cx: &mut Context<Self>) {
         let Some(archived) = self.client(id).map(|c| c.archived) else { return };
         let api = api(&self.state, cx);
         self.write(api.update_client(id.to_string(), ClientPatch { archived: Some(!archived), ..Default::default() }), cx);
+    }
+
+    /// 「削除しますか？」 under a client heading in the list.
+    fn render_client_delete_confirm(&self, c: &Client, p: Palette, cx: &mut Context<Self>) -> Div {
+        let id = c.id.clone();
+        div()
+            .mx_1()
+            .my_1()
+            .p_3()
+            .rounded_md()
+            .border_1()
+            .border_color(p.danger_border)
+            .bg(p.danger_bg)
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(div().text_xs().text_color(p.text).child(format!("「{}」を削除しますか？工数のないプロジェクトも一緒に削除されます。元に戻せません。", c.name)))
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(super::form::button(p, "tree-client-delete-cancel", "キャンセル", false, true).on_click(cx.listener(|this, _, _, cx| {
+                        this.client_delete = None;
+                        cx.notify();
+                    })))
+                    .child(super::form::button(p, "tree-client-delete-confirm", "削除", true, true).on_click(cx.listener(move |this, _, _, cx| this.delete_client(id.clone(), cx)))),
+            )
     }
 
     fn render_tree(&self, p: Palette, cx: &mut Context<Self>) -> Div {
@@ -479,7 +531,7 @@ impl ProjectSettings {
                 .tooltip(move |window, cx| gpui_component::tooltip::Tooltip::new(tip).build(window, cx))
         };
         let client_block = |c: &Client, projects: Vec<&Project>, cx: &mut Context<Self>| {
-            let (id, add_id, arch_id) = (c.id.clone(), c.id.clone(), c.id.clone());
+            let (id, add_id, arch_id, del_id) = (c.id.clone(), c.id.clone(), c.id.clone(), c.id.clone());
             let archived = c.archived;
             let editing = self.client_edit.as_ref().filter(|(e, _)| *e == c.id).map(|(_, i)| i.clone());
             let name = match editing {
@@ -504,6 +556,16 @@ impl ProjectSettings {
                         .mt_2()
                         .cursor_default()
                         .child(name)
+                        .child(
+                            icon_button(format!("tree-client-delete-{}", c.id), crate::ui::icons::trash(), "削除する")
+                                .text_color(p.text_muted)
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    cx.stop_propagation();
+                                    this.client_error = None;
+                                    this.client_delete = Some(del_id.clone());
+                                    cx.notify();
+                                })),
+                        )
                         .child(
                             icon_button(format!("tree-client-archive-{}", c.id), archive_icon, archive_tip)
                                 .text_color(p.text_muted)
@@ -530,6 +592,11 @@ impl ProjectSettings {
                             }
                         })),
                 )
+                .children((self.client_delete.as_deref() == Some(c.id.as_str())).then(|| self.render_client_delete_confirm(c, p, cx)))
+                .children(self.client_error.as_ref().filter(|(e, _)| *e == c.id).map(|(_, msg)| {
+                    let sel = format!("tree-client-error-{}", c.id);
+                    div().debug_selector(move || sel.clone()).px_3().py_1().text_xs().text_color(p.danger).child(msg.clone())
+                }))
                 .children(projects.into_iter().map(|pj| project_row(pj, cx)))
         };
         let active: Vec<&Client> = self.clients.iter().filter(|c| !c.archived).collect();
