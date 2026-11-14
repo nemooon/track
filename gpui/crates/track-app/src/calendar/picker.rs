@@ -263,7 +263,7 @@ pub fn tag_chip(p: Palette, id: gpui::SharedString, tag: &Tag, active: bool, loc
             if active {
                 d.border_color(gpui::transparent_black()).bg(hex(&tag.color)).text_color(p.on_color)
             } else {
-                d.border_color(p.border).bg(p.bg).text_color(p.text_muted).hover(|s| s.bg(p.surface))
+                d.border_color(p.border).bg(p.bg).text_color(p.text_muted).hover(|s| s.bg(p.hover))
             }
         })
         .map(|d| if locked { d.cursor_default() } else { d.cursor_pointer() })
@@ -325,7 +325,7 @@ impl Render for ProjectPicker {
                     .child(
                         div()
                             .id("picker-back")
-                            .rounded_sm()
+                            .rounded(RADIUS_SM)
                             .p_1()
                             .text_color(p.text_muted)
                             .cursor_pointer()

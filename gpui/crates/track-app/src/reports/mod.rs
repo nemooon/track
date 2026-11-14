@@ -346,7 +346,7 @@ impl ReportsView {
                     .id(gpui::SharedString::from(id.clone()))
                     .debug_selector(move || id.clone())
                     .flex()
-                    .h(px(32.))
+                    .h(crate::ui::controls::SEGMENT_HEIGHT)
                     .items_center()
                     .gap(px(6.))
                     .rounded_md()
@@ -354,7 +354,8 @@ impl ReportsView {
                     .px_3()
                     .text_xs()
                     .cursor_pointer()
-                    .map(|d| if active { d.border_color(p.text).bg(p.primary).text_color(p.on_color) } else { d.border_color(p.border).bg(p.bg).text_color(p.text).hover(|s| s.bg(p.surface)) })
+                    // On (filtering) like a chip that is on, not filled black.
+                    .map(|d| if active { d.border_color(p.border).bg(p.selected).text_color(p.text).font_weight(gpui::FontWeight::MEDIUM) } else { d.border_color(p.border).bg(p.bg).text_color(p.text).hover(|s| s.bg(p.hover)) })
                     .child(filter_label(label, &options, &selected))
                     .child(div().opacity(0.7).child(Icon::new(IconName::ChevronDown).size_3()))
                     .on_click(cx.listener(move |this, _, w, cx| {
@@ -394,7 +395,7 @@ impl ReportsView {
                                     .flex()
                                     .items_center()
                                     .justify_center()
-                                    .rounded_sm()
+                                    .rounded(RADIUS_SM)
                                     .border_1()
                                     .map(|d| if checked { d.border_color(p.text).bg(p.primary).text_color(p.on_color) } else { d.border_color(p.border).bg(p.bg) })
                                     .when(checked, |d| d.child(Icon::new(IconName::Check).size_3())),
@@ -550,7 +551,7 @@ impl ReportsView {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .rounded_sm()
+                            .rounded(RADIUS_SM)
                             .text_color(p.text_faint)
                             .cursor_pointer()
                             .hover(|s| s.bg(with_alpha(p.border, 0.7)).text_color(p.text_muted))
@@ -619,14 +620,14 @@ impl ReportsView {
                     .py_2()
                     .text_sm()
                     .cursor_pointer()
-                    .hover(|s| s.bg(p.surface))
+                    .hover(|s| s.bg(p.hover))
                     .child(cols(
                         div()
                             .flex()
                             .items_center()
                             .gap_2()
                             .child(div().size_4().flex_shrink_0().flex().items_center().justify_center().text_color(p.text_faint).child(Icon::new(if open { IconName::ChevronDown } else { IconName::ChevronRight }).size_3()))
-                            .child(div().size_3().flex_shrink_0().rounded_sm().bg(hex(&row_color(r.color.as_deref(), i))))
+                            .child(div().size_3().flex_shrink_0().rounded(RADIUS_SM).bg(hex(&row_color(r.color.as_deref(), i))))
                             .child(div().min_w_0().truncate().child(r.label.clone()))
                             .into_any_element(),
                         e(),
@@ -763,7 +764,7 @@ impl ReportsView {
                         .border_color(p.border)
                         .bg(p.bg)
                         .text_color(p.text)
-                        .hover(|s| s.bg(p.surface))
+                        .hover(|s| s.bg(p.hover))
                         .child(Icon::new(if self.totals_copied { IconName::Check } else { IconName::Copy }).size_3p5())
                         .child(if self.totals_copied { "コピーしました" } else { "週の合計をコピー" })
                         .on_click(cx.listener(|this, _, _, cx| this.copy_weekly_totals(cx))),

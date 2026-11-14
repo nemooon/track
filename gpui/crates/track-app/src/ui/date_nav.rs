@@ -109,7 +109,7 @@ fn close<V: HasDateNav>(this: &mut V, cx: &mut Context<V>) {
 }
 
 fn nav_icon_button(p: Palette, id: &'static str, icon: IconName) -> Stateful<Div> {
-    div().id(id).rounded_sm().p_1().text_color(p.text_muted).cursor_pointer().hover(|s| s.bg(p.hover)).child(Icon::new(icon).size_4())
+    div().id(id).rounded(RADIUS_SM).p_1().text_color(p.text_muted).cursor_pointer().hover(|s| s.bg(p.hover)).child(Icon::new(icon).size_4())
 }
 
 fn add_months(d: NaiveDate, months: i32) -> NaiveDate {

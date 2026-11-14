@@ -40,7 +40,7 @@ impl Render for IntegrationsDialog {
                 .px_3()
                 .py_2()
                 .cursor_pointer()
-                .hover(|s| s.bg(p.surface))
+                .hover(|s| s.bg(p.hover))
                 .child(div().text_sm().font_weight(FontWeight::MEDIUM).text_color(p.text).child(label))
                 .child(div().text_xs().text_color(p.text_muted).child(hint))
                 .on_click(cx.listener(move |this, _, _, cx| this.install(kind, cx)))

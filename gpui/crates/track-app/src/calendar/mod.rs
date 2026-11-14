@@ -206,7 +206,7 @@ impl CalendarView {
                 .flex()
                 .items_center()
                 .justify_center()
-                .rounded_sm()
+                .rounded(RADIUS_SM)
                 .text_sm()
                 .font_weight(FontWeight::BOLD)
                 .text_color(p.text_muted)
@@ -272,7 +272,7 @@ impl CalendarView {
                                         .h(px(20.))
                                         .child(div().text_color(p.text_muted).font_weight(FontWeight::SEMIBOLD).child(weekday_ja(d)))
                                         .when_some(holiday, |s, name| {
-                                            s.child(div().rounded_sm().bg(p.holiday).px_1().py(px(2.)).text_size(px(10.)).line_height(px(12.)).text_color(p.on_color).truncate().child(name))
+                                            s.child(div().rounded(RADIUS_SM).bg(p.holiday).px_1().py(px(2.)).text_size(px(10.)).line_height(px(12.)).text_color(p.on_color).truncate().child(name))
                                         }),
                                 ),
                             )
@@ -477,7 +477,7 @@ fn placeholder(a: i64, b: i64, hour_px: f32, border: gpui::Hsla, bg: gpui::Hsla)
         .right(px(3.))
         .top(px(minutes_to_y(a, hour_px) + 1.))
         .h(px((minutes_to_y(b - a, hour_px) - 3.).max(2.)))
-        .rounded_sm()
+        .rounded(RADIUS_SM)
         .border_1()
         .border_dashed()
         .border_color(border)

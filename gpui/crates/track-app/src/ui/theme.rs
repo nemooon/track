@@ -33,6 +33,9 @@ pub const NO_PROJECT: &str = "#9ca3af";
 
 /// Zed's title bar (also gpui-component's `TITLE_BAR_HEIGHT`).
 pub const TITLE_BAR_HEIGHT: gpui::Pixels = gpui::px(34.);
+/// Corner radii: RADIUS_SM for icon buttons and small badges, `rounded_md()` (6px) for buttons,
+/// chips, rows and fields, `rounded_lg()` (8px) for popovers and panels, `rounded_full()` for dots.
+pub const RADIUS_SM: gpui::Pixels = gpui::px(4.);
 /// Where macOS draws the traffic lights so they sit centred in that bar, as in Zed.
 pub fn traffic_light_position() -> gpui::Point<gpui::Pixels> {
     gpui::point(gpui::px(9.), gpui::px(9.))
@@ -340,6 +343,44 @@ mod tests {
         let mut found = Vec::new();
         walk(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut found);
         assert!(found.is_empty(), "raw colours outside Palette:\n{}", found.join("\n"));
+    }
+
+    /// Lines (outside theme.rs and tests) that contain `needle`, except ones marked `// keep`.
+    fn source_lines_with(needle: &dyn Fn(&str) -> bool) -> Vec<String> {
+        fn walk(dir: &std::path::Path, needle: &dyn Fn(&str) -> bool, out: &mut Vec<String>) {
+            for e in std::fs::read_dir(dir).unwrap().flatten() {
+                let path = e.path();
+                if path.is_dir() {
+                    walk(&path, needle, out);
+                } else if path.extension().is_some_and(|x| x == "rs") {
+                    let name = path.to_string_lossy().to_string();
+                    if name.ends_with("ui/theme.rs") || name.ends_with("_tests.rs") {
+                        continue;
+                    }
+                    for (i, line) in std::fs::read_to_string(&path).unwrap().lines().enumerate() {
+                        if needle(line) && !line.contains("// keep") {
+                            out.push(format!("{name}:{}", i + 1));
+                        }
+                    }
+                }
+            }
+        }
+        let mut found = Vec::new();
+        walk(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), needle, &mut found);
+        found
+    }
+
+    #[test]
+    fn corners_use_the_three_radii() {
+        // RADIUS_SM, rounded_md (6px) and rounded_lg (8px) (plus rounded_full for circles).
+        let found = source_lines_with(&|l| l.contains(".rounded(px(") || l.contains(".rounded_sm()"));
+        assert!(found.is_empty(), "radius outside the scale:\n{}", found.join("\n"));
+    }
+
+    #[test]
+    fn rows_hover_with_the_hover_colour() {
+        let found = source_lines_with(&|l| l.contains("s.bg(p.surface)") || l.contains("h.bg(p.surface)"));
+        assert!(found.is_empty(), "hover with p.surface:\n{}", found.join("\n"));
     }
 
     #[test]

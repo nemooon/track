@@ -430,6 +430,33 @@ fn every_settings_page_uses_heading_sections(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn choices_look_like_the_toolbar_segments(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = open_app_db(cx, |_| {});
+    let h = crate::ui::controls::SEGMENT_HEIGHT;
+    for (nav, ids) in [
+        ("settings-nav-appearance", vec!["appearance-system", "appearance-dark"]),
+        ("settings-nav-calendar", vec!["work-day-0", "work-day-1"]),
+        ("settings-nav-ai", vec!["ai-provider-codex", "ai-provider-apple-intelligence"]),
+    ] {
+        let (mut scx, _view) = open_section(cx, nav);
+        for id in ids {
+            assert_eq!(scx.debug_bounds(id).unwrap_or_else(|| panic!("{id}")).size.height, h, "{nav}: {id} is as tall as the toolbar segments");
+        }
+    }
+}
+
+#[gpui::test]
+fn settings_pages_keep_a_readable_width(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = open_app_db(cx, |_| {});
+    let (mut scx, _view) = open_section(cx, "settings-nav-backup");
+    // A wide window: the page must not follow it.
+    scx.simulate_resize(gpui::size(gpui::px(1600.), gpui::px(900.)));
+    scx.run_until_parked();
+    let field = scx.debug_bounds("backup-field-dir").expect("folder field");
+    assert!(field.size.width <= crate::settings::CONTENT_MAX_WIDTH, "{:?}", field.size.width);
+}
+
+#[gpui::test]
 fn ai_page_is_headings_and_fields_not_cards(cx: &mut TestAppContext) {
     let (_app, cx, _f) = open_app_db(cx, |_| {});
     let (mut scx, _ai) = ai_section(cx);

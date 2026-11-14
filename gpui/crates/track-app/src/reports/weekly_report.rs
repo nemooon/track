@@ -143,7 +143,7 @@ impl Render for WeeklyReport {
                         button("weekly-regenerate")
                             .border_1()
                             .border_color(p.border)
-                            .map(|d| if self.generating { d.opacity(0.5) } else { d.hover(|s| s.bg(p.surface)) })
+                            .map(|d| if self.generating { d.opacity(0.5) } else { d.hover(|s| s.bg(p.hover)) })
                             .child("再生成")
                             .on_click(cx.listener(|this, _, w, cx| {
                                 if !this.generating {

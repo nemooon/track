@@ -9,6 +9,9 @@ use gpui::{
 };
 use gpui_component::{Icon, IconName, Root};
 
+/// Settings pages keep to this width (the projects page, two panes, uses the whole window).
+pub const CONTENT_MAX_WIDTH: gpui::Pixels = gpui::px(680.);
+
 pub mod ai;
 pub mod appearance;
 pub mod backup;
@@ -205,7 +208,7 @@ impl Render for SettingsWindow {
                             .px_8()
                             .pt_6()
                             .pb_8()
-                            .children(content)
+                            .child(div().max_w(CONTENT_MAX_WIDTH).children(content))
                             .into_any_element()
                     }),
             )

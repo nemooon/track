@@ -2,6 +2,9 @@
 use super::theme::*;
 use gpui::{Div, ElementId, InteractiveElement, ParentElement, Stateful, Styled, div, prelude::FluentBuilder, px};
 
+/// The height of a segment (and of every choice button, in settings too).
+pub const SEGMENT_HEIGHT: gpui::Pixels = px(28.);
+
 pub fn toolbar(p: &Palette) -> Div {
     div()
         .flex()
@@ -21,6 +24,34 @@ pub fn group(p: &Palette) -> Div {
     div().flex().flex_shrink_0().items_center().gap(px(2.)).rounded_md().bg(p.surface).border_1().border_color(p.border_subtle).p(px(2.))
 }
 
+/// A choice that can be on or off on its own (weekdays, a yes/no option): the segment's height
+/// and corners, standing alone.
+pub fn chip(p: &Palette, id: impl Into<ElementId>, on: bool) -> Stateful<Div> {
+    let p = *p;
+    div()
+        .id(id)
+        .flex()
+        .flex_shrink_0()
+        .items_center()
+        .justify_center()
+        .gap(px(6.))
+        .h(SEGMENT_HEIGHT)
+        .min_w(px(32.))
+        .px(px(10.))
+        .rounded_md()
+        .border_1()
+        .text_xs()
+        .font_weight(gpui::FontWeight::MEDIUM)
+        .cursor_pointer()
+        .map(|d| {
+            if on {
+                d.bg(p.selected).border_color(p.border).text_color(p.text)
+            } else {
+                d.border_color(p.border_subtle).text_color(p.text_muted).hover(move |s| s.bg(p.hover).text_color(p.text))
+            }
+        })
+}
+
 pub fn button(p: &Palette, id: impl Into<ElementId>, active: bool, icon_only: bool) -> Stateful<Div> {
     let p = *p;
     div()
@@ -30,8 +61,8 @@ pub fn button(p: &Palette, id: impl Into<ElementId>, active: bool, icon_only: bo
         .items_center()
         .justify_center()
         .gap(px(6.))
-        .h(px(28.))
-        .rounded(px(5.))
+        .h(SEGMENT_HEIGHT)
+        .rounded_md()
         .text_xs()
         .font_weight(gpui::FontWeight::MEDIUM)
         .cursor_pointer()

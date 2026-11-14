@@ -66,7 +66,7 @@ pub fn render_block(p: Palette, entry: &TimeEntry, selected: bool, ghost: bool, 
         .left(px(2.))
         .right(px(4.))
         .overflow_hidden()
-        .rounded(px(5.))
+        .rounded_md()
         .border_1()
         .border_color(border)
         .bg(bg)

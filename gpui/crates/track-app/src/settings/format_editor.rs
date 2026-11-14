@@ -324,19 +324,8 @@ impl Render for FormatEditor {
         let error = format_error(&current).map(str::to_string).or(self.save_error.clone());
         let can_save = dirty && format_error(&current).is_none() && !self.saving;
         let can_delete = self.all_saved(cx).len() > 1;
-        let toggle = |id: &'static str, label: &'static str, on: bool| {
-            div()
-                .id(id)
-                .debug_selector(move || id.into())
-                .px_3()
-                .py_1()
-                .rounded_md()
-                .text_xs()
-                .cursor_pointer()
-                .when(on, |d| d.bg(p.primary).text_color(p.on_color))
-                .when(!on, |d| d.border_1().border_color(p.border).text_color(p.text))
-                .child(label)
-        };
+        let segment = |id: &'static str, label: &'static str, on: bool| crate::ui::controls::button(&p, id, on, false).debug_selector(move || id.into()).child(label);
+        let toggle = |id: &'static str, label: &'static str, on: bool| crate::ui::controls::chip(&p, id, on).debug_selector(move || id.into()).child(label);
         let comma = current.delimiter == "comma";
         let count = current.columns.len();
         let columns: Vec<AnyElement> = current.columns.iter().enumerate().map(|(i, c)| self.render_column(i, c, count, cx)).collect();
@@ -373,17 +362,15 @@ impl Render for FormatEditor {
                         "format-field-delimiter",
                         "区切り文字",
                         "",
-                        div()
-                            .flex()
-                            .gap_2()
-                            .child(toggle("delimiter-tab", "タブ（TSV）", !comma).on_click(cx.listener(|this, _, _, cx| {
+                        div().flex().child(crate::ui::controls::group(&p)
+                            .child(segment("delimiter-tab", "タブ（TSV）", !comma).on_click(cx.listener(|this, _, _, cx| {
                                 this.draft.delimiter = "tab".into();
                                 cx.notify();
                             })))
-                            .child(toggle("delimiter-comma", "カンマ（CSV）", comma).on_click(cx.listener(|this, _, _, cx| {
+                            .child(segment("delimiter-comma", "カンマ（CSV）", comma).on_click(cx.listener(|this, _, _, cx| {
                                 this.draft.delimiter = "comma".into();
                                 cx.notify();
-                            }))),
+                            })))),
                     ))
                     .child(form::field(p, 
                         "format-field-header",

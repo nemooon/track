@@ -2,7 +2,7 @@
 use super::form::{self, Actions};
 use crate::app::AppState;
 use crate::ui::theme::*;
-use gpui::{Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px};
+use gpui::{Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled, Window, div, px};
 
 /// The time inputs step by 30 minutes, like `step={1800}` in the Tauri screen.
 const STEP: i64 = 30;
@@ -133,18 +133,9 @@ impl Render for CalendarSettings {
             let on = self.work_days.contains(&(i as u32));
             let id = format!("work-day-{i}");
             let sel = id.clone();
-            div()
-                .id(gpui::SharedString::from(id))
+            // Several can be on: standalone chips the toolbar's height.
+            crate::ui::controls::chip(&p, gpui::SharedString::from(id), on)
                 .debug_selector(move || sel.clone())
-                .size(px(32.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded_full()
-                .text_sm()
-                .cursor_pointer()
-                .when(on, |d| d.bg(p.primary).text_color(p.on_color))
-                .when(!on, |d| d.border_1().border_color(p.border).text_color(p.text_muted))
                 .child(*label)
                 .on_click(cx.listener(move |this, _, _, cx| {
                     let d = i as u32;

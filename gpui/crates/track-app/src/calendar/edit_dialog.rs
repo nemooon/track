@@ -198,7 +198,7 @@ impl Render for EditForm {
                         .py_2()
                         .text_sm()
                         .cursor_pointer()
-                        .hover(|s| s.bg(p.surface))
+                        .hover(|s| s.bg(p.hover))
                         .child(div().size(px(10.)).flex_shrink_0().rounded_full().bg(hex(project.as_ref().map(|p| p.color.as_str()).unwrap_or("#a3a3a3"))))
                         .child(
                             div()
@@ -283,7 +283,7 @@ impl Render for EditForm {
                                 footer_button("edit-cancel")
                                     .border_1()
                                     .border_color(p.border)
-                                    .hover(|s| s.bg(p.surface))
+                                    .hover(|s| s.bg(p.hover))
                                     .child("キャンセル")
                                     .on_click(cx.listener(|_, _, _, cx| cx.emit(EditEvent::Cancel))),
                             )

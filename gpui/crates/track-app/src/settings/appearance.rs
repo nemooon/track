@@ -42,13 +42,13 @@ impl Render for AppearanceSettings {
         let p = palette(cx);
         let option = |a: Appearance, label: &str, cx: &mut Context<Self>| {
             let id = format!("appearance-{}", a.key());
-            form::button(p, id.clone(), label, self.current == a, true)
+            crate::ui::controls::button(&p, id.clone(), self.current == a, false)
                 .debug_selector(move || id.clone())
+                .child(label.to_string())
                 .on_click(cx.listener(move |this, _, _, cx| this.choose(a, cx)))
         };
-        let buttons = div()
-            .flex()
-            .gap_2()
+        // One choice: the toolbar's segmented control.
+        let buttons = crate::ui::controls::group(&p)
             .child(option(Appearance::System, "自動", cx))
             .child(option(Appearance::Light, "明るい", cx))
             .child(option(Appearance::Dark, "暗い", cx));

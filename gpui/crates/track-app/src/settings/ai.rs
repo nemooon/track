@@ -299,21 +299,14 @@ impl Render for AiSettings {
         let validation = self.validation(cx);
         let error = validation.map(str::to_string).or(self.save_error.clone());
         let can_save = dirty && validation.is_none() && !self.saving;
-        let providers = div().flex().gap_2().children(PROVIDERS.iter().map(|(key, label)| {
+        // One choice: the toolbar's segmented control.
+        let providers = div().flex().child(crate::ui::controls::group(&p).children(PROVIDERS.iter().map(|(key, label)| {
             let on = self.provider == *key;
             let id = format!("ai-provider-{key}");
             let sel = id.clone();
             let key = key.to_string();
-            div()
-                .id(SharedString::from(id))
+            crate::ui::controls::button(&p, SharedString::from(id), on, false)
                 .debug_selector(move || sel.clone())
-                .px_3()
-                .py_1()
-                .rounded_md()
-                .text_sm()
-                .cursor_pointer()
-                .when(on, |d| d.bg(p.primary).text_color(p.on_color))
-                .when(!on, |d| d.border_1().border_color(p.border).text_color(p.text))
                 .child(*label)
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.provider = key.clone();
@@ -322,7 +315,7 @@ impl Render for AiSettings {
                     }
                     cx.notify();
                 }))
-        }));
+        })));
         let mut root = div().child(
             form::section(p, "ai-section-provider", "生成プロバイダー", "メモタイトルと週報の生成に共通で使う実行環境です。", true)
                 .child(form::field(p, "ai-field-provider", "プロバイダー", "利用するAI環境を選択します。", providers)),

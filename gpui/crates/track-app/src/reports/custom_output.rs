@@ -472,7 +472,7 @@ impl Render for CustomOutput {
                         button("output-create")
                             .border_1()
                             .border_color(p.border)
-                            .map(|d| if self.generating || format.is_none() { d.opacity(0.5) } else { d.hover(|s| s.bg(p.surface)) })
+                            .map(|d| if self.generating || format.is_none() { d.opacity(0.5) } else { d.hover(|s| s.bg(p.hover)) })
                             .child(Icon::new(if self.generating { IconName::LoaderCircle } else { IconName::FileText }).size_4())
                             .child(if self.result.is_empty() { "作成する" } else { "再作成" })
                             .on_click(cx.listener(|this, _, _, cx| {
