@@ -24,7 +24,9 @@ use gpui_component::Root;
 fn main() {
     gpui_platform::application().with_assets(gpui_kit_assets::Assets::new("")).run(|cx: &mut App| {
         gpui_component::init(cx);
-        crate::ui::theme::install_light_theme(cx);
+        let setting = track_core::config::load_config(&track_core::guard::data_dir_from_env()).appearance;
+        let env = std::env::var("TRACK_GPUI_APPEARANCE").ok();
+        crate::ui::theme::apply_theme(crate::ui::theme::resolve(setting, crate::ui::theme::is_dark(cx.window_appearance()), env.as_deref()), cx);
         actions::bind_keys(cx);
         actions::set_menus(cx);
         cx.on_action(|_: &actions::Quit, cx| cx.quit());

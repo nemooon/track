@@ -102,6 +102,51 @@ fn c(v: u32) -> Hsla {
 }
 
 impl Palette {
+    /// Dark values in the spirit of Zed's One Dark.
+    pub fn dark() -> Self {
+        Palette {
+            bg: c(0x24272e),
+            surface: c(0x2b2f37),
+            elevated: c(0x31353e),
+            border: c(0x3d424d),
+            border_subtle: c(0x31353e),
+            text: c(0xdcdfe4),
+            text_muted: c(0xa2a8b2),
+            text_faint: c(0x6e7480),
+            hover: c(0x353a44),
+            selected: c(0x3f4552),
+            accent: c(0x74ade8),
+            accent_text: c(0x1b1e24),
+            danger: c(0xe06c75),
+            danger_bg: c(0x3a2a2e),
+            warning_bg: c(0x3a3428),
+            now_line: c(0xe06c75),
+            work_hours: c(0x24272e),
+            off_hours: c(0x1f2228),
+            sunday: c(0xe06c75),
+            saturday: c(0x74ade8),
+            holiday: c(0xdfa35b),
+            shadow: c(0x000000),
+            danger_border: c(0x5c3a40),
+            warning_text: c(0xe5c07b),
+            warning_border: c(0x5a4b2c),
+            success: c(0x98c379),
+            success_bg: c(0x2a3428),
+            success_border: c(0x3f5236),
+            success_hover: c(0x33402f),
+            info: c(0x74ade8),
+            info_bg: c(0x253041),
+            info_border: c(0x34475f),
+            info_hover: c(0x2d3a4f),
+            ai: c(0xc678dd),
+            ai_bg: c(0x372b3f),
+            primary: c(0xdcdfe4),
+            primary_hover: c(0xc4c9d1),
+            on_color: c(0x1b1e24),
+            warning: c(0xdfa35b),
+        }
+    }
+
     /// Light values in the spirit of Zed's One Light.
     pub fn light() -> Self {
         Palette {
@@ -153,12 +198,33 @@ pub fn palette(cx: &gpui::App) -> Palette {
     cx.try_global::<Palette>().copied().unwrap_or_else(Palette::light)
 }
 
-/// Installs the light palette for every window and pins gpui-component's widgets to light
-/// with the same base colours, whatever the macOS appearance.
-pub fn install_light_theme(cx: &mut gpui::App) {
-    let p = Palette::light();
+/// Dark or light: the `TRACK_GPUI_APPEARANCE` override (`light` / `dark`) first, then the
+/// setting, and for `System` the macOS appearance.
+pub fn resolve(setting: track_core::config::Appearance, system_dark: bool, env: Option<&str>) -> bool {
+    use track_core::config::Appearance;
+    match env {
+        Some("dark") => return true,
+        Some("light") => return false,
+        _ => {}
+    }
+    match setting {
+        Appearance::Dark => true,
+        Appearance::Light => false,
+        Appearance::System => system_dark,
+    }
+}
+
+/// Whether the platform appearance is a dark one.
+pub fn is_dark(a: gpui::WindowAppearance) -> bool {
+    matches!(a, gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark)
+}
+
+/// Switches every window to the dark or light palette, with gpui-component's widgets following.
+pub fn apply_theme(dark: bool, cx: &mut gpui::App) {
+    let p = if dark { Palette::dark() } else { Palette::light() };
     cx.set_global(p);
-    gpui_component::Theme::change(gpui_component::ThemeMode::Light, None, cx);
+    let mode = if dark { gpui_component::ThemeMode::Dark } else { gpui_component::ThemeMode::Light };
+    gpui_component::Theme::change(mode, None, cx);
     gpui_component::Theme::update(cx, |t| {
         t.background = p.bg;
         t.foreground = p.text;
@@ -176,6 +242,7 @@ pub fn install_light_theme(cx: &mut gpui::App) {
         t.status_bar = p.surface;
         t.status_bar_border = p.border;
     });
+    cx.refresh_windows();
 }
 
 
@@ -200,6 +267,28 @@ mod tests {
         assert!(contrast(p.text, p.bg) >= 7.0, "text on bg");
         assert!(contrast(p.text_muted, p.bg) >= 4.5, "muted text on bg");
         assert!(contrast(p.text, p.surface) >= 7.0, "text on surface");
+    }
+
+    #[test]
+    fn dark_palette_is_readable() {
+        let p = Palette::dark();
+        assert!(contrast(p.text, p.bg) >= 7.0, "text on bg");
+        assert!(contrast(p.text_muted, p.bg) >= 4.5, "muted text on bg");
+        assert!(contrast(p.text, p.surface) >= 7.0, "text on surface");
+        assert!(contrast(p.on_color, p.primary) >= 7.0, "button text");
+        assert_ne!(p, Palette::light());
+    }
+
+    #[test]
+    fn resolve_prefers_env_then_setting_then_system() {
+        use track_core::config::Appearance::*;
+        assert!(resolve(System, true, None));
+        assert!(!resolve(System, false, None));
+        assert!(!resolve(Light, true, None));
+        assert!(resolve(Dark, false, None));
+        assert!(resolve(Light, false, Some("dark")));
+        assert!(!resolve(Dark, true, Some("light")));
+        assert!(resolve(System, true, Some("bogus")), "an unknown override is ignored");
     }
 
     #[test]

@@ -316,6 +316,8 @@ impl TrackApp {
         // Dev convenience: TRACK_GPUI_PAGE=reports opens the Reports screen first.
         let page = if std::env::var("TRACK_GPUI_PAGE").as_deref() == Ok("reports") { Page::Reports } else { Page::Calendar };
         state.update(cx, |s, cx| s.read_ops_baseline(cx));
+        // macOS switched light/dark: follow it when the setting is 自動.
+        cx.observe_window_appearance(window, |this, window, cx| this.on_system_appearance(is_dark(window.appearance()), cx)).detach();
         let watcher = Self::watch_external_changes(state.clone(), cx);
         let backups = Self::auto_backup(state.read(cx).api.clone(), cx);
         Self {
@@ -522,6 +524,13 @@ impl Render for TrackApp {
 }
 
 impl TrackApp {
+    /// The platform appearance changed (or tests simulate it): re-resolve with the saved setting.
+    pub fn on_system_appearance(&mut self, system_dark: bool, cx: &mut Context<Self>) {
+        let setting = self.state.read(cx).api.full_config().appearance;
+        let env = std::env::var("TRACK_GPUI_APPEARANCE").ok();
+        apply_theme(resolve(setting, system_dark, env.as_deref()), cx);
+    }
+
     /// Page facts for the status bar.
     fn status_left(&self, window: &Window, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
         let p = palette(cx);

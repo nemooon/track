@@ -356,3 +356,15 @@ fn header_is_as_tall_as_zeds_title_bar(cx: &mut TestAppContext) {
     let (_app, cx) = open_app(cx);
     assert_eq!(cx.debug_bounds("app-header").expect("header").size.height, gpui::px(34.));
 }
+
+#[gpui::test]
+fn apply_theme_switches_palette_and_component_theme(cx: &mut TestAppContext) {
+    use crate::ui::theme::{Palette, apply_theme, palette};
+    let (_app, cx) = open_app(cx);
+    cx.update(|_, cx| apply_theme(true, cx));
+    assert_eq!(cx.update(|_, cx| palette(cx)), Palette::dark());
+    assert_eq!(cx.update(|_, cx| gpui_component::Theme::global(cx).mode), gpui_component::ThemeMode::Dark);
+    cx.update(|_, cx| apply_theme(false, cx));
+    assert_eq!(cx.update(|_, cx| palette(cx)), Palette::light());
+    assert_eq!(cx.update(|_, cx| gpui_component::Theme::global(cx).mode), gpui_component::ThemeMode::Light);
+}
