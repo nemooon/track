@@ -2,7 +2,7 @@
 use super::form::{self, Actions};
 use crate::app::AppState;
 use crate::ui::theme::*;
-use gpui::{Context, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px};
+use gpui::{Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px};
 
 /// The time inputs step by 30 minutes, like `step={1800}` in the Tauri screen.
 const STEP: i64 = 30;

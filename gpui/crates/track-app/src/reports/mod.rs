@@ -224,7 +224,6 @@ impl ReportsView {
     }
 
     /// A duration as the report shows it ("1.5h" or "1h 30m").
-    #[cfg(test)]
     pub fn duration(&self, minutes: i64, cx: &gpui::App) -> String {
         format_duration(minutes, self.style(cx))
     }
@@ -865,18 +864,6 @@ impl Render for ReportsView {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn shift_month_clamps_day() {
-        let d = |y, m, day| NaiveDate::from_ymd_opt(y, m, day).unwrap();
-        assert_eq!(shift_month(d(2026, 3, 31), -1), d(2026, 2, 28));
-        assert_eq!(shift_month(d(2026, 12, 15), 1), d(2027, 1, 15));
-    }
-}
-
 /// Share of the period: a thin bar in the row's colour plus the percentage (replaces the donut).
 fn share_cell(p: Palette, key: &str, color: &str, minutes: i64, total: i64) -> AnyElement {
     let ratio = if total > 0 { (minutes as f32 / total as f32).clamp(0., 1.) } else { 0. };
@@ -898,4 +885,16 @@ fn share_cell(p: Palette, key: &str, color: &str, minutes: i64, total: i64) -> A
         )
         .child(div().w(px(36.)).flex().justify_end().font_family(MONO).text_color(p.text_muted).child(format!("{}%", percent(minutes, total))))
         .into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shift_month_clamps_day() {
+        let d = |y, m, day| NaiveDate::from_ymd_opt(y, m, day).unwrap();
+        assert_eq!(shift_month(d(2026, 3, 31), -1), d(2026, 2, 28));
+        assert_eq!(shift_month(d(2026, 12, 15), 1), d(2027, 1, 15));
+    }
 }
