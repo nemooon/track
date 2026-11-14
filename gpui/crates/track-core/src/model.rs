@@ -131,6 +131,36 @@ pub struct Leave {
     pub kind: LeaveKind,
 }
 
+/// What kind of leave a day in the report's 休暇 breakdown is.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+pub enum LeaveDayKind {
+    Full,
+    Am,
+    Pm,
+    /// A holiday on a work day, counted as full leave without a row (its name).
+    Holiday(String),
+}
+
+impl LeaveDayKind {
+    /// 「休暇」「前半休」「後半休」「祝日 名前」.
+    pub fn label(&self) -> String {
+        match self {
+            Self::Full => "休暇".into(),
+            Self::Am => "前半休".into(),
+            Self::Pm => "後半休".into(),
+            Self::Holiday(name) => format!("祝日 {name}"),
+        }
+    }
+}
+
+/// One day of leave in a report period.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LeaveDay {
+    pub date: chrono::NaiveDate,
+    pub kind: LeaveDayKind,
+    pub minutes: i64,
+}
+
 /// `PATCH /api/settings`
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SettingsPatch {

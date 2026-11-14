@@ -2,7 +2,7 @@
 //! day. A day's leave is counted from the current work schedule, less a fixed one-hour break.
 use crate::error::Result;
 use crate::holidays::holiday_name;
-use crate::model::{EntryKind, Leave, LeaveKind, NewEntry, Settings, TimeEntry};
+use crate::model::{EntryKind, Leave, LeaveDay, LeaveDayKind, LeaveKind, NewEntry, Settings, TimeEntry};
 use crate::{Db, ids, time};
 use chrono::{Datelike, NaiveDate};
 use rusqlite::params;
@@ -151,21 +151,29 @@ impl Db {
 
     /// Leave minutes for every day in `[from, to)`, in order (0 for days without leave).
     pub fn leave_minutes(&self, from: NaiveDate, to: NaiveDate) -> Result<Vec<(NaiveDate, i64)>> {
+        let days = self.leave_days(from, to)?;
+        Ok(from.iter_days().take_while(|d| *d < to).map(|d| (d, days.iter().find(|l| l.date == d).map_or(0, |l| l.minutes))).collect())
+    }
+
+    /// The days in `[from, to)` that count as leave, in order, each with its kind and minutes.
+    pub fn leave_days(&self, from: NaiveDate, to: NaiveDate) -> Result<Vec<LeaveDay>> {
         let settings = self.settings()?;
         let full = scheduled_minutes(&settings);
         let rows = self.leaves(from, to)?;
         Ok(from
             .iter_days()
             .take_while(|d| *d < to)
-            .map(|d| {
-                let minutes = match rows.iter().find(|l| l.date == d).map(|l| l.kind) {
-                    Some(LeaveKind::Full) => full,
-                    Some(LeaveKind::Am | LeaveKind::Pm) => full / 2,
-                    Some(LeaveKind::None) => 0,
-                    None if is_auto_leave(&settings, d) => full,
-                    None => 0,
+            .filter_map(|d| {
+                let kind = match rows.iter().find(|l| l.date == d).map(|l| l.kind) {
+                    Some(LeaveKind::Full) => LeaveDayKind::Full,
+                    Some(LeaveKind::Am) => LeaveDayKind::Am,
+                    Some(LeaveKind::Pm) => LeaveDayKind::Pm,
+                    Some(LeaveKind::None) => return None,
+                    None if is_auto_leave(&settings, d) => LeaveDayKind::Holiday(holiday_name(d)?.to_string()),
+                    None => return None,
                 };
-                (d, minutes)
+                let minutes = if matches!(kind, LeaveDayKind::Am | LeaveDayKind::Pm) { full / 2 } else { full };
+                (minutes > 0).then_some(LeaveDay { date: d, kind, minutes })
             })
             .collect())
     }

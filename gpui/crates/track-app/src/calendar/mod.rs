@@ -26,6 +26,24 @@ use gpui_component::{Icon, IconName, WindowExt, button::Button, notification::No
 use std::cell::RefCell;
 use std::rc::Rc;
 
+/// The work hours lit on a day, in minutes: none on a day off or a day of full leave (a
+/// holiday counts unless 「休暇にしない」), and the half that is worked on a half day.
+pub fn work_band(s: &track_core::model::Settings, day: NaiveDate, leave: Option<track_core::model::LeaveKind>) -> Option<(i64, i64)> {
+    use track_core::model::LeaveKind;
+    if !s.work_days.contains(&day.weekday().num_days_from_sunday()) {
+        return None;
+    }
+    let mid = s.work_start + (s.work_end - s.work_start) / 2;
+    match leave {
+        Some(LeaveKind::Full) => None,
+        Some(LeaveKind::Am) => Some((mid, s.work_end)),
+        Some(LeaveKind::Pm) => Some((s.work_start, mid)),
+        Some(LeaveKind::None) => Some((s.work_start, s.work_end)),
+        None if holiday_name(day).is_some() => None,
+        None => Some((s.work_start, s.work_end)),
+    }
+}
+
 pub struct CalendarView {
     state: Entity<AppState>,
     pub anchor: NaiveDate,
@@ -330,7 +348,7 @@ impl CalendarView {
         let p = palette(cx);
         let state = self.state.read(cx);
         let settings = state.data.as_ref().map(|d| d.settings.clone());
-        let is_work_day = settings.as_ref().is_some_and(|s| s.work_days.contains(&day.weekday().num_days_from_sunday())) && holiday_name(day).is_none();
+        let band = settings.as_ref().and_then(|s| work_band(s, day, self.leaves.get(&day).copied()));
         let body_h = 24. * hour_px + 1.;
         let bounds_store = self.column_bounds.clone();
         // A 直行直帰 day shows in the header, not in the time grid.
@@ -367,8 +385,8 @@ impl CalendarView {
                 .absolute()
                 .size_full(),
             )
-            .when_some(settings.filter(|_| is_work_day), |d, s| {
-                d.child(div().absolute().left_0().right_0().top(px(minutes_to_y(s.work_start, hour_px))).h(px(minutes_to_y(s.work_end - s.work_start, hour_px).max(0.))).bg(p.bg))
+            .when_some(band, |d, (from, to)| {
+                d.child(div().absolute().left_0().right_0().top(px(minutes_to_y(from, hour_px))).h(px(minutes_to_y(to - from, hour_px).max(0.))).bg(p.bg))
             })
             .child(canvas(|_, _, _| (), move |b, _, w, cx| grid::paint_grid_lines(b, hour_px, w, cx)).absolute().size_full())
             .children(laid.iter().map(|l| {

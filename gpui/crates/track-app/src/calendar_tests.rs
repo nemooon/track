@@ -414,3 +414,18 @@ fn holiday_none_option_cancels_the_holiday_leave(cx: &mut TestAppContext) {
     wait_io(cx);
     assert_eq!(f.db().leave_minutes(day(3), day(4)).unwrap()[0].1, 0);
 }
+
+#[test]
+fn work_band_leaves_out_leave() {
+    use crate::calendar::work_band;
+    use track_core::model::LeaveKind;
+    let s = track_core::model::Settings { work_start: 600, work_end: 1110, work_days: vec![1, 2, 3, 4, 5], weekly_report_template: String::new(), report_copy_formats: vec![] };
+    let d = |m: u32, day: u32| NaiveDate::from_ymd_opt(2026, m, day).unwrap();
+    assert_eq!(work_band(&s, d(11, 12), None), Some((600, 1110)), "a plain work day");
+    assert_eq!(work_band(&s, d(11, 15), None), None, "Sunday");
+    assert_eq!(work_band(&s, d(11, 12), Some(LeaveKind::Full)), None, "full leave");
+    assert_eq!(work_band(&s, d(11, 12), Some(LeaveKind::Am)), Some((855, 1110)), "前半休: the second half");
+    assert_eq!(work_band(&s, d(11, 12), Some(LeaveKind::Pm)), Some((600, 855)), "後半休: the first half");
+    assert_eq!(work_band(&s, d(11, 3), None), None, "a holiday is leave");
+    assert_eq!(work_band(&s, d(11, 3), Some(LeaveKind::None)), Some((600, 1110)), "「休暇にしない」 on a holiday");
+}

@@ -384,14 +384,22 @@ fn include_leave_toggle_adds_the_leave_row(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn leave_row_does_not_expand(cx: &mut TestAppContext) {
+fn leave_row_opens_to_its_days(cx: &mut TestAppContext) {
     let (app, cx, f) = setup(cx);
-    f.db().set_leave(Local::now().date_naive(), Some(track_core::model::LeaveKind::Full)).unwrap();
+    let today = Local::now().date_naive();
+    f.db().set_leave(today, Some(track_core::model::LeaveKind::Am)).unwrap();
     click(cx, "include-leave");
     wait_io(cx);
     click(cx, "row-__leave__");
     wait_io(cx);
-    assert!(app.read_with(cx, |a, cx| a.reports.read(cx).children.is_empty()), "nothing to open under 休暇");
+    let child = app.read_with(cx, |a, cx| a.reports.read(cx).children.get("project:__leave__").cloned());
+    match child {
+        Some(Children::Leave(days)) => {
+            assert_eq!(days.len(), 1);
+            assert_eq!((days[0].date, days[0].kind.clone()), (today, track_core::model::LeaveDayKind::Am));
+        }
+        other => panic!("expected the leave days, got {other:?}"),
+    }
 }
 
 #[gpui::test]
@@ -428,13 +436,32 @@ fn the_row_count_leaves_out_leave(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn expanding_all_never_opens_leave(cx: &mut TestAppContext) {
+fn expanding_all_opens_leave_too(cx: &mut TestAppContext) {
     let (app, cx, _f) = with_leave_on(cx);
     click(cx, "toggle-all");
     wait_io(cx);
-    let expanded = app.read_with(cx, |a, cx| a.reports.read(cx).expanded.clone());
-    assert!(!expanded.is_empty());
-    assert!(!expanded.iter().any(|p| p.ends_with(track_core::reports::LEAVE_KEY)), "{expanded:?}");
+    let (expanded, child) = app.read_with(cx, |a, cx| {
+        let r = a.reports.read(cx);
+        (r.expanded.clone(), r.children.get("project:__leave__").cloned())
+    });
+    assert!(expanded.contains("project:__leave__"), "{expanded:?}");
+    assert!(matches!(child, Some(Children::Leave(ref d)) if d.len() == 1), "{child:?}");
+}
+
+#[test]
+fn grouped_leave_days_count_by_kind() {
+    use track_core::model::{LeaveDay, LeaveDayKind};
+    let d = |day: u32, kind: LeaveDayKind, minutes: i64| LeaveDay { date: chrono::NaiveDate::from_ymd_opt(2026, 11, day).unwrap(), kind, minutes };
+    let days = [
+        d(3, LeaveDayKind::Holiday("文化の日".into()), 450),
+        d(10, LeaveDayKind::Am, 225),
+        d(12, LeaveDayKind::Full, 450),
+        d(13, LeaveDayKind::Am, 225),
+        d(23, LeaveDayKind::Holiday("勤労感謝の日".into()), 450),
+    ];
+    let groups = crate::reports::group_leave_days(&days);
+    let got: Vec<(&str, usize, i64)> = groups.iter().map(|g| (g.label.as_str(), g.count, g.minutes)).collect();
+    assert_eq!(got, vec![("祝日", 2, 900), ("前半休", 2, 450), ("休暇", 1, 450)]);
 }
 
 #[test]

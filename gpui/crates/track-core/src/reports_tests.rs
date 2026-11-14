@@ -266,3 +266,46 @@ fn weekly_copy_never_has_leave() {
     db.set_leave(day(2026, 11, 12), Some(LeaveKind::Full)).unwrap();
     assert!(!db.weekly_copy(&with_leave(true)).unwrap().contains("休暇"));
 }
+
+#[test]
+fn leave_breakdown_lists_each_day_with_its_kind() {
+    let (_d, mut db) = db();
+    work_schedule(&mut db);
+    db.set_leave(day(2026, 11, 10), Some(LeaveKind::Am)).unwrap();
+    db.set_leave(day(2026, 11, 12), Some(LeaveKind::Full)).unwrap();
+    db.set_leave(day(2026, 11, 13), Some(LeaveKind::Pm)).unwrap();
+    let month = ReportQuery { include_leave: true, ..q(ReportRange::Month, GroupBy::Project, 11) };
+    let days = db.report_leave(&month).unwrap();
+    let got: Vec<(NaiveDate, LeaveDayKind, i64)> = days.into_iter().map(|d| (d.date, d.kind, d.minutes)).collect();
+    assert_eq!(
+        got,
+        vec![
+            (day(2026, 11, 3), LeaveDayKind::Holiday("文化の日".into()), 450),
+            (day(2026, 11, 10), LeaveDayKind::Am, 225),
+            (day(2026, 11, 12), LeaveDayKind::Full, 450),
+            (day(2026, 11, 13), LeaveDayKind::Pm, 225),
+            (day(2026, 11, 23), LeaveDayKind::Holiday("勤労感謝の日".into()), 450),
+        ]
+    );
+    let row = db.report(&month).unwrap().rows.into_iter().find(|r| r.key == crate::reports::LEAVE_KEY).unwrap();
+    assert_eq!(row.total_minutes, 1800, "the breakdown adds up to the row");
+}
+
+#[test]
+fn leave_breakdown_is_empty_when_leave_is_not_shown() {
+    let (_d, mut db) = db();
+    work_schedule(&mut db);
+    let (p, _, _) = seed(&mut db);
+    db.set_leave(day(2026, 11, 12), Some(LeaveKind::Full)).unwrap();
+    assert!(db.report_leave(&with_leave(false)).unwrap().is_empty());
+    assert!(db.report_leave(&ReportQuery { project_ids: vec![p], ..with_leave(true) }).unwrap().is_empty());
+    assert_eq!(db.report_leave(&with_leave(true)).unwrap().len(), 1);
+}
+
+#[test]
+fn leave_day_labels() {
+    assert_eq!(LeaveDayKind::Full.label(), "休暇");
+    assert_eq!(LeaveDayKind::Am.label(), "前半休");
+    assert_eq!(LeaveDayKind::Pm.label(), "後半休");
+    assert_eq!(LeaveDayKind::Holiday("文化の日".into()).label(), "祝日 文化の日");
+}

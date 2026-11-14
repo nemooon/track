@@ -162,6 +162,15 @@ impl Db {
         Ok(Some(self.leave_minutes(f, t)?.iter().map(|(_, m)| m).sum()))
     }
 
+    /// The 休暇 row's breakdown: the period's leave days, or none when the row is not shown.
+    pub fn report_leave(&self, q: &ReportQuery) -> Result<Vec<LeaveDay>> {
+        if !leave_applies(q) {
+            return Ok(Vec::new());
+        }
+        let (from, to) = query_range(q);
+        self.leave_days(from.with_timezone(&Local).date_naive(), to.with_timezone(&Local).date_naive())
+    }
+
     /// Minutes per local day over `heatmap_range`, with the query's filters (every day listed,
     /// in order; days without entries are 0).
     pub fn heatmap(&self, q: &ReportQuery) -> Result<Vec<(chrono::NaiveDate, i64)>> {

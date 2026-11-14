@@ -338,6 +338,12 @@ impl DataClient {
         self.call("weekly_copy", move |db| db.weekly_copy(&q))
     }
 
+    /// The 休暇 row's days (empty when the row is not shown).
+    pub fn report_leave(&self, q: &ReportQuery) -> impl Future<Output = DataResult<Vec<track_core::model::LeaveDay>>> + Send + 'static {
+        let q = q.clone();
+        self.call("report_leave", move |db| db.report_leave(&q))
+    }
+
     pub fn report_entries(&self, q: &ReportQuery) -> impl Future<Output = DataResult<ReportEntriesResponse>> + Send + 'static {
         let q = q.clone();
         self.call("report_entries", move |db| db.report_entries(&q))

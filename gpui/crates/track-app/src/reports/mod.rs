@@ -34,6 +34,54 @@ pub enum Children {
     Loading,
     Failed(String),
     Loaded(Vec<ReportEntry>),
+    /// Under 休暇: the period's leave days.
+    Leave(Vec<track_core::model::LeaveDay>),
+}
+
+/// 休暇 days of one kind, for 「同じタイトルでまとめる」 (holidays are one kind, 「祝日」).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LeaveGroup {
+    pub label: String,
+    pub count: usize,
+    pub minutes: i64,
+}
+
+/// Leave days by kind, most minutes first (ties keep the first-seen order).
+pub fn group_leave_days(days: &[track_core::model::LeaveDay]) -> Vec<LeaveGroup> {
+    use track_core::model::LeaveDayKind;
+    let mut out: Vec<LeaveGroup> = Vec::new();
+    for d in days {
+        let label = match d.kind {
+            LeaveDayKind::Holiday(_) => "祝日".to_string(),
+            ref k => k.label(),
+        };
+        match out.iter_mut().find(|g| g.label == label) {
+            Some(g) => {
+                g.count += 1;
+                g.minutes += d.minutes;
+            }
+            None => out.push(LeaveGroup { label, count: 1, minutes: d.minutes }),
+        }
+    }
+    out.sort_by_key(|g| std::cmp::Reverse(g.minutes));
+    out
+}
+
+/// Loads what goes under a row: its entries, or (under 休暇) its days.
+fn fetch_children(api: &crate::data::DataClient, q: &track_core::model::ReportQuery, group_by: GroupBy, key: &str) -> impl std::future::Future<Output = Children> + Send + 'static {
+    let (api, q, key) = (api.clone(), q.clone(), key.to_string());
+    async move {
+        if key == track_core::reports::LEAVE_KEY {
+            return match api.report_leave(&q).await {
+                Ok(d) => Children::Leave(d),
+                Err(e) => Children::Failed(e.message),
+            };
+        }
+        match api.report_entries(&child_query(&q, group_by, &key)).await {
+            Ok(e) => Children::Loaded(e.entries),
+            Err(e) => Children::Failed(e.message),
+        }
+    }
 }
 
 pub struct ReportsView {
@@ -147,14 +195,10 @@ impl ReportsView {
             // The entries of the rows that will be open, fetched before anything changes on screen.
             let mut children = HashMap::new();
             if let Ok(data) = &result {
-                for r in data.rows.iter().filter(|r| r.key != track_core::reports::LEAVE_KEY) {
+                for r in &data.rows {
                     let path = row_path(group_by, &r.key);
                     if expand_all || expanded.contains(&path) {
-                        let entries = api.report_entries(&child_query(&q, group_by, &r.key)).await;
-                        children.insert(path, match entries {
-                            Ok(e) => Children::Loaded(e.entries),
-                            Err(e) => Children::Failed(e.message),
-                        });
+                        children.insert(path, fetch_children(&api, &q, group_by, &r.key).await);
                     }
                 }
             }
@@ -177,7 +221,7 @@ impl ReportsView {
                 match result {
                     Ok(data) => {
                         if this.expand_all {
-                            for r in data.rows.iter().filter(|r| r.key != track_core::reports::LEAVE_KEY) {
+                            for r in &data.rows {
                                 this.expanded.insert(row_path(this.group_by, &r.key));
                             }
                         }
@@ -212,7 +256,7 @@ impl ReportsView {
 
     fn load_visible_children(&mut self, cx: &mut Context<Self>) {
         let Some(data) = self.data.clone() else { return };
-        for r in data.rows.iter().filter(|r| r.key != track_core::reports::LEAVE_KEY) {
+        for r in &data.rows {
             let path = row_path(self.group_by, &r.key);
             if self.expanded.contains(&path) && !self.children.contains_key(&path) {
                 self.load_children(path, r.key.clone(), cx);
@@ -222,16 +266,11 @@ impl ReportsView {
 
     fn load_children(&mut self, path: String, key: String, cx: &mut Context<Self>) {
         self.children.insert(path.clone(), Children::Loading);
-        let q = child_query(&self.current_query(), self.group_by, &key);
-        let fut = self.state.read(cx).api.report_entries(&q);
+        let fut = fetch_children(&self.state.read(cx).api, &self.current_query(), self.group_by, &key);
         cx.spawn(async move |this, cx| {
-            let result = fut.await;
+            let next = fut.await;
             let _ = this.update(cx, |this, cx| {
                 if let Some(Children::Loading) = this.children.get(&path) {
-                    let next = match result {
-                        Ok(r) => Children::Loaded(r.entries),
-                        Err(e) => Children::Failed(e.message),
-                    };
                     this.children.insert(path, next);
                     cx.notify();
                 }
@@ -270,7 +309,7 @@ impl ReportsView {
             self.expand_all = false;
         } else {
             // 休暇 has nothing to open.
-            for r in self.data.as_ref().map(|d| d.rows.clone()).unwrap_or_default().iter().filter(|r| r.key != track_core::reports::LEAVE_KEY) {
+            for r in self.data.as_ref().map(|d| d.rows.clone()).unwrap_or_default().iter() {
                 self.expanded.insert(row_path(self.group_by, &r.key));
             }
             self.expand_all = true;
@@ -681,8 +720,7 @@ impl ReportsView {
         let colours = colour_indexes(&data.rows);
         for (i, r) in data.rows.iter().enumerate() {
             let path = row_path(self.group_by, &r.key);
-            let is_leave = r.key == track_core::reports::LEAVE_KEY;
-            let open = !is_leave && self.expanded.contains(&path);
+            let open = self.expanded.contains(&path);
             let (p2, k2) = (path.clone(), r.key.clone());
             let sel = format!("row-{}", r.key);
             body.push(
@@ -700,8 +738,7 @@ impl ReportsView {
                             .flex()
                             .items_center()
                             .gap_2()
-                            // 休暇 has nothing to open.
-                            .child(div().size_4().flex_shrink_0().flex().items_center().justify_center().text_color(p.text_faint).when(!is_leave, |d| d.child(Icon::new(if open { IconName::ChevronDown } else { IconName::ChevronRight }).size_3())))
+                            .child(div().size_4().flex_shrink_0().flex().items_center().justify_center().text_color(p.text_faint).child(Icon::new(if open { IconName::ChevronDown } else { IconName::ChevronRight }).size_3()))
                             .child(div().size_3().flex_shrink_0().rounded(RADIUS_SM).bg(hex(&row_color(r.color.as_deref(), colours[i]))))
                             .child(div().min_w_0().truncate().child(r.label.clone()))
                             .into_any_element(),
@@ -710,8 +747,7 @@ impl ReportsView {
                         div().font_family(MONO).child(format_duration(r.total_minutes, style)).into_any_element(),
                         share_cell(p, &r.key, r.total_minutes, total),
                     ))
-                    .when(!is_leave, |d| d.on_click(cx.listener(move |this, _, _, cx| this.toggle_row(p2.clone(), k2.clone(), cx))))
-                    .when(is_leave, |d| d.cursor_default())
+                    .on_click(cx.listener(move |this, _, _, cx| this.toggle_row(p2.clone(), k2.clone(), cx)))
                     .into_any_element(),
             );
             if !open {
@@ -738,6 +774,37 @@ impl ReportsView {
                 None | Some(Children::Loading) => body.push(note_row("読み込み中…")),
                 Some(Children::Failed(msg)) => body.push(div().py_2().pl(px(32.)).px_3().text_xs().text_color(p.danger).child(format!("読み込みに失敗しました（{msg}）")).into_any_element()),
                 Some(Children::Loaded(es)) if es.is_empty() => body.push(note_row("エントリがありません")),
+                Some(Children::Leave(days)) => {
+                    let leave_dot = || div().size_2().flex_shrink_0().rounded_full().bg(hex(&row_color(r.color.as_deref(), colours[i])));
+                    let dash = || div().text_xs().text_color(p.text_faint).child("—").into_any_element();
+                    if group_same {
+                        for g in group_leave_days(days) {
+                            body.push(child_row(
+                                div()
+                                    .flex()
+                                    .min_w_0()
+                                    .items_center()
+                                    .gap_2()
+                                    .child(leave_dot())
+                                    .child(div().min_w_0().truncate().child(g.label))
+                                    .child(div().text_size(px(10.)).text_color(p.text_faint).child(format!("×{}", g.count)))
+                                    .into_any_element(),
+                                dash(),
+                                dash(),
+                                g.minutes,
+                            ));
+                        }
+                    } else {
+                        for d in days {
+                            body.push(child_row(
+                                div().flex().min_w_0().items_center().gap_2().child(leave_dot()).child(div().min_w_0().truncate().child(d.kind.label())).into_any_element(),
+                                div().text_xs().text_color(p.text_muted).whitespace_nowrap().child(format!("{} ({})", d.date.format("%m/%d"), crate::core::time::weekday_ja(d.date))).into_any_element(),
+                                dash(),
+                                d.minutes,
+                            ));
+                        }
+                    }
+                }
                 Some(Children::Loaded(es)) if group_same => {
                     for g in group_entries_by_title(es) {
                         body.push(child_row(
