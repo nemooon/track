@@ -650,7 +650,7 @@ impl ProjectSettings {
                             .gap_2()
                             .child(archive_button(pj.archived, !(pj.archived && client_archived), (pj.archived && client_archived).then_some("クライアントのアーカイブを先に戻してください"), cx))
                             .child(
-                                super::form::button_with_icon(p, "detail-delete", Icon::new(IconName::Delete), "削除", false, true)
+                                super::form::button_with_icon(p, "detail-delete", crate::ui::icons::trash(), "削除", false, true)
                                     .text_color(p.danger)
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         this.confirm_delete = Some(id.clone());

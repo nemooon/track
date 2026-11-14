@@ -1,7 +1,7 @@
 //! Icons beyond gpui-component's built-in set, served next to its assets.
 use gpui::{AssetSource, SharedString};
 
-gpui_kit_assets::icon_assets!(ExtraIcons, [Pipette, Archive, ArchiveRestore]);
+gpui_kit_assets::icon_assets!(ExtraIcons, [Pipette, Archive, ArchiveRestore, Trash]);
 
 /// gpui-component's assets plus the extra Lucide icons this app uses.
 pub struct AppAssets(pub gpui_kit_assets::Assets);
@@ -36,4 +36,9 @@ pub fn archive() -> gpui_component::Icon {
 /// Restore from the archive (Lucide `archive-restore`).
 pub fn archive_restore() -> gpui_component::Icon {
     gpui_component::Icon::empty().path(gpui_kit_assets::IconName::ArchiveRestore.path())
+}
+
+/// Delete (Lucide `trash`).
+pub fn trash() -> gpui_component::Icon {
+    gpui_component::Icon::empty().path(gpui_kit_assets::IconName::Trash.path())
 }
