@@ -560,7 +560,7 @@ impl ReportsView {
                 .child(div().w(px(160.)).flex_shrink_0().px_3().child(date))
                 .child(div().w(px(112.)).flex_shrink_0().px_3().child(tags))
                 .child(div().w(px(96.)).flex_shrink_0().px_3().flex().justify_end().child(time))
-                .child(div().w(px(168.)).flex_shrink_0().px_3().flex().justify_end().child(pct))
+                .child(div().w(px(80.)).flex_shrink_0().px_3().flex().justify_end().child(pct))
         };
         let e = || div().into_any_element();
         let header = div()
@@ -667,7 +667,7 @@ impl ReportsView {
                         e(),
                         e(),
                         div().font_family(MONO).child(format_duration(r.total_minutes, style)).into_any_element(),
-                        share_cell(p, &r.key, &row_color(r.color.as_deref(), i), r.total_minutes, total),
+                        share_cell(p, &r.key, r.total_minutes, total),
                     ))
                     .on_click(cx.listener(move |this, _, _, cx| this.toggle_row(p2.clone(), k2.clone(), cx)))
                     .into_any_element(),
@@ -912,27 +912,10 @@ impl Render for ReportsView {
     }
 }
 
-/// Share of the period: a thin bar in the row's colour plus the percentage (replaces the donut).
-fn share_cell(p: Palette, key: &str, color: &str, minutes: i64, total: i64) -> AnyElement {
-    let ratio = if total > 0 { (minutes as f32 / total as f32).clamp(0., 1.) } else { 0. };
-    let (bar, fill) = (format!("share-bar-{key}"), format!("share-fill-{key}"));
-    div()
-        .flex()
-        .items_center()
-        .gap_2()
-        .child(
-            div()
-                .debug_selector(move || bar.clone())
-                .w(px(96.))
-                .h(px(6.))
-                .flex_shrink_0()
-                .rounded_full()
-                .bg(p.border_subtle)
-                .overflow_hidden()
-                .child(div().debug_selector(move || fill.clone()).h_full().w(gpui::relative(ratio)).rounded_full().bg(hex(color))),
-        )
-        .child(div().w(px(36.)).flex().justify_end().font_family(MONO).text_color(p.text_muted).child(format!("{}%", percent(minutes, total))))
-        .into_any_element()
+/// Share of the period, as a percentage.
+fn share_cell(p: Palette, key: &str, minutes: i64, total: i64) -> AnyElement {
+    let sel = format!("share-{key}");
+    div().debug_selector(move || sel.clone()).font_family(MONO).text_color(p.text_muted).child(format!("{}%", percent(minutes, total))).into_any_element()
 }
 
 #[cfg(test)]
