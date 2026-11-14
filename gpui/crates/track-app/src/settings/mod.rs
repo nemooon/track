@@ -185,17 +185,51 @@ impl Render for SettingsWindow {
             .child(self.render_sidebar(cx))
             .child(
                 div()
-                    // A new id per page starts it scrolled to the top (Tauri navigates between pages).
-                    .id(gpui::SharedString::from(format!("settings-content-{}-{}", self.section.key(), editing_format)))
                     .flex_1()
                     .min_w_0()
                     .h_full()
-                    .overflow_y_scroll()
-                    .px_8()
-                    .pt(px(44.))
-                    .pb_8()
-                    .child(div().text_xl().font_weight(FontWeight::SEMIBOLD).mb_6().child(self.section.label()))
-                    .children(content),
+                    .flex()
+                    .flex_col()
+                    // The page title sits in a bar like the main window's header (and drags the window).
+                    .child(
+                        div()
+                            .id("settings-header")
+                            .debug_selector(|| "settings-title".into())
+                            .flex()
+                            .flex_shrink_0()
+                            .items_center()
+                            .h(TITLE_BAR_HEIGHT)
+                            .px_4()
+                            .bg(p.surface)
+                            .border_b_1()
+                            .border_color(p.border)
+                            .text_sm()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .on_mouse_down(gpui::MouseButton::Left, |ev, window, _| {
+                                if ev.click_count == 2 {
+                                    window.titlebar_double_click();
+                                } else {
+                                    window.start_window_move();
+                                }
+                            })
+                            .child(self.section.label()),
+                    )
+                    .child(if self.section == SettingsSection::Projects {
+                        // The projects page fills the height and scrolls its two panes itself.
+                        div().flex_1().min_h_0().children(content).into_any_element()
+                    } else {
+                        div()
+                            // A new id per page starts it scrolled to the top (Tauri navigates between pages).
+                            .id(gpui::SharedString::from(format!("settings-content-{}-{}", self.section.key(), editing_format)))
+                            .flex_1()
+                            .min_h_0()
+                            .overflow_y_scroll()
+                            .px_8()
+                            .pt_6()
+                            .pb_8()
+                            .children(content)
+                            .into_any_element()
+                    }),
             )
     }
 }

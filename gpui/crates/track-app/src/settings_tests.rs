@@ -550,6 +550,17 @@ fn settings_window_follows_macos_on_its_own(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn the_page_title_sits_in_a_header_bar(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = open_app_db(cx, |_| {});
+    let (mut scx, _p) = projects_section(cx);
+    let bar = scx.debug_bounds("settings-title").expect("title bar");
+    assert_eq!(bar.size.height, crate::ui::theme::TITLE_BAR_HEIGHT);
+    assert_eq!(bar.top(), gpui::px(0.), "at the top of the window, like the main header");
+    let tree = scx.debug_bounds("tree-client-c1").expect("tree");
+    assert!(tree.top() > bar.bottom(), "the page starts below the bar");
+}
+
+#[gpui::test]
 fn settings_open_on_the_first_section(cx: &mut TestAppContext) {
     let (_app, cx, _f) = open_app_db(cx, |_| {});
     cx.simulate_keystrokes("cmd-,");

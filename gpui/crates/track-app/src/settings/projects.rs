@@ -852,11 +852,24 @@ impl Render for ProjectSettings {
             self.rename_next = None;
             self.start_client_edit(id, window, cx);
         }
+        // Two full-height panes, each scrolling on its own.
         div()
+            .size_full()
             .flex()
-            .items_start()
-            .gap_6()
-            .child(div().w(px(240.)).flex_none().py_1().border_r_1().border_color(p.border_subtle).pr_3().child(self.render_tree(p, cx)))
-            .child(div().flex_1().min_w_0().child(self.render_detail(p, cx)))
+            .child(
+                div()
+                    .id("projects-tree")
+                    .w(px(260.))
+                    .flex_none()
+                    .h_full()
+                    .overflow_y_scroll()
+                    .px_3()
+                    .pt_2()
+                    .pb_6()
+                    .border_r_1()
+                    .border_color(p.border_subtle)
+                    .child(self.render_tree(p, cx)),
+            )
+            .child(div().id("projects-detail").flex_1().min_w_0().h_full().overflow_y_scroll().px_8().pt_6().pb_8().child(self.render_detail(p, cx)))
     }
 }
