@@ -684,3 +684,13 @@ fn colour_popover_has_hue_saturation_lightness_and_hex_only(cx: &mut TestAppCont
     }
     assert!(scx.debug_bounds("picker-alpha").is_none());
 }
+
+/// Opening the picker alone must redraw the editor (the real app has no other event to do it).
+#[gpui::test]
+fn opening_the_picker_redraws_the_editor(cx: &mut TestAppContext) {
+    let (mut scx, p, _f, _app) = open_p1_editor(cx);
+    let picker = p.read_with(&scx, |s, _| s.editor.as_ref().and_then(|e| e.picker.clone())).expect("picker state");
+    scx.update(|_, cx| picker.update(cx, |s, cx| s.set_open(true, cx)));
+    scx.run_until_parked();
+    assert!(scx.debug_bounds("picker-hue").is_some(), "the popover shows once the picker opens");
+}
