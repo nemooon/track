@@ -279,7 +279,23 @@ impl CalendarView {
                     )
                     .child(div().flex_shrink_0().text_color(p.text_muted).font_weight(FontWeight::SEMIBOLD).child(weekday_ja(d)))
                     .when_some(holiday, |s, name| {
-                        s.child(div().min_w_0().rounded(RADIUS_SM).bg(p.holiday).px_1().py(px(2.)).text_size(px(10.)).line_height(px(12.)).text_color(p.on_color).truncate().child(name))
+                        // A holiday on a work day counts as leave unless the day menu says otherwise.
+                        let tip = if self.counts_holiday_leave(d, cx) { format!("{name}（休暇）") } else { name.to_string() };
+                        s.child(
+                            div()
+                                .id(gpui::SharedString::from(format!("holiday-{d}")))
+                                .min_w_0()
+                                .rounded(RADIUS_SM)
+                                .bg(p.holiday)
+                                .px_1()
+                                .py(px(2.))
+                                .text_size(px(10.))
+                                .line_height(px(12.))
+                                .text_color(p.on_color)
+                                .truncate()
+                                .child(name)
+                                .tooltip(move |window, cx| gpui_component::tooltip::Tooltip::new(tip.clone()).build(window, cx)),
+                        )
                     })
                     .children(self.day_mark(d, cx))
                     .child(div().flex_1())

@@ -22,6 +22,11 @@ impl CalendarView {
         work_day && holiday_name(d).is_some()
     }
 
+    /// The holiday's automatic leave applies (no row cancels it, no direct visit that day).
+    pub(super) fn counts_holiday_leave(&self, d: NaiveDate, cx: &gpui::App) -> bool {
+        self.auto_leave(d, cx) && !self.leaves.contains_key(&d) && self.direct_on(d).is_none()
+    }
+
     /// 「休暇」「前半休」「後半休」 or 「直行直帰 プロジェクト」 in the header.
     pub(super) fn day_mark(&self, d: NaiveDate, cx: &mut Context<Self>) -> Option<AnyElement> {
         let p = palette(cx);
