@@ -50,6 +50,11 @@ pub struct ReportsView {
     pub heatmap: Option<Vec<(NaiveDate, i64)>>,
     /// The heatmap day under the pointer: its week (or month) is marked as what a click picks.
     pub heat_hover: Option<NaiveDate>,
+    /// The period the heatmap shows strong, and the one before it: cells whose state changed fade
+    /// between the two (`heat_gen` restarts the fades).
+    pub heat_shown: Option<(NaiveDate, NaiveDate)>,
+    pub heat_from: Option<(NaiveDate, NaiveDate)>,
+    heat_gen: usize,
     pub loading: bool,
     pub error: Option<String>,
     requested: Option<ReportQuery>,
@@ -84,6 +89,9 @@ impl ReportsView {
             data: None,
             heatmap: None,
             heat_hover: None,
+            heat_shown: None,
+            heat_from: None,
+            heat_gen: 0,
             loading: false,
             error: None,
             requested: None,
@@ -858,6 +866,7 @@ impl Render for ReportsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = palette(cx);
         self.ensure_loaded(cx);
+        self.track_heat_period();
         let error_banner = self.error.clone().map(|msg| controls::error_banner(&p, "reports-retry", &msg).on_click(cx.listener(|this, _, _, cx| this.reload(cx))));
         let body: AnyElement = match (&self.data, self.loading) {
             (None, false) if self.error.is_some() => div().flex_1().into_any_element(),

@@ -8,10 +8,15 @@ use track_core::model::ReportRange;
 use crate::ui::date_nav::{HasDateNav, NavEvent};
 use crate::ui::theme::*;
 use chrono::{Datelike, Duration, Local, NaiveDate};
+use gpui::{Animation, AnimationExt};
 use gpui::{AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, div, prelude::FluentBuilder, px};
 
 const WEEKDAYS: [&str; 7] = ["日", "月", "火", "水", "木", "金", "土"];
 const GAP: f32 = 3.;
+/// How faded the days around the period are.
+const FADED: f32 = 0.35;
+/// How long a cell takes to fade in or out when the period moves.
+const FADE: std::time::Duration = std::time::Duration::from_millis(220);
 
 /// 「12月」 when the week starting `week_first` holds the 1st of a month (where GitHub puts its
 /// month labels).
@@ -39,14 +44,30 @@ pub fn level(minutes: i64) -> u8 {
 }
 
 impl ReportsView {
+    /// The period shown strong (local dates). When it moves, the old one is kept to fade from.
+    fn heat_period(&self) -> (NaiveDate, NaiveDate) {
+        let (from, to) = track_core::reports::query_range(&self.current_query());
+        (from.with_timezone(&Local).date_naive(), to.with_timezone(&Local).date_naive())
+    }
+
+    pub(super) fn track_heat_period(&mut self) {
+        let now = self.heat_period();
+        if self.heat_shown != Some(now) {
+            self.heat_from = self.heat_shown;
+            self.heat_shown = Some(now);
+            self.heat_gen += 1;
+        }
+    }
+
     pub(super) fn render_heatmap(&self, window: &gpui::Window, cx: &mut Context<Self>) -> Option<AnyElement> {
         let days = self.heatmap.clone()?;
         if days.len() < 7 {
             return None;
         }
         let p = palette(cx);
-        let (from, to) = track_core::reports::query_range(&self.current_query());
-        let (active_from, active_to) = (from.with_timezone(&Local).date_naive(), to.with_timezone(&Local).date_naive());
+        let (active_from, active_to) = self.heat_period();
+        let before = self.heat_from;
+        let generation = self.heat_gen;
         let today = Local::now().date_naive();
         let pick = self.heat_hover.map(|d| pick_range(self.range, d));
         let style = self.style(cx);
@@ -61,33 +82,52 @@ impl ReportsView {
         // Square cells across the full width: the page spans the window, so the side is the
         // window's width less the padding and the weekday labels, shared by the weeks.
         let n = weeks.len() as f32;
-        let side = ((f32::from(window.viewport_size().width) - 24. - 18. - GAP * n) / n).floor().max(6.);
+        let side = ((f32::from(window.viewport_size().width) - 24. - 18.) / n - GAP).floor().max(6.);
         let label = |text: &'static str| div().w(px(18.)).flex_none().text_size(px(10.)).text_color(p.text_faint).child(text);
         // Month names over the weeks that hold a 1st (they may run over the next columns).
-        let months = div().flex().gap(px(GAP)).h(px(14.)).child(label("")).children(weeks.iter().map(|w| {
-            div().w(px(side)).flex_none().text_size(px(10.)).text_color(p.text_faint).whitespace_nowrap().children(month_label(w[0].0))
+        // Each cell's hit area takes half the gap on every side, so the gaps click too.
+        let slot = side + GAP;
+        let months = div().flex().h(px(14.)).child(label("")).children(weeks.iter().map(|w| {
+            div().w(px(slot)).flex_none().pl(px(GAP / 2.)).text_size(px(10.)).text_color(p.text_faint).whitespace_nowrap().children(month_label(w[0].0))
         }));
-        // One row per weekday; a cell's height follows its width, so rows line up with the labels.
+        // One row per weekday; the hit areas touch, so the rows line up with the labels.
         let rows = (0..7).map(|wd| {
-            div().flex().items_center().gap(px(GAP)).child(label(WEEKDAYS[wd])).children(weeks.iter().map(|w| {
+            div().flex().items_center().child(label(WEEKDAYS[wd])).children(weeks.iter().map(|w| {
                 let (d, minutes) = w[wd];
                 let active = d >= active_from && d < active_to;
                 let picked = pick.is_some_and(|(f, t)| d >= f && d < t);
+                let was = before.map(|(f, t)| d >= f && d < t);
                 let id = format!("heat-{d}");
                 let sel = id.clone();
                 let tip = format!("{}（{}） {}", d.format("%-m/%-d"), WEEKDAYS[wd], crate::core::time::format_duration(minutes, style));
-                div()
-                    .id(SharedString::from(id))
+                // The report's period is strong; the weeks around it are faded. Under the pointer,
+                // the days a click would show are not faded.
+                let target = if active || picked { 1. } else { FADED };
+                let square = div()
                     .debug_selector(move || sel.clone())
                     .size(px(side))
-                    .flex_none()
                     .rounded(RADIUS_SM)
-                    .cursor_pointer()
                     .bg(shade(level(minutes)))
-                    // The report's period is strong; the weeks around it are faded.
-                    // Under the pointer, the days a click would show are not faded.
-                    .when(!active && !picked, |c| c.opacity(0.35))
-                    .when(d == today, |c| c.border_1().border_color(p.text_muted))
+                    .when(d == today, |c| c.border_1().border_color(p.text_muted));
+                let square = match was {
+                    // Moved into or out of the period: fade over FADE.
+                    Some(was) if was != active && !picked => {
+                        let start = if was { 1. } else { FADED };
+                        square
+                            .with_animation(SharedString::from(format!("heat-fade-{d}-{generation}")), Animation::new(FADE).with_easing(gpui::ease_out_quint()), move |c, t| {
+                                c.opacity(start + (target - start) * t)
+                            })
+                            .into_any_element()
+                    }
+                    _ => square.opacity(target).into_any_element(),
+                };
+                div()
+                    .id(SharedString::from(format!("heat-hit-{d}")))
+                    .size(px(slot))
+                    .flex_none()
+                    .p(px(GAP / 2.))
+                    .cursor_pointer()
+                    .child(square)
                     .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                         if *hovered {
                             this.heat_hover = Some(d);
@@ -106,7 +146,6 @@ impl ReportsView {
                 .flex()
                 .flex_col()
                 .flex_shrink_0()
-                .gap(px(GAP))
                 .px_3()
                 .py_3()
                 .border_b_1()

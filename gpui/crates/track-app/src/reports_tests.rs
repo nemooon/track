@@ -317,3 +317,26 @@ fn hovering_a_heatmap_day_marks_what_a_click_would_pick(cx: &mut TestAppContext)
     cx.simulate_mouse_move(gpui::point(gpui::px(5.), gpui::px(5.)), None, Modifiers::none());
     assert_eq!(app.read_with(cx, |a, cx| a.reports.read(cx).heat_hover), None, "leaving the cell clears it");
 }
+
+#[gpui::test]
+fn the_gap_beside_a_heatmap_cell_clicks_that_cell(cx: &mut TestAppContext) {
+    let (app, cx, _f) = setup(cx);
+    let first = app.read_with(cx, |a, cx| a.reports.read(cx).heatmap.clone()).unwrap()[0].0;
+    let cell = cx.debug_bounds(leak(format!("heat-{first}"))).expect("cell");
+    // Just right of the square, in the gap before the next week's cell.
+    let gap = gpui::point(cell.right() + gpui::px(1.), cell.center().y);
+    cx.simulate_click(gap, Modifiers::none());
+    wait_io(cx);
+    assert_eq!(app.read_with(cx, |a, cx| a.reports.read(cx).anchor), first);
+}
+
+#[gpui::test]
+fn moving_period_remembers_the_one_to_fade_from(cx: &mut TestAppContext) {
+    let (app, cx, _f) = setup(cx);
+    let shown = app.read_with(cx, |a, cx| a.reports.read(cx).heat_shown);
+    assert!(shown.is_some(), "the shown period is remembered");
+    let first = app.read_with(cx, |a, cx| a.reports.read(cx).heatmap.clone()).unwrap()[0].0;
+    click(cx, leak(format!("heat-{first}")));
+    wait_io(cx);
+    assert_eq!(app.read_with(cx, |a, cx| a.reports.read(cx).heat_from), shown, "cells fade from the previous period");
+}
