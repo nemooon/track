@@ -190,61 +190,6 @@ fn type_tag_name(scx: &mut VisualTestContext, t: &Entity<crate::settings::tags::
     scx.update(|w, cx| input.update(cx, |i, cx| i.set_value(text.to_string(), w, cx)));
 }
 
-fn type_name(scx: &mut VisualTestContext, p: &Entity<crate::settings::projects::ProjectSettings>, text: &str) {
-    let input = p.read_with(scx, |p, _| p.editor.as_ref().expect("editor open").name.clone());
-    scx.update(|w, cx| input.update(cx, |i, cx| i.set_value(text.to_string(), w, cx)));
-    scx.run_until_parked();
-}
-
-#[gpui::test]
-fn add_client_then_project_with_color(cx: &mut TestAppContext) {
-    let (app, cx, f) = open_app_db(cx, |_| {});
-    let (mut scx, p) = projects_section(cx);
-    assert!(scx.debug_bounds("client-row-c1").is_some());
-    assert!(scx.debug_bounds("project-row-p1").is_some());
-    click(&mut scx, "client-add");
-    type_name(&mut scx, &p, "新クライアント");
-    click(&mut scx, "editor-save");
-    wait_io(&mut scx);
-    let client = f.db().clients().unwrap().into_iter().find(|c| c.name == "新クライアント").expect("client created");
-    click(&mut scx, "project-add");
-    let sel = format!("editor-client-{}", client.id);
-    let b = scx.debug_bounds(Box::leak(sel.into_boxed_str())).expect("client choice");
-    scx.simulate_click(b.center(), Modifiers::none());
-    type_name(&mut scx, &p, "新案件");
-    click(&mut scx, "editor-color-3");
-    click(&mut scx, "editor-save");
-    wait_io(&mut scx);
-    wait_io(cx);
-    let project = f.db().projects(true).unwrap().into_iter().find(|x| x.name == "新案件").expect("project created");
-    assert_eq!((project.client_id.as_str(), project.color.as_str()), (client.id.as_str(), track_core::edit::PROJECT_COLORS[3]));
-    let in_main = app.read_with(cx, |a, cx| a.state.read(cx).data.as_ref().map(|d| d.projects.iter().any(|x| x.id == project.id)));
-    assert_eq!(in_main, Some(true), "the main window's project list has it");
-}
-
-#[gpui::test]
-fn archive_hides_project_until_restored(cx: &mut TestAppContext) {
-    let (app, cx, f) = open_app_db(cx, |_| {});
-    let (mut scx, _p) = projects_section(cx);
-    click(&mut scx, "project-archive-p1");
-    wait_io(&mut scx);
-    wait_io(cx);
-    assert!(f.db().project("p1").unwrap().archived);
-    assert!(scx.debug_bounds("project-archived-p1").is_some(), "shown greyed with アーカイブ済み");
-    let in_main = app.read_with(cx, |a, cx| a.state.read(cx).data.as_ref().map(|d| d.projects.iter().any(|x| x.id == "p1")));
-    assert_eq!(in_main, Some(false));
-    click(&mut scx, "project-archive-p1");
-    wait_io(&mut scx);
-    assert!(!f.db().project("p1").unwrap().archived);
-    // Archiving the client archives its projects; a project of an archived client cannot be restored alone.
-    click(&mut scx, "client-archive-c1");
-    wait_io(&mut scx);
-    assert!(f.db().project("p2").unwrap().archived);
-    click(&mut scx, "project-archive-p2");
-    wait_io(&mut scx);
-    assert!(f.db().project("p2").unwrap().archived, "クライアントを先に復元してください");
-}
-
 #[gpui::test]
 fn tags_are_not_on_the_projects_page(cx: &mut TestAppContext) {
     let (_app, cx, _f) = open_app_db(cx, |_| {});
@@ -509,20 +454,6 @@ fn export_dir_outside_dev_root_shows_error(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn projects_section_follows_outside_changes(cx: &mut TestAppContext) {
-    let (app, cx, f) = open_app_db(cx, |_| {});
-    let (mut scx, p) = projects_section(cx);
-    let mut db = f.db();
-    let c = db.create_client("外部クライアント").unwrap();
-    db.create_project(&c, "外部案件", "#000000").unwrap();
-    let state = app.read_with(cx, |a, _| a.state.clone());
-    state.update(cx, |s, cx| s.refresh_all(cx));
-    wait_io(cx);
-    wait_io(&mut scx);
-    assert!(p.read_with(&scx, |p, _| p.projects.iter().any(|x| x.name == "外部案件")), "the cached section re-reads after a reload");
-}
-
-#[gpui::test]
 fn restore_resets_the_ai_operation_baseline(cx: &mut TestAppContext) {
     use crate::testing::{insert_entry, local};
     let today = crate::testing::visible_weekday();
@@ -627,99 +558,166 @@ fn settings_open_on_the_first_section(cx: &mut TestAppContext) {
     assert!(scx.debug_bounds("appearance-system").is_some(), "外観 is first in the list, so it opens first");
 }
 
-#[gpui::test]
-fn project_editor_offers_the_added_colours(cx: &mut TestAppContext) {
-    let (_app, cx, f) = open_app_db(cx, |_| {});
-    let (mut scx, _p) = projects_section(cx);
-    let b = scx.debug_bounds("project-edit-p1").expect("edit");
-    scx.simulate_click(b.center(), Modifiers::none());
-    wait_io(&mut scx);
-    assert!(scx.debug_bounds("editor-color-19").is_some(), "20 colours to choose from");
-    click(&mut scx, "editor-color-19");
-    click(&mut scx, "editor-save");
-    wait_io(&mut scx);
-    assert_eq!(f.db().project("p1").unwrap().color, "#78716c");
+
+// ---- プロジェクト（クライアントでまとめた一覧＋詳細） ----
+
+fn sel(s: String) -> &'static str {
+    Box::leak(s.into_boxed_str())
+}
+
+/// Types into the detail's name field and presses Enter.
+fn enter_name(scx: &mut VisualTestContext, p: &Entity<crate::settings::projects::ProjectSettings>, text: &str) {
+    let input = p.read_with(scx, |p, _| p.name.clone().expect("name field"));
+    // Typing happens in a focused field (an unfocused one shows the saved name).
+    scx.update(|w, cx| input.update(cx, |i, cx| {
+        i.focus(w, cx);
+        i.set_value(text.to_string(), w, cx)
+    }));
+    scx.update(|_, cx| input.update(cx, |_, cx| cx.emit(gpui_component::input::InputEvent::PressEnter { secondary: false, shift: false })));
+    wait_io(scx);
+}
+
+fn selected(scx: &mut VisualTestContext, p: &Entity<crate::settings::projects::ProjectSettings>) -> Option<crate::settings::projects::Selection> {
+    p.read_with(scx, |p, _| p.selected.clone())
+}
+
+fn name_value(scx: &mut VisualTestContext, p: &Entity<crate::settings::projects::ProjectSettings>) -> String {
+    p.read_with(scx, |p, cx| p.name.as_ref().map(|n| n.read(cx).value().to_string()).unwrap_or_default())
 }
 
 #[gpui::test]
-fn project_editor_takes_any_colour_from_the_picker(cx: &mut TestAppContext) {
+fn opens_with_the_first_project_selected(cx: &mut TestAppContext) {
+    use crate::settings::projects::Selection;
+    let (_app, cx, _f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    assert_eq!(selected(&mut scx, &p), Some(Selection::Project("p1".into())));
+    assert!(scx.debug_bounds("tree-client-c1").is_some() && scx.debug_bounds("tree-project-p1").is_some());
+    assert_eq!(name_value(&mut scx, &p), "Alpha");
+}
+
+#[gpui::test]
+fn add_project_under_a_client_selects_it_and_saves_a_name_on_enter(cx: &mut TestAppContext) {
+    use crate::settings::projects::Selection;
     let (_app, cx, f) = open_app_db(cx, |_| {});
     let (mut scx, p) = projects_section(cx);
-    let b = scx.debug_bounds("project-edit-p1").expect("edit");
-    scx.simulate_click(b.center(), Modifiers::none());
+    click(&mut scx, "tree-client-add-c1");
     wait_io(&mut scx);
-    assert!(scx.debug_bounds("editor-color-custom").is_some(), "a button for any colour");
-    let picker = p.read_with(&scx, |s, _| s.editor.as_ref().and_then(|e| e.picker.clone())).expect("picker state");
-    let teal: gpui::Hsla = gpui::rgb(0x123456).into();
-    // What the picker emits when the user commits a colour.
-    scx.update(|_, cx| picker.update(cx, |_, cx| cx.emit(gpui_component::color_picker::ColorPickerEvent::Change(Some(teal)))));
-    scx.run_until_parked();
-    click(&mut scx, "editor-save");
-    wait_io(&mut scx);
-    assert_eq!(f.db().project("p1").unwrap().color, "#123456");
+    let Some(Selection::Project(id)) = selected(&mut scx, &p) else { panic!("the new project is selected") };
+    assert!(id != "p1" && id != "p2");
+    enter_name(&mut scx, &p, "新案件");
+    let pj = f.db().project(&id).unwrap();
+    assert_eq!((pj.name.as_str(), pj.client_id.as_str()), ("新案件", "c1"));
+    assert!(track_core::edit::PROJECT_COLORS.contains(&pj.color.as_str()));
 }
 
 #[gpui::test]
-fn colour_picker_button_is_a_swatch_sized_circle(cx: &mut TestAppContext) {
-    let (_app, cx, _f) = open_app_db(cx, |_| {});
+fn add_client_selects_it(cx: &mut TestAppContext) {
+    use crate::settings::projects::Selection;
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    click(&mut scx, "tree-add-client");
+    wait_io(&mut scx);
+    let Some(Selection::Client(id)) = selected(&mut scx, &p) else { panic!("the new client is selected") };
+    enter_name(&mut scx, &p, "新クライアント");
+    assert_eq!(f.db().client(&id).unwrap().name, "新クライアント");
+    assert!(scx.debug_bounds("detail-project-count").is_some());
+}
+
+#[gpui::test]
+fn colour_and_client_save_immediately(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |db| {
+        db.conn().execute(r#"INSERT INTO "Client"(id, name, createdAt) VALUES ('c2', 'Bolt', '2026-11-01T00:00:00.000+00:00')"#, []).unwrap();
+    });
     let (mut scx, _p) = projects_section(cx);
-    let b = scx.debug_bounds("project-edit-p1").expect("edit");
-    scx.simulate_click(b.center(), Modifiers::none());
+    click(&mut scx, "detail-color-3");
     wait_io(&mut scx);
-    let swatch = scx.debug_bounds("editor-color-0").expect("swatch").size;
-    let picker = scx.debug_bounds("editor-color-custom").expect("picker button").size;
-    assert_eq!(picker, swatch, "same circle as the colour swatches, no label");
-}
-
-fn open_p1_editor(cx: &mut TestAppContext) -> (VisualTestContext, Entity<crate::settings::projects::ProjectSettings>, crate::testing::Fixture, gpui::Entity<crate::app::TrackApp>) {
-    let (app, vcx, f) = open_app_db(cx, |_| {});
-    let (mut scx, p) = projects_section(vcx);
-    let b = scx.debug_bounds("project-edit-p1").expect("edit");
-    scx.simulate_click(b.center(), Modifiers::none());
+    assert_eq!(f.db().project("p1").unwrap().color, track_core::edit::PROJECT_COLORS[3]);
+    click(&mut scx, "detail-client-c2");
     wait_io(&mut scx);
-    (scx, p, f, app)
+    assert_eq!(f.db().project("p1").unwrap().client_id, "c2");
 }
 
 #[gpui::test]
-fn picked_colour_fills_the_eyedropper_button_without_an_extra_swatch(cx: &mut TestAppContext) {
-    let (mut scx, p, _f, _app) = open_p1_editor(cx);
-    let picker = p.read_with(&scx, |s, _| s.editor.as_ref().and_then(|e| e.picker.clone())).expect("picker state");
+fn empty_name_is_not_saved(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    enter_name(&mut scx, &p, "   ");
+    assert_eq!(f.db().project("p1").unwrap().name, "Alpha");
+    assert_eq!(name_value(&mut scx, &p), "Alpha", "the field goes back to the saved name");
+}
+
+#[gpui::test]
+fn failed_save_shows_error_and_reverts(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    f.data.fail_ops(&["update_project"]);
+    enter_name(&mut scx, &p, "失敗する名前");
+    assert!(scx.debug_bounds("detail-error").is_some());
+    assert_eq!(f.db().project("p1").unwrap().name, "Alpha");
+    assert_eq!(name_value(&mut scx, &p), "Alpha", "the field shows the saved name again");
+}
+
+#[gpui::test]
+fn outside_change_keeps_the_selection(cx: &mut TestAppContext) {
+    use crate::settings::projects::Selection;
+    let (app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    f.db().update_project("p1", track_core::model::ProjectPatch { name: Some("外で変更".into()), ..Default::default() }).unwrap();
+    let state = app.read_with(cx, |a, _| a.state.clone());
+    state.update(cx, |s, cx| s.refresh_all(cx));
+    wait_io(cx);
+    wait_io(&mut scx);
+    assert_eq!(selected(&mut scx, &p), Some(Selection::Project("p1".into())));
+    assert_eq!(name_value(&mut scx, &p), "外で変更");
+}
+
+#[gpui::test]
+fn archiving_a_client_moves_its_projects_to_the_archive(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, _p) = projects_section(cx);
+    click(&mut scx, "tree-client-c1");
+    click(&mut scx, "detail-archive");
+    wait_io(&mut scx);
+    assert!(f.db().client("c1").unwrap().archived && f.db().project("p1").unwrap().archived);
+    assert!(scx.debug_bounds("tree-archived").is_some());
+    // The selected client was archived, so the archive section opens on its own.
+    assert!(scx.debug_bounds("tree-project-p1").is_some(), "shown in the open archive");
+}
+
+#[gpui::test]
+fn empty_client_shows_its_add_button(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = open_app_db(cx, |db| {
+        db.conn().execute(r#"INSERT INTO "Client"(id, name, createdAt) VALUES ('c2', 'Bolt', '2026-11-01T00:00:00.000+00:00')"#, []).unwrap();
+    });
+    let (mut scx, _p) = projects_section(cx);
+    assert!(scx.debug_bounds("tree-client-c2").is_some() && scx.debug_bounds("tree-client-add-c2").is_some());
+}
+
+#[gpui::test]
+fn picker_colour_saves_and_fills_the_eyedropper(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    let picker = p.read_with(&scx, |s, _| s.picker.clone()).expect("picker state");
     let c: gpui::Hsla = gpui::rgb(0x123456).into();
     scx.update(|_, cx| picker.update(cx, |_, cx| cx.emit(gpui_component::color_picker::ColorPickerEvent::Change(Some(c)))));
-    scx.run_until_parked();
-    assert!(scx.debug_bounds("editor-color-current").is_none(), "no extra swatch");
-    assert_eq!(p.read_with(&scx, |s, _| s.editor.as_ref().map(|e| e.color.clone())), Some("#123456".into()));
+    wait_io(&mut scx);
+    assert_eq!(f.db().project("p1").unwrap().color, "#123456");
     assert!(scx.debug_bounds("editor-color-custom").is_some());
-}
-
-#[gpui::test]
-fn colour_popover_has_hue_saturation_lightness_and_hex_only(cx: &mut TestAppContext) {
-    let (mut scx, _p, _f, _app) = open_p1_editor(cx);
+    let swatch = scx.debug_bounds("detail-color-0").expect("swatch").size;
+    assert_eq!(scx.debug_bounds("editor-color-custom").unwrap().size, swatch, "same circle as the presets");
     click(&mut scx, "editor-color-custom");
-    scx.run_until_parked();
-    for id in ["picker-hue", "picker-saturation", "picker-lightness", "picker-hex"] {
-        assert!(scx.debug_bounds(id).is_some(), "{id}");
+    for id in ["picker-hue", "picker-saturation", "picker-lightness", "picker-hex", "picker-hue-track"] {
+        assert!(scx.debug_bounds(sel(id.to_string())).is_some(), "{id}");
     }
-    assert!(scx.debug_bounds("picker-alpha").is_none());
-}
-
-/// Opening the picker alone must redraw the editor (the real app has no other event to do it).
-#[gpui::test]
-fn opening_the_picker_redraws_the_editor(cx: &mut TestAppContext) {
-    let (mut scx, p, _f, _app) = open_p1_editor(cx);
-    let picker = p.read_with(&scx, |s, _| s.editor.as_ref().and_then(|e| e.picker.clone())).expect("picker state");
-    scx.update(|_, cx| picker.update(cx, |s, cx| s.set_open(true, cx)));
-    scx.run_until_parked();
-    assert!(scx.debug_bounds("picker-hue").is_some(), "the popover shows once the picker opens");
 }
 
 #[gpui::test]
-fn colour_sliders_have_gradient_tracks(cx: &mut TestAppContext) {
-    let (mut scx, _p, _f, _app) = open_p1_editor(cx);
-    click(&mut scx, "editor-color-custom");
-    scx.run_until_parked();
-    for id in ["picker-hue-track", "picker-saturation-track", "picker-lightness-track"] {
-        let t = scx.debug_bounds(id).unwrap_or_else(|| panic!("{id}"));
-        assert!(t.size.width > gpui::px(100.), "{id} spans the slider: {t:?}");
-    }
+fn activity_shows_month_and_last_entry(cx: &mut TestAppContext) {
+    use crate::testing::{insert_entry, local, visible_weekday};
+    let day = visible_weekday();
+    let (_app, cx, _f) = open_app_db(cx, move |db| insert_entry(db, "e1", local(day, 9, 0), local(day, 10, 30), Some("p1"), "作業"));
+    let (mut scx, p) = projects_section(cx);
+    let text = p.read_with(&scx, |p, _| p.activity_label("p1"));
+    assert!(text.contains("1h 30m") || text.contains("1:30"), "{text}");
+    assert!(scx.debug_bounds("detail-activity").is_some());
 }

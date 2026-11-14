@@ -1,108 +1,128 @@
-//! 「プロジェクト」: clients, projects and tags (ProjectsPage.tsx). Like the Tauri screen, clients and
-//! projects are archived rather than deleted; only tags can be deleted. Add/edit happens in an
-//! inline form at the top of the section instead of a modal.
-use super::form;
+//! 「プロジェクト」: clients with their projects in one list (left) and the selected item's details
+//! (right). Changes save at once: colour, client and archive on click, the name on Enter or when
+//! the field loses focus. Clients and projects are archived, never deleted (like the Tauri screen).
 use crate::app::AppState;
 use crate::data::{DataClient, DataResult};
 use crate::ui::theme::*;
+use chrono::{Datelike, Local, NaiveDate, TimeZone};
 use gpui::{
-    AnyElement, AppContext, Context, Div, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    AnyElement, AppContext, Context, Div, Entity, Focusable, FontWeight, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px,
 };
 use gpui_component::color_picker::{ColorPickerEvent, ColorPickerState};
-use gpui_component::input::{Input, InputState};
+use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::{Icon, IconName};
+use std::collections::HashMap;
 use std::future::Future;
-use track_core::model::{Client, ClientPatch, Project, ProjectPatch, Tag, TagPatch};
+use track_core::model::{Client, ClientPatch, Project, ProjectActivity, ProjectPatch};
 
 /// The project colours (shared with track-cli).
 pub use track_core::edit::PROJECT_COLORS as COLORS;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EditKind {
-    Client,
-    Project,
-    Tag,
-}
-
-/// What the editor opens with.
-struct Draft {
-    kind: EditKind,
-    id: Option<String>,
-    name: String,
-    client_id: String,
-    color: String,
-    tag_ids: Vec<String>,
-}
-
-impl Draft {
-    fn new(kind: EditKind) -> Self {
-        Draft { kind, id: None, name: String::new(), client_id: String::new(), color: String::new(), tag_ids: vec![] }
-    }
-}
-
-pub struct Editor {
-    pub kind: EditKind,
-    /// `None` when adding.
-    pub id: Option<String>,
-    pub name: Entity<InputState>,
-    pub client_id: String,
-    pub color: String,
-    pub tag_ids: Vec<String>,
-    pub error: Option<String>,
-    /// 「その他の色…」: any colour, for projects and tags.
-    pub picker: Option<Entity<ColorPickerState>>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Selection {
+    Project(String),
+    Client(String),
 }
 
 pub struct ProjectSettings {
     state: Entity<AppState>,
     pub clients: Vec<Client>,
     pub projects: Vec<Project>,
-    pub tags: Vec<Tag>,
-    pub editor: Option<Editor>,
-    deleting_tag: Option<Tag>,
-    error: Option<String>,
+    activity: HashMap<String, ProjectActivity>,
+    pub selected: Option<Selection>,
+    /// The name field of the selected item, and which item it was made for.
+    pub name: Option<Entity<InputState>>,
+    name_for: Option<Selection>,
+    /// Focus the name field once it exists (just added).
+    focus_name: bool,
+    /// The eyedropper's state for the selected project.
+    pub picker: Option<Entity<ColorPickerState>>,
+    picker_for: Option<String>,
+    pub error: Option<String>,
+    /// A save failed: put the saved name back even while the field is focused.
+    revert_name: bool,
+    show_archived: bool,
+    loaded: bool,
 }
 
 fn api(state: &Entity<AppState>, cx: &gpui::App) -> DataClient {
     state.read(cx).api.clone()
 }
 
-fn random_color() -> String {
-    let n = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(0) as usize;
-    COLORS[n % COLORS.len()].to_string()
+/// This month, as UTC bounds.
+fn month_bounds() -> (chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>) {
+    let today = Local::now().date_naive();
+    let first = NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap();
+    let next = if today.month() == 12 { NaiveDate::from_ymd_opt(today.year() + 1, 1, 1) } else { NaiveDate::from_ymd_opt(today.year(), today.month() + 1, 1) }.unwrap();
+    let at = |d: NaiveDate| Local.from_local_datetime(&d.and_hms_opt(0, 0, 0).unwrap()).earliest().unwrap().to_utc();
+    (at(first), at(next))
+}
+
+fn hours(minutes: i64) -> String {
+    match (minutes / 60, minutes % 60) {
+        (0, m) => format!("{m}m"),
+        (h, 0) => format!("{h}h"),
+        (h, m) => format!("{h}h {m}m"),
+    }
 }
 
 impl ProjectSettings {
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
         // Restores and outside writes (CLI, AI) re-read everything; follow them.
         cx.subscribe(&state, |this, _, _: &crate::app::StateEvent, cx| this.reload(cx)).detach();
-        let mut s = ProjectSettings { state, clients: vec![], projects: vec![], tags: vec![], editor: None, deleting_tag: None, error: None };
+        let mut s = ProjectSettings {
+            state,
+            clients: vec![],
+            projects: vec![],
+            activity: HashMap::new(),
+            selected: None,
+            name: None,
+            name_for: None,
+            focus_name: false,
+            picker: None,
+            picker_for: None,
+            error: None,
+            revert_name: false,
+            show_archived: false,
+            loaded: false,
+        };
         s.reload(cx);
         s
     }
 
-    /// Re-reads the lists (archived included).
+    /// Re-reads clients, projects (archived included) and this month's activity, keeping the
+    /// selection by id.
     pub fn reload(&mut self, cx: &mut Context<Self>) {
         let api = api(&self.state, cx);
-        let (c, p, t) = (api.clients(), api.projects_all(), api.tags());
+        let (from, to) = month_bounds();
+        let (c, p, a) = (api.clients(), api.projects_all(), api.project_activity(from, to));
         cx.spawn(async move |this, cx| {
-            let result = async { Ok::<_, crate::data::DataError>((c.await?, p.await?, t.await?)) }.await;
+            let result = async { Ok::<_, crate::data::DataError>((c.await?, p.await?, a.await?)) }.await;
             let _ = this.update(cx, |this, cx| {
                 match result {
-                    Ok((mut c, mut p, t)) => {
-                        // Archived rows go last, like the Tauri screen.
-                        c.sort_by_key(|x| x.archived);
-                        p.sort_by_key(|x| x.archived);
-                        (this.clients, this.projects, this.tags) = (c, p, t);
-                        // An editor for something that no longer exists (e.g. after a restore) closes.
-                        let gone = this.editor.as_ref().and_then(|e| e.id.as_ref().map(|id| (e.kind, id.clone()))).is_some_and(|(kind, id)| match kind {
-                            EditKind::Client => !this.clients.iter().any(|x| x.id == id),
-                            EditKind::Project => !this.projects.iter().any(|x| x.id == id),
-                            EditKind::Tag => !this.tags.iter().any(|x| x.id == id),
-                        });
-                        if gone {
-                            this.editor = None;
+                    Ok((c, p, a)) => {
+                        (this.clients, this.projects) = (c, p);
+                        this.activity = a.into_iter().map(|x| (x.project_id.clone(), x)).collect();
+                        if !this.loaded {
+                            this.loaded = true;
+                            if this.selected.is_none() {
+                                this.selected = this.projects.iter().find(|p| !p.archived).map(|p| Selection::Project(p.id.clone()));
+                            }
+                        }
+                        // A selection that no longer exists is dropped; an archived one opens the archive.
+                        match this.selected.clone() {
+                            Some(Selection::Project(id)) => match this.projects.iter().find(|p| p.id == id) {
+                                None => this.selected = None,
+                                Some(p) if p.archived => this.show_archived = true,
+                                _ => {}
+                            },
+                            Some(Selection::Client(id)) => match this.clients.iter().find(|c| c.id == id) {
+                                None => this.selected = None,
+                                Some(c) if c.archived => this.show_archived = true,
+                                _ => {}
+                            },
+                            None => {}
                         }
                     }
                     Err(e) => this.error = Some(e.message),
@@ -113,322 +133,393 @@ impl ProjectSettings {
         .detach();
     }
 
-    /// Runs a write; on success closes the editor, reloads and refreshes the main window.
-    /// On failure the message is shown in the editor (or above the lists).
-    fn write<T: Send + 'static>(&mut self, fut: impl Future<Output = DataResult<T>> + Send + 'static, close_editor: bool, cx: &mut Context<Self>) {
+    /// Runs a write. Success clears the error and refreshes the main window; failure shows the
+    /// message. Either way the lists are re-read, so the details show what is saved.
+    fn write<T: Send + 'static>(&mut self, fut: impl Future<Output = DataResult<T>> + Send + 'static, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             let result = fut.await;
             let _ = this.update(cx, |this, cx| {
                 match result {
                     Ok(_) => {
-                        if close_editor {
-                            this.editor = None;
-                        }
                         this.error = None;
-                        this.reload(cx);
                         this.state.update(cx, |s, cx| s.refresh_all(cx));
                     }
                     Err(e) => {
-                        let message = match e.code.as_str() {
-                            "tag_already_exists" => "同じ名前のタグが既にあります".to_string(),
-                            "invalid_input" => "名前を入力してください（100文字以内、タグは50文字以内）".to_string(),
+                        this.revert_name = true;
+                        this.error = Some(match e.code.as_str() {
+                            "invalid_input" => "名前は100文字以内で入力してください".to_string(),
                             _ => e.message,
-                        };
-                        match this.editor.as_mut() {
-                            Some(ed) if close_editor => ed.error = Some(message),
-                            _ => this.error = Some(message),
-                        }
+                        })
                     }
                 }
+                this.reload(cx);
                 cx.notify();
             });
         })
         .detach();
     }
 
-    fn open_editor(&mut self, d: Draft, window: &mut Window, cx: &mut Context<Self>) {
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder("名前").default_value(d.name));
-        cx.observe(&input, |_, _, cx| cx.notify()).detach();
-        input.update(cx, |i, cx| i.focus(window, cx));
-        let picker = (d.kind != EditKind::Client).then(|| {
-            let initial = hex(&d.color);
-            let picker = cx.new(|cx| ColorPickerState::new(window, cx).default_value(initial));
-            cx.subscribe(&picker, |this, _, ev: &ColorPickerEvent, cx| {
-                if let (ColorPickerEvent::Change(Some(c)), Some(ed)) = (ev, this.editor.as_mut()) {
-                    ed.color = to_hex(*c);
-                    cx.notify();
-                }
-            })
-            .detach();
-            picker
-        });
-        self.editor = Some(Editor { kind: d.kind, id: d.id, name: input, client_id: d.client_id, color: d.color, tag_ids: d.tag_ids, error: None, picker });
+    fn select(&mut self, s: Selection, cx: &mut Context<Self>) {
+        self.selected = Some(s);
+        self.error = None;
         cx.notify();
     }
 
-    fn save_editor(&mut self, cx: &mut Context<Self>) {
-        let Some(ed) = &self.editor else { return };
-        let name = ed.name.read(cx).value().trim().to_string();
-        if name.is_empty() {
-            if let Some(ed) = self.editor.as_mut() {
-                ed.error = Some("名前を入力してください".into());
-            }
-            cx.notify();
+    fn project(&self, id: &str) -> Option<&Project> {
+        self.projects.iter().find(|p| p.id == id)
+    }
+
+    fn client(&self, id: &str) -> Option<&Client> {
+        self.clients.iter().find(|c| c.id == id)
+    }
+
+    /// The saved name of the selected item.
+    fn saved_name(&self) -> Option<String> {
+        match self.selected.as_ref()? {
+            Selection::Project(id) => self.project(id).map(|p| p.name.clone()),
+            Selection::Client(id) => self.client(id).map(|c| c.name.clone()),
+        }
+    }
+
+    /// 「今月 12h 30m・最終記録 11/12」 (or 「記録なし」).
+    pub fn activity_label(&self, project_id: &str) -> String {
+        let a = self.activity.get(project_id);
+        let minutes = a.map(|a| a.minutes).unwrap_or(0);
+        match a.and_then(|a| a.last_start) {
+            Some(t) => format!("今月 {}・最終記録 {}", hours(minutes), t.with_timezone(&Local).format("%-m/%-d")),
+            None => "記録なし".into(),
+        }
+    }
+
+    fn add_project(&mut self, client_id: String, cx: &mut Context<Self>) {
+        let color = track_core::edit::next_project_color(self.projects.len()).to_string();
+        let fut = api(&self.state, cx).create_project(client_id, "新しいプロジェクト".into(), color, vec![]);
+        self.after_create(fut, Selection::Project, cx);
+    }
+
+    fn add_client(&mut self, cx: &mut Context<Self>) {
+        let fut = api(&self.state, cx).create_client("新しいクライアント".into());
+        self.after_create(fut, Selection::Client, cx);
+    }
+
+    /// Creates, then selects the new item with its name field focused.
+    fn after_create(&mut self, fut: impl Future<Output = DataResult<String>> + Send + 'static, select: fn(String) -> Selection, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            let result = fut.await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(id) => {
+                        this.selected = Some(select(id));
+                        this.focus_name = true;
+                        this.error = None;
+                        this.state.update(cx, |s, cx| s.refresh_all(cx));
+                    }
+                    Err(e) => this.error = Some(e.message),
+                }
+                this.reload(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Saves the name field for the selected item; an empty name puts the saved one back.
+    fn commit_name(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let (Some(input), Some(sel), Some(saved)) = (self.name.clone(), self.selected.clone(), self.saved_name()) else { return };
+        if self.name_for.as_ref() != Some(&sel) {
+            return;
+        }
+        let value = input.read(cx).value().trim().to_string();
+        if value.is_empty() {
+            input.update(cx, |i, cx| i.set_value(saved, window, cx));
+            return;
+        }
+        if value == saved {
             return;
         }
         let api = api(&self.state, cx);
-        let (id, client_id, color, tag_ids) = (ed.id.clone(), ed.client_id.clone(), ed.color.clone(), ed.tag_ids.clone());
-        match (ed.kind, id) {
-            (EditKind::Client, None) => self.write(api.create_client(name), true, cx),
-            (EditKind::Client, Some(id)) => self.write(api.update_client(id, ClientPatch { name: Some(name), ..Default::default() }), true, cx),
-            (EditKind::Project, None) => {
-                if client_id.is_empty() {
-                    return;
-                }
-                self.write(api.create_project(client_id, name, color, tag_ids), true, cx)
-            }
-            (EditKind::Project, Some(id)) => self.write(
-                api.update_project(id, ProjectPatch { name: Some(name), color: Some(color), client_id: Some(client_id), tag_ids: Some(tag_ids), ..Default::default() }),
-                true,
-                cx,
-            ),
-            (EditKind::Tag, None) => self.write(api.create_tag(name, color), true, cx),
-            (EditKind::Tag, Some(id)) => self.write(api.update_tag(id, TagPatch { name: Some(name), color: Some(color) }), true, cx),
+        match sel {
+            Selection::Project(id) => self.write(api.update_project(id, ProjectPatch { name: Some(value), ..Default::default() }), cx),
+            Selection::Client(id) => self.write(api.update_client(id, ClientPatch { name: Some(value), ..Default::default() }), cx),
         }
     }
 
-    fn render_editor(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let p = palette(cx);
-        let ed = self.editor.as_ref()?;
-        let title = match (ed.kind, ed.id.is_some()) {
-            (EditKind::Client, false) => "クライアント追加",
-            (EditKind::Client, true) => "クライアント編集",
-            (EditKind::Project, false) => "プロジェクト追加",
-            (EditKind::Project, true) => "プロジェクト編集",
-            (EditKind::Tag, false) => "タグ追加",
-            (EditKind::Tag, true) => "タグ編集",
+    /// Keeps the name field and the eyedropper in step with the selection and the saved values.
+    fn sync_fields(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(sel) = self.selected.clone() else {
+            (self.name, self.name_for, self.picker, self.picker_for) = (None, None, None, None);
+            return;
         };
-        let custom = !COLORS.iter().any(|c| c.eq_ignore_ascii_case(&ed.color));
-        let colors = div().flex().flex_wrap().items_center().gap_2().children(COLORS.iter().enumerate().map(|(i, c)| {
-            let selected = ed.color == *c;
-            let id = format!("editor-color-{i}");
-            let sel = id.clone();
-            let color = c.to_string();
-            div()
-                .id(SharedString::from(id))
-                .debug_selector(move || sel.clone())
-                .size(px(24.))
-                .rounded_full()
-                .cursor_pointer()
-                .bg(hex(c))
-                .when(selected, |d| d.border_2().border_color(p.text))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    if let Some(ed) = this.editor.as_mut() {
-                        ed.color = color.clone();
-                    }
-                    cx.notify();
-                }))
-        }))
-        .when_some(ed.picker.clone(), |d, picker| {
-            let fill = custom.then(|| gpui::Hsla::from(hex(&ed.color)));
-            d.child(super::color_field::eyedropper("editor-color-popover", &picker, fill, p, cx))
-        });
-        let chip = |id: String, label: String, on: bool| {
-            let sel = id.clone();
-            div()
-                .id(SharedString::from(id))
-                .debug_selector(move || sel.clone())
-                .px_2()
-                .py_1()
-                .rounded_md()
-                .text_xs()
-                .cursor_pointer()
-                .when(on, |d| d.bg(p.primary).text_color(p.on_color))
-                .when(!on, |d| d.border_1().border_color(p.border).text_color(p.text))
-                .child(label)
-        };
-        let mut body = div().flex().flex_col().gap_3().p_4().child(div().text_sm().font_weight(FontWeight::SEMIBOLD).child(title));
-        if ed.kind == EditKind::Project {
-            let current = ed.client_id.clone();
-            body = body.child(form_line(p, 
-                "クライアント",
-                div().flex().flex_wrap().gap_2().children(
-                    self.clients.iter().filter(|c| !c.archived || c.id == current).map(|c| {
-                        let cid = c.id.clone();
-                        chip(format!("editor-client-{}", c.id), c.name.clone(), c.id == current).on_click(cx.listener(move |this, _, _, cx| {
-                            if let Some(ed) = this.editor.as_mut() {
-                                ed.client_id = cid.clone();
-                            }
-                            cx.notify();
-                        }))
-                    }),
-                ),
-            ));
+        let saved = self.saved_name().unwrap_or_default();
+        if self.name_for.as_ref() != Some(&sel) || self.name.is_none() {
+            let input = cx.new(|cx| InputState::new(window, cx).placeholder("名前").default_value(saved.clone()));
+            cx.subscribe_in(&input, window, |this, _, ev: &InputEvent, window, cx| {
+                if matches!(ev, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+                    this.commit_name(window, cx);
+                }
+            })
+            .detach();
+            (self.name, self.name_for) = (Some(input), Some(sel.clone()));
+        } else if let Some(input) = self.name.clone() {
+            // Not being typed in: show what is saved (after a failed save, an outside change...).
+            let focused = input.read(cx).focus_handle(cx).is_focused(window);
+            if (!focused || self.revert_name) && input.read(cx).value().as_ref() != saved {
+                input.update(cx, |i, cx| i.set_value(saved, window, cx));
+            }
         }
-        body = body.child(form_line(p, "名前", div().w(px(320.)).child(Input::new(&ed.name))));
-        if ed.kind != EditKind::Client {
-            body = body.child(form_line(p, "カラー", colors));
+        self.revert_name = false;
+        if self.focus_name {
+            self.focus_name = false;
+            if let Some(input) = self.name.clone() {
+                input.update(cx, |i, cx| i.focus(window, cx));
+            }
         }
-        if ed.kind == EditKind::Project && !self.tags.is_empty() {
-            body = body.child(form_line(p, 
-                "タグ",
-                div().flex().flex_wrap().gap_2().children(self.tags.iter().map(|t| {
-                    let tid = t.id.clone();
-                    chip(format!("editor-tag-{}", t.id), t.name.clone(), ed.tag_ids.contains(&t.id)).on_click(cx.listener(move |this, _, _, cx| {
-                        if let Some(ed) = this.editor.as_mut() {
-                            if let Some(p) = ed.tag_ids.iter().position(|x| *x == tid) {
-                                ed.tag_ids.remove(p);
-                            } else {
-                                ed.tag_ids.push(tid.clone());
-                            }
+        match &sel {
+            Selection::Project(id) => {
+                if self.picker_for.as_deref() != Some(id.as_str()) {
+                    let initial = self.project(id).map(|p| hex(&p.color)).unwrap_or_else(|| hex(COLORS[0]));
+                    let picker = cx.new(|cx| ColorPickerState::new(window, cx).default_value(initial));
+                    let pid = id.clone();
+                    cx.subscribe(&picker, move |this, _, ev: &ColorPickerEvent, cx| {
+                        if let ColorPickerEvent::Change(Some(c)) = ev {
+                            let api = api(&this.state, cx);
+                            this.write(api.update_project(pid.clone(), ProjectPatch { color: Some(to_hex(*c)), ..Default::default() }), cx);
                         }
-                        cx.notify();
-                    }))
-                })),
-            ));
+                    })
+                    .detach();
+                    (self.picker, self.picker_for) = (Some(picker), Some(id.clone()));
+                }
+            }
+            Selection::Client(_) => (self.picker, self.picker_for) = (None, None),
         }
-        let can_save = !ed.name.read(cx).value().trim().is_empty() && (ed.kind != EditKind::Project || !ed.client_id.is_empty());
-        body = body.child(
+    }
+
+    fn render_tree(&self, p: Palette, cx: &mut Context<Self>) -> Div {
+        let row = |id: String, selected: bool| {
+            let sel_id = id.clone();
+            div()
+                .id(SharedString::from(id))
+                .debug_selector(move || sel_id.clone())
+                .flex()
+                .items_center()
+                .gap_2()
+                .h(px(28.))
+                .px_3()
+                .rounded(px(5.))
+                .cursor_pointer()
+                .map(|d| if selected { d.bg(p.selected) } else { d.hover(move |s| s.bg(p.hover)) })
+        };
+        let project_row = |pj: &Project, cx: &mut Context<Self>| {
+            let id = pj.id.clone();
+            let on = self.selected == Some(Selection::Project(id.clone()));
+            row(format!("tree-project-{}", pj.id), on)
+                .pl(px(22.))
+                .child(div().size(px(9.)).flex_none().rounded_full().bg(hex(&pj.color)))
+                .child(div().min_w_0().truncate().text_sm().child(pj.name.clone()))
+                .on_click(cx.listener(move |this, _, _, cx| this.select(Selection::Project(id.clone()), cx)))
+        };
+        let client_block = |c: &Client, projects: Vec<&Project>, cx: &mut Context<Self>| {
+            let (id, add_id) = (c.id.clone(), c.id.clone());
+            let on = self.selected == Some(Selection::Client(id.clone()));
+            let add_sel = format!("tree-client-add-{}", c.id);
+            let add_sel2 = add_sel.clone();
+            div()
+                .flex()
+                .flex_col()
+                .child(
+                    row(format!("tree-client-{}", c.id), on)
+                        .mt_2()
+                        .child(div().flex_1().min_w_0().truncate().text_xs().font_weight(FontWeight::SEMIBOLD).text_color(p.text_muted).child(c.name.clone()))
+                        .child(
+                            div()
+                                .id(SharedString::from(add_sel))
+                                .debug_selector(move || add_sel2.clone())
+                                .px_1()
+                                .rounded(px(4.))
+                                .text_color(p.accent)
+                                .hover(move |s| s.bg(p.hover))
+                                .child(Icon::new(IconName::Plus).size_3p5())
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    cx.stop_propagation();
+                                    this.add_project(add_id.clone(), cx)
+                                })),
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| this.select(Selection::Client(id.clone()), cx))),
+                )
+                .children(projects.into_iter().map(|pj| project_row(pj, cx)))
+        };
+        let active: Vec<&Client> = self.clients.iter().filter(|c| !c.archived).collect();
+        let archived_clients: Vec<&Client> = self.clients.iter().filter(|c| c.archived).collect();
+        let archived_count = archived_clients.len() + self.projects.iter().filter(|p| p.archived).count();
+        let mut col = div().flex().flex_col().gap(px(1.)).children(active.iter().map(|c| {
+            let ps = self.projects.iter().filter(|p| p.client_id == c.id && !p.archived).collect();
+            client_block(c, ps, cx)
+        }));
+        col = col.child(
+            row("tree-add-client".into(), false)
+                .mt_3()
+                .text_sm()
+                .text_color(p.text_muted)
+                .child(Icon::new(IconName::Plus).size_3p5())
+                .child("クライアント")
+                .on_click(cx.listener(|this, _, _, cx| this.add_client(cx))),
+        );
+        if archived_count > 0 {
+            col = col.child(
+                row("tree-archived".into(), false)
+                    .mt_2()
+                    .text_sm()
+                    .text_color(p.text_muted)
+                    .child(Icon::new(if self.show_archived { IconName::ChevronDown } else { IconName::ChevronRight }).size_3p5())
+                    .child(format!("アーカイブ（{archived_count}）"))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.show_archived = !this.show_archived;
+                        cx.notify();
+                    })),
+            );
+            if self.show_archived {
+                // Archived clients with their projects, then archived projects of active clients.
+                col = col.children(archived_clients.iter().map(|c| {
+                    let ps = self.projects.iter().filter(|p| p.client_id == c.id).collect();
+                    client_block(c, ps, cx).opacity(0.7)
+                }));
+                col = col.children(active.iter().filter_map(|c| {
+                    let ps: Vec<&Project> = self.projects.iter().filter(|p| p.client_id == c.id && p.archived).collect();
+                    (!ps.is_empty()).then(|| {
+                        div()
+                            .opacity(0.7)
+                            .child(div().mt_2().px_3().text_xs().text_color(p.text_faint).child(c.name.clone()))
+                            .children(ps.into_iter().map(|pj| project_row(pj, cx)))
+                    })
+                }));
+            }
+        }
+        col
+    }
+
+    fn render_detail(&self, p: Palette, cx: &mut Context<Self>) -> AnyElement {
+        let label = |t: &'static str| div().w(px(96.)).flex_none().text_sm().text_color(p.text_muted).child(t);
+        let line = |l: &'static str, control: AnyElement| div().flex().items_start().gap_3().py_2().child(label(l)).child(div().flex_1().min_w_0().child(control));
+        let name_field = self.name.as_ref().map(|n| div().debug_selector(|| "detail-name".into()).child(Input::new(n)).into_any_element()).unwrap_or_else(|| div().into_any_element());
+        let error = self.error.clone().map(|e| div().debug_selector(|| "detail-error".into()).mt_2().text_sm().text_color(p.danger).child(e));
+        let archive_button = |archived: bool, enabled: bool, note: Option<&'static str>, cx: &mut Context<Self>| {
             div()
                 .flex()
                 .items_center()
-                .justify_end()
-                .gap_2()
-                .when_some(ed.error.clone(), |d, e| d.child(div().debug_selector(|| "editor-error".into()).mr_auto().text_xs().text_color(p.danger).child(e)))
-                .child(form::button(p, "editor-cancel", "キャンセル", false, true).on_click(cx.listener(|this, _, _, cx| {
-                    this.editor = None;
-                    cx.notify();
-                })))
+                .gap_3()
                 .child(
-                    form::button(p, "editor-save", if ed.id.is_some() { "更新" } else { "作成" }, true, can_save)
-                        .on_click(cx.listener(|this, _, _, cx| this.save_editor(cx))),
-                ),
-        );
-        Some(div().mb_5().rounded_lg().border_1().border_color(p.border).bg(p.surface).child(body).into_any_element())
+                    super::form::button(p, "detail-archive", if archived { "アーカイブを戻す" } else { "アーカイブ" }, false, enabled)
+                        .debug_selector(|| "detail-archive".into())
+                        .when(enabled, |d| d.on_click(cx.listener(|this, _, _, cx| this.toggle_archive(cx)))),
+                )
+                .children(note.map(|n| div().text_xs().text_color(p.text_faint).child(n)))
+        };
+        match self.selected.clone() {
+            Some(Selection::Project(id)) => {
+                let Some(pj) = self.project(&id).cloned() else { return div().into_any_element() };
+                let custom = !COLORS.iter().any(|c| c.eq_ignore_ascii_case(&pj.color));
+                let swatches = div().flex().flex_wrap().items_center().gap_2().children(COLORS.iter().enumerate().map(|(i, c)| {
+                    let (sid, color, pid) = (format!("detail-color-{i}"), c.to_string(), id.clone());
+                    let sid2 = sid.clone();
+                    div()
+                        .id(SharedString::from(sid))
+                        .debug_selector(move || sid2.clone())
+                        .size(px(24.))
+                        .rounded_full()
+                        .cursor_pointer()
+                        .bg(hex(c))
+                        .when(pj.color.eq_ignore_ascii_case(c), |d| d.border_2().border_color(p.text))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            let api = api(&this.state, cx);
+                            this.write(api.update_project(pid.clone(), ProjectPatch { color: Some(color.clone()), ..Default::default() }), cx)
+                        }))
+                }));
+                let swatches = match self.picker.clone() {
+                    Some(picker) => swatches.child(super::color_field::eyedropper("detail-color-popover", &picker, custom.then(|| gpui::Hsla::from(hex(&pj.color))), p, cx)),
+                    None => swatches,
+                };
+                let client_archived = self.client(&pj.client_id).is_some_and(|c| c.archived);
+                let chips = div().flex().flex_wrap().gap_2().children(self.clients.iter().filter(|c| !c.archived || c.id == pj.client_id).map(|c| {
+                    let (cid, pid, on) = (c.id.clone(), id.clone(), c.id == pj.client_id);
+                    let sid = format!("detail-client-{}", c.id);
+                    let sid2 = sid.clone();
+                    div()
+                        .id(SharedString::from(sid))
+                        .debug_selector(move || sid2.clone())
+                        .px_2()
+                        .py_1()
+                        .rounded(px(5.))
+                        .text_sm()
+                        .cursor_pointer()
+                        .border_1()
+                        .map(|d| if on { d.bg(p.primary).text_color(p.on_color).border_color(p.primary) } else { d.border_color(p.border).hover(move |s| s.bg(p.hover)) })
+                        .child(c.name.clone())
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            if !on {
+                                let api = api(&this.state, cx);
+                                this.write(api.update_project(pid.clone(), ProjectPatch { client_id: Some(cid.clone()), ..Default::default() }), cx)
+                            }
+                        }))
+                }));
+                div()
+                    .flex()
+                    .flex_col()
+                    .child(div().text_lg().font_weight(FontWeight::SEMIBOLD).mb_2().child(pj.name.clone()))
+                    .child(line("名前", name_field))
+                    .child(line("クライアント", chips.into_any_element()))
+                    .child(line("色", swatches.into_any_element()))
+                    .child(line("記録", div().debug_selector(|| "detail-activity".into()).text_sm().font_family(MONO).text_color(p.text_muted).child(self.activity_label(&id)).into_any_element()))
+                    .child(div().mt_4().child(archive_button(pj.archived, !(pj.archived && client_archived), (pj.archived && client_archived).then_some("クライアントのアーカイブを先に戻してください"), cx)))
+                    .children(error)
+                    .into_any_element()
+            }
+            Some(Selection::Client(id)) => {
+                let Some(c) = self.client(&id).cloned() else { return div().into_any_element() };
+                let count = self.projects.iter().filter(|p| p.client_id == id).count();
+                div()
+                    .flex()
+                    .flex_col()
+                    .child(div().text_lg().font_weight(FontWeight::SEMIBOLD).mb_2().child(c.name.clone()))
+                    .child(line("名前", name_field))
+                    .child(line("プロジェクト", div().debug_selector(|| "detail-project-count".into()).text_sm().text_color(p.text_muted).child(format!("{count} 件")).into_any_element()))
+                    .child(div().mt_4().child(archive_button(c.archived, true, (!c.archived).then_some("配下のプロジェクトもアーカイブされます"), cx)))
+                    .children(error)
+                    .into_any_element()
+            }
+            None => div()
+                .debug_selector(|| "detail-empty".into())
+                .text_sm()
+                .text_color(p.text_muted)
+                .child("左からプロジェクトを選ぶか、クライアントの ＋ で追加してください。")
+                .into_any_element(),
+        }
+    }
+
+    fn toggle_archive(&mut self, cx: &mut Context<Self>) {
+        let api = api(&self.state, cx);
+        match self.selected.clone() {
+            Some(Selection::Project(id)) => {
+                let Some(archived) = self.project(&id).map(|p| p.archived) else { return };
+                self.write(api.update_project(id, ProjectPatch { archived: Some(!archived), ..Default::default() }), cx)
+            }
+            Some(Selection::Client(id)) => {
+                let Some(archived) = self.client(&id).map(|c| c.archived) else { return };
+                self.write(api.update_client(id, ClientPatch { archived: Some(!archived), ..Default::default() }), cx)
+            }
+            None => {}
+        }
     }
 }
 
-fn form_line(p: Palette, label: &str, control: impl IntoElement) -> Div {
-    div().flex().items_center().gap_4().child(div().w(px(90.)).flex_shrink_0().text_xs().text_color(p.text_muted).child(label.to_string())).child(control)
-}
-
-fn icon_button(p: Palette, id: String, icon: IconName, title: &'static str, enabled: bool) -> gpui::Stateful<Div> {
-    let sel = id.clone();
-    div()
-        .id(SharedString::from(id))
-        .debug_selector(move || sel.clone())
-        .p_1()
-        .rounded_md()
-        .text_color(p.text_muted)
-        .when(enabled, |d| d.cursor_pointer().hover(|s| s.bg(p.hover).text_color(p.text)))
-        .when(!enabled, |d| d.opacity(0.4))
-        .child(Icon::new(icon).size_4())
-        .tooltip(move |window, cx| gpui_component::tooltip::Tooltip::new(title).build(window, cx))
-}
-
-/// The section title with its 「＋ 追加」 button; `on_add` runs when the button is clicked.
-fn section_header(title: &str, add: gpui::Stateful<Div>) -> Div {
-    div().flex().items_center().justify_between().mb_2().child(div().text_base().font_weight(FontWeight::SEMIBOLD).child(title.to_string())).child(add)
-}
-
-fn list(p: Palette, ) -> Div {
-    div().flex().flex_col().mb_8().rounded_md().border_1().border_color(p.border)
-}
-
-fn list_row(p: Palette, id: String, archived: bool) -> gpui::Stateful<Div> {
-    let sel = id.clone();
-    div()
-        .id(SharedString::from(id))
-        .debug_selector(move || sel.clone())
-        .flex()
-        .items_center()
-        .gap_3()
-        .px_4()
-        .py_2()
-        .border_b_1()
-        .border_color(p.border_subtle)
-        .text_sm()
-        .when(archived, |d| d.bg(p.surface).text_color(p.text_muted))
-}
-
-fn archived_badge(p: Palette, id: String) -> Div {
-    let sel = id.clone();
-    div().debug_selector(move || sel.clone()).px_2().rounded_md().bg(p.selected).text_xs().text_color(p.text_muted).child("アーカイブ済み")
-}
-
 impl Render for ProjectSettings {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = palette(cx);
-        let active_client = self.clients.iter().find(|c| !c.archived).map(|c| c.id.clone());
-        let mut root = div().children(self.render_editor(cx));
-        if let Some(e) = self.error.clone() {
-            root = root.child(div().mb_4().text_xs().text_color(p.danger).child(e));
-        }
-
-        // Clients
-        let clients = list(p).children(self.clients.iter().map(|c| {
-            let (edit_c, arch_c) = (c.clone(), c.clone());
-            list_row(p, format!("client-row-{}", c.id), c.archived)
-                .child(div().flex_1().child(c.name.clone()))
-                .when(c.archived, |d| d.child(archived_badge(p, format!("client-archived-{}", c.id))))
-                .child(icon_button(p, format!("client-edit-{}", c.id), IconName::Settings, "編集", true).on_click(cx.listener(move |this, _, w, cx| {
-                    this.open_editor(Draft { id: Some(edit_c.id.clone()), name: edit_c.name.clone(), ..Draft::new(EditKind::Client) }, w, cx)
-                })))
-                .child(
-                    icon_button(p, format!("client-archive-{}", c.id), if c.archived { IconName::Undo } else { IconName::Inbox }, if c.archived { "復元" } else { "アーカイブ" }, true)
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            let api = api(&this.state, cx);
-                            this.write(api.update_client(arch_c.id.clone(), ClientPatch { archived: Some(!arch_c.archived), ..Default::default() }), false, cx)
-                        })),
-                )
-        }));
-        root = root
-            .child(section_header(
-                "クライアント",
-                form::button(p, "client-add", "＋ 追加", true, true).on_click(cx.listener(|this, _, w, cx| {
-                    this.open_editor(Draft::new(EditKind::Client), w, cx)
-                })),
-            ))
-            .child(if self.clients.is_empty() { div().mb_8().text_sm().text_color(p.text_faint).child("クライアントがありません") } else { clients });
-
-        // Projects
-        let projects = list(p).children(self.projects.iter().map(|pj| {
-            let client_archived = self.clients.iter().any(|c| c.id == pj.client_id && c.archived);
-            let can_toggle = !(pj.archived && client_archived);
-            let (edit_p, arch_p) = (pj.clone(), pj.clone());
-            list_row(p, format!("project-row-{}", pj.id), pj.archived)
-                .child(div().size(px(10.)).rounded_full().bg(hex(&pj.color)))
-                .child(div().flex_1().min_w_0().truncate().child(pj.name.clone()))
-                .child(div().text_xs().text_color(p.text_muted).child(pj.client.name.clone()))
-                .when(pj.archived, |d| d.child(archived_badge(p, format!("project-archived-{}", pj.id))))
-                .child(icon_button(p, format!("project-edit-{}", pj.id), IconName::Settings, "編集", true).on_click(cx.listener(move |this, _, w, cx| {
-                    let p = &edit_p;
-                    this.open_editor(Draft { kind: EditKind::Project, id: Some(p.id.clone()), name: p.name.clone(), client_id: p.client_id.clone(), color: p.color.clone(), tag_ids: p.tags.iter().map(|t| t.tag_id.clone()).collect() }, w, cx)
-                })))
-                .child(
-                    icon_button(p, 
-                        format!("project-archive-{}", pj.id),
-                        if pj.archived { IconName::Undo } else { IconName::Inbox },
-                        if !can_toggle { "クライアントを先に復元してください" } else if pj.archived { "復元" } else { "アーカイブ" },
-                        can_toggle,
-                    )
-                    .when(can_toggle, |d| {
-                        d.on_click(cx.listener(move |this, _, _, cx| {
-                            let api = api(&this.state, cx);
-                            this.write(api.update_project(arch_p.id.clone(), ProjectPatch { archived: Some(!arch_p.archived), ..Default::default() }), false, cx)
-                        }))
-                    }),
-                )
-        }));
-        root = root
-            .child(section_header(
-                "プロジェクト",
-                form::button(p, "project-add", "＋ 追加", true, active_client.is_some()).when_some(active_client, |d, first| {
-                    d.on_click(cx.listener(move |this, _, w, cx| this.open_editor(Draft { client_id: first.clone(), color: random_color(), ..Draft::new(EditKind::Project) }, w, cx)))
-                }),
-            ))
-            .child(if self.projects.is_empty() { div().mb_8().text_sm().text_color(p.text_faint).child("プロジェクトがありません") } else { projects });
-
-        root
+        self.sync_fields(window, cx);
+        div()
+            .flex()
+            .items_start()
+            .gap_6()
+            .child(div().w(px(240.)).flex_none().py_1().border_r_1().border_color(p.border_subtle).pr_3().child(self.render_tree(p, cx)))
+            .child(div().flex_1().min_w_0().child(self.render_detail(p, cx)))
     }
 }
