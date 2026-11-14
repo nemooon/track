@@ -340,3 +340,16 @@ fn moving_period_remembers_the_one_to_fade_from(cx: &mut TestAppContext) {
     wait_io(cx);
     assert_eq!(app.read_with(cx, |a, cx| a.reports.read(cx).heat_from), shown, "cells fade from the previous period");
 }
+
+#[gpui::test]
+fn the_heatmap_slides_by_the_weeks_it_moved(cx: &mut TestAppContext) {
+    let (app, cx, _f) = setup(cx);
+    assert_eq!(app.read_with(cx, |a, cx| a.reports.read(cx).heat_shift), 0, "nothing to slide at first");
+    let first = app.read_with(cx, |a, cx| a.reports.read(cx).heatmap.clone()).unwrap()[0].0;
+    click(cx, leak(format!("heat-{first}")));
+    wait_io(cx);
+    // The first column's week is now the middle one: the range moved 26 weeks back.
+    assert_eq!(app.read_with(cx, |a, cx| a.reports.read(cx).heat_shift), -26);
+    let now_first = app.read_with(cx, |a, cx| a.reports.read(cx).heatmap.clone()).unwrap()[0].0;
+    assert_eq!((first - now_first).num_weeks(), 26);
+}

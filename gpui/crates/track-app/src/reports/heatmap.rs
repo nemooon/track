@@ -17,6 +17,8 @@ const GAP: f32 = 3.;
 const FADED: f32 = 0.35;
 /// How long a cell takes to fade in or out when the period moves.
 const FADE: std::time::Duration = std::time::Duration::from_millis(220);
+/// How long the grid takes to slide when its range moves.
+const SLIDE: std::time::Duration = std::time::Duration::from_millis(320);
 
 /// 「12月」 when the week starting `week_first` holds the 1st of a month (where GitHub puts its
 /// month labels).
@@ -83,16 +85,16 @@ impl ReportsView {
         // window's width less the padding and the weekday labels, shared by the weeks.
         let n = weeks.len() as f32;
         let side = ((f32::from(window.viewport_size().width) - 24. - 18.) / n - GAP).floor().max(6.);
-        let label = |text: &'static str| div().w(px(18.)).flex_none().text_size(px(10.)).text_color(p.text_faint).child(text);
-        // Month names over the weeks that hold a 1st (they may run over the next columns).
         // Each cell's hit area takes half the gap on every side, so the gaps click too.
         let slot = side + GAP;
-        let months = div().flex().h(px(14.)).child(label("")).children(weeks.iter().map(|w| {
+        let label = |text: &'static str| div().h(px(slot)).flex().items_center().text_size(px(10.)).text_color(p.text_faint).child(text);
+        // Month names over the weeks that hold a 1st (they may run over the next columns).
+        let months = div().flex().h(px(14.)).children(weeks.iter().map(|w| {
             div().w(px(slot)).flex_none().pl(px(GAP / 2.)).text_size(px(10.)).text_color(p.text_faint).whitespace_nowrap().children(month_label(w[0].0))
         }));
         // One row per weekday; the hit areas touch, so the rows line up with the labels.
         let rows = (0..7).map(|wd| {
-            div().flex().items_center().child(label(WEEKDAYS[wd])).children(weeks.iter().map(|w| {
+            div().flex().children(weeks.iter().map(|w| {
                 let (d, minutes) = w[wd];
                 let active = d >= active_from && d < active_to;
                 let picked = pick.is_some_and(|(f, t)| d >= f && d < t);
@@ -140,18 +142,30 @@ impl ReportsView {
                     .on_click(cx.listener(move |this, _, window, cx| this.on_nav(NavEvent::Pick(d), window, cx)))
             }))
         });
+        let grid = div().flex().flex_col().child(months).children(rows);
+        // When the range moved, the grid slides from where its days were (labels stay put).
+        let shift = self.heat_shift;
+        let grid = if shift != 0 && shift.abs() < weeks.len() as i64 {
+            let from = shift as f32 * slot;
+            grid.relative()
+                .with_animation(SharedString::from(format!("heat-slide-{}", self.heat_slide_gen)), Animation::new(SLIDE).with_easing(gpui::ease_out_quint()), move |g, t| {
+                    g.left(px(from * (1. - t)))
+                })
+                .into_any_element()
+        } else {
+            grid.into_any_element()
+        };
         Some(
             div()
                 .debug_selector(|| "report-heatmap".into())
                 .flex()
-                .flex_col()
                 .flex_shrink_0()
                 .px_3()
                 .py_3()
                 .border_b_1()
                 .border_color(p.border)
-                .child(months)
-                .children(rows)
+                .child(div().w(px(18.)).flex_none().flex().flex_col().pt(px(14.)).children(WEEKDAYS.iter().map(|w| label(w))))
+                .child(div().flex_1().min_w_0().overflow_hidden().child(grid))
                 .into_any_element(),
         )
     }

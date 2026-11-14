@@ -55,6 +55,10 @@ pub struct ReportsView {
     pub heat_shown: Option<(NaiveDate, NaiveDate)>,
     pub heat_from: Option<(NaiveDate, NaiveDate)>,
     heat_gen: usize,
+    /// Weeks the heatmap's range moved with the last data (negative: back in time), so the grid
+    /// slides from where those days were; `heat_slide_gen` restarts the slide.
+    pub heat_shift: i64,
+    heat_slide_gen: usize,
     pub loading: bool,
     pub error: Option<String>,
     requested: Option<ReportQuery>,
@@ -92,6 +96,8 @@ impl ReportsView {
             heat_shown: None,
             heat_from: None,
             heat_gen: 0,
+            heat_shift: 0,
+            heat_slide_gen: 0,
             loading: false,
             error: None,
             requested: None,
@@ -138,6 +144,13 @@ impl ReportsView {
                 this.loading = false;
                 // The heatmap is extra: keep the last one if it fails.
                 if let Ok(days) = heat {
+                    let old = this.heatmap.as_ref().and_then(|d| d.first()).map(|d| d.0);
+                    if let (Some(old), Some(new)) = (old, days.first().map(|d| d.0))
+                        && old != new
+                    {
+                        this.heat_shift = (new - old).num_weeks();
+                        this.heat_slide_gen += 1;
+                    }
                     this.heatmap = Some(days);
                 }
                 match result {
