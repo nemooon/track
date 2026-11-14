@@ -269,7 +269,7 @@ impl Render for EditForm {
                     .child(
                         footer_button("edit-delete")
                             .border_1()
-                            .border_color(gpui::rgb(0xfca5a5))
+                            .border_color(p.danger_border)
                             .text_color(p.danger)
                             .hover(|s| s.bg(p.danger_bg))
                             .child("削除")

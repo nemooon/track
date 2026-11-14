@@ -63,11 +63,11 @@ impl Render for IntegrationsDialog {
                     div()
                         .debug_selector(|| "install-done".into())
                         .rounded_md()
-                        .bg(gpui::rgb(0xecfdf5))
+                        .bg(p.success_bg)
                         .px_3()
                         .py_2()
                         .text_xs()
-                        .text_color(gpui::rgb(0x065f46))
+                        .text_color(p.success)
                         .child("インストールしました")
                         .children(paths.into_iter().map(|p| div().child(p.display().to_string()))),
                 ),

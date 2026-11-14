@@ -439,7 +439,7 @@ impl Render for ProjectSettings {
                     .p_4()
                     .rounded_lg()
                     .border_1()
-                    .border_color(gpui::rgb(0xfecaca))
+                    .border_color(p.danger_border)
                     .bg(p.danger_bg)
                     .flex()
                     .flex_col()

@@ -124,11 +124,11 @@ impl Render for WeeklyReport {
                             .gap_3()
                             .text_sm()
                             .text_color(p.text_muted)
-                            .child(Icon::new(IconName::LoaderCircle).size_6().text_color(gpui::rgb(0x047857)))
+                            .child(Icon::new(IconName::LoaderCircle).size_6().text_color(p.success))
                             .child(format!("{}で生成しています…", provider_label(&provider))),
                     )
                 } else if let Some(e) = &self.error {
-                    d.child(div().debug_selector(|| "weekly-error".into()).rounded_md().border_1().border_color(gpui::rgb(0xfecaca)).bg(p.danger_bg).px_4().py_3().text_sm().text_color(p.danger).child(e.clone()))
+                    d.child(div().debug_selector(|| "weekly-error".into()).rounded_md().border_1().border_color(p.danger_border).bg(p.danger_bg).px_4().py_3().text_sm().text_color(p.danger).child(e.clone()))
                 } else {
                     d.child(div().h(px(420.)).child(Textarea::new(&self.editor).h_full()))
                 }

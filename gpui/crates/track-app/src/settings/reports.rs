@@ -149,7 +149,7 @@ impl Render for ReportSettings {
                         .px_2()
                         .rounded_md()
                         .text_xs()
-                        .when(ai, |d| d.bg(gpui::rgb(0xede9fe)).text_color(gpui::rgb(0x6d28d9)))
+                        .when(ai, |d| d.bg(p.ai_bg).text_color(p.ai))
                         .when(!ai, |d| d.bg(p.hover).text_color(p.text_muted))
                         .child(if ai { "AI使用" } else { "AIなし" }),
                 )

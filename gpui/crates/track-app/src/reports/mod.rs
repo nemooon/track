@@ -770,10 +770,10 @@ impl ReportsView {
                 )
                 .child(
                     small("weekly-open")
-                        .border_color(gpui::rgb(0xa7f3d0))
-                        .bg(gpui::rgb(0xecfdf5))
-                        .text_color(gpui::rgb(0x065f46))
-                        .hover(|s| s.bg(gpui::rgb(0xd1fae5)))
+                        .border_color(p.success_border)
+                        .bg(p.success_bg)
+                        .text_color(p.success)
+                        .hover(move |s| s.bg(p.success_hover))
                         .child(Icon::new(IconName::Bot).size_3p5())
                         .child("週報を生成")
                         .on_click(cx.listener(|this, _, w, cx| this.open_weekly(w, cx))),
@@ -781,10 +781,10 @@ impl ReportsView {
             })
             .child(
                 small("output-open")
-                    .border_color(gpui::rgb(0xbfdbfe))
-                    .bg(gpui::rgb(0xeff6ff))
-                    .text_color(gpui::rgb(0x1e40af))
-                    .hover(|s| s.bg(gpui::rgb(0xdbeafe)))
+                    .border_color(p.info_border)
+                    .bg(p.info_bg)
+                    .text_color(p.info)
+                    .hover(move |s| s.bg(p.info_hover))
                     .child(Icon::new(IconName::FileText).size_3p5())
                     .child("出力を作成")
                     .on_click(cx.listener(|this, _, w, cx| this.open_output(w, cx))),

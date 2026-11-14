@@ -321,8 +321,8 @@ impl Render for AiSettings {
                         .py_2()
                         .rounded_md()
                         .text_sm()
-                        .when(s.available, |d| d.bg(gpui::rgb(0xecfdf5)).text_color(gpui::rgb(0x065f46)))
-                        .when(!s.available, |d| d.bg(gpui::rgb(0xfffbeb)).text_color(gpui::rgb(0x92400e)))
+                        .when(s.available, |d| d.bg(p.success_bg).text_color(p.success))
+                        .when(!s.available, |d| d.bg(p.warning_bg).text_color(p.warning_text))
                         .child(s.detail),
                 ))
             }))

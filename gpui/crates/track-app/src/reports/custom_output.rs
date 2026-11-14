@@ -283,7 +283,7 @@ impl Render for CustomOutput {
                         .flex()
                         .items_center()
                         .gap_2()
-                        .child(Icon::new(IconName::LoaderCircle).size_5().text_color(gpui::rgb(0x1d4ed8)))
+                        .child(Icon::new(IconName::LoaderCircle).size_5().text_color(p.info))
                         .child(if uses_ai { format!("{}で作成しています…", provider_label(&provider)) } else { "現在の集計から作成しています…".into() })
                         .when(uses_ai, |d| d.child(div().text_xs().text_color(p.text_faint).child(elapsed_label(secs)))),
                 )
@@ -297,17 +297,17 @@ impl Render for CustomOutput {
                             .overflow_y_scroll()
                             .rounded_lg()
                             .border_1()
-                            .border_color(gpui::rgb(0xdbeafe))
-                            .bg(with_alpha(gpui::rgb(0xeff6ff), 0.6))
+                            .border_color(p.info_border)
+                            .bg(with_alpha(p.info_bg, 0.6))
                             .px_4()
                             .py_3()
-                            .child(div().mb_1().text_size(px(11.)).font_weight(FontWeight::MEDIUM).text_color(gpui::rgb(0x1d4ed8)).child(if kind == "reasoning" { "考えていること" } else { "進捗" }))
+                            .child(div().mb_1().text_size(px(11.)).font_weight(FontWeight::MEDIUM).text_color(p.info).child(if kind == "reasoning" { "考えていること" } else { "進捗" }))
                             .child(div().text_xs().text_color(p.text_muted).child(msg)),
                     )
                 })
                 .into_any_element()
         } else if let Some(err) = &self.error {
-            div().debug_selector(|| "output-error".into()).rounded_md().border_1().border_color(gpui::rgb(0xfecaca)).bg(p.danger_bg).px_4().py_3().text_sm().text_color(p.danger).child(err.clone()).into_any_element()
+            div().debug_selector(|| "output-error".into()).rounded_md().border_1().border_color(p.danger_border).bg(p.danger_bg).px_4().py_3().text_sm().text_color(p.danger).child(err.clone()).into_any_element()
         } else if !self.result.is_empty() {
             let f = format.clone().unwrap();
             let sum: i64 = self.result.iter().map(|r| r.minutes).sum();
@@ -343,7 +343,7 @@ impl Render for CustomOutput {
                         .text_color(p.text_muted)
                         .when_some(self.restored_at, |d, at| {
                             let t = Local.timestamp_millis_opt(at).single().map(|t| t.format("%Y/%-m/%-d %-H:%M:%S").to_string()).unwrap_or_default();
-                            d.child(div().debug_selector(|| "output-restored".into()).text_color(gpui::rgb(0x2563eb)).child(format!("保存済み結果を復元 · {t}")))
+                            d.child(div().debug_selector(|| "output-restored".into()).text_color(p.accent).child(format!("保存済み結果を復元 · {t}")))
                         })
                         .child(format!("合計 {}", format_duration_report(sum)))
                         .child(format!("{count}件")),
@@ -379,7 +379,7 @@ impl Render for CustomOutput {
                     .gap(px(6.))
                     .child(div().text_sm().font_weight(FontWeight::MEDIUM).text_color(p.text).child("出力形式"))
                     .map(|d| match &format {
-                        None => d.child(div().rounded_md().border_1().border_color(gpui::rgb(0xfde68a)).bg(p.warning_bg).px_3().py_2().text_sm().text_color(gpui::rgb(0x92400e)).child("設定の「レポート」で出力フォーマットを登録してください。")),
+                        None => d.child(div().rounded_md().border_1().border_color(p.warning_border).bg(p.warning_bg).px_3().py_2().text_sm().text_color(p.warning_text).child("設定の「レポート」で出力フォーマットを登録してください。")),
                         Some(f) => d.child(
                             div()
                                 .relative()
@@ -454,7 +454,7 @@ impl Render for CustomOutput {
                                         .px_2()
                                         .py(px(2.))
                                         .font_weight(FontWeight::MEDIUM)
-                                        .map(|d| if uses_ai { d.bg(gpui::rgb(0xede9fe)).text_color(gpui::rgb(0x6d28d9)) } else { d.bg(p.hover).text_color(p.text_muted) })
+                                        .map(|d| if uses_ai { d.bg(p.ai_bg).text_color(p.ai) } else { d.bg(p.hover).text_color(p.text_muted) })
                                         .child(if uses_ai { "AI使用" } else { "AIなし" }),
                                 )
                                 .child(if uses_ai { "設定した指示で工数を再分類して出力します。" } else { "現在の集計結果を指定した列順で出力します。" }),

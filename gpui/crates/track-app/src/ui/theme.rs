@@ -63,6 +63,22 @@ pub struct Palette {
     pub holiday: Hsla,
     /// Drop shadows (used with `with_alpha`).
     pub shadow: Hsla,
+    pub danger_border: Hsla,
+    pub warning_text: Hsla,
+    pub warning_border: Hsla,
+    /// Success / ready (AI available, latest backup, weekly report).
+    pub success: Hsla,
+    pub success_bg: Hsla,
+    pub success_border: Hsla,
+    pub success_hover: Hsla,
+    /// Informational panels and the output button.
+    pub info: Hsla,
+    pub info_bg: Hsla,
+    pub info_border: Hsla,
+    pub info_hover: Hsla,
+    /// AI-generated columns and formats.
+    pub ai: Hsla,
+    pub ai_bg: Hsla,
 }
 
 impl gpui::Global for Palette {}
@@ -97,6 +113,19 @@ impl Palette {
             saturday: c(0x2563eb),
             holiday: c(0xd97706),
             shadow: c(0x000000),
+            danger_border: c(0xfecaca),
+            warning_text: c(0x92400e),
+            warning_border: c(0xfde68a),
+            success: c(0x047857),
+            success_bg: c(0xecfdf5),
+            success_border: c(0xa7f3d0),
+            success_hover: c(0xd1fae5),
+            info: c(0x1d4ed8),
+            info_bg: c(0xeff6ff),
+            info_border: c(0xbfdbfe),
+            info_hover: c(0xdbeafe),
+            ai: c(0x6d28d9),
+            ai_bg: c(0xede9fe),
         }
     }
 }
@@ -153,6 +182,32 @@ mod tests {
         assert!(contrast(p.text, p.bg) >= 7.0, "text on bg");
         assert!(contrast(p.text_muted, p.bg) >= 4.5, "muted text on bg");
         assert!(contrast(p.text, p.surface) >= 7.0, "text on surface");
+    }
+
+    /// Every colour on screen comes from `Palette`, so a dark palette only needs new values.
+    #[test]
+    fn no_raw_hex_colours_outside_the_palette() {
+        fn walk(dir: &std::path::Path, out: &mut Vec<String>) {
+            for e in std::fs::read_dir(dir).unwrap().flatten() {
+                let path = e.path();
+                if path.is_dir() {
+                    walk(&path, out);
+                } else if path.extension().is_some_and(|x| x == "rs") {
+                    let name = path.to_string_lossy().to_string();
+                    if name.ends_with("ui/theme.rs") || name.ends_with("_tests.rs") {
+                        continue;
+                    }
+                    for (i, line) in std::fs::read_to_string(&path).unwrap().lines().enumerate() {
+                        if line.contains("rgb(0x") || line.contains("rgba(0x") {
+                            out.push(format!("{name}:{}", i + 1));
+                        }
+                    }
+                }
+            }
+        }
+        let mut found = Vec::new();
+        walk(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut found);
+        assert!(found.is_empty(), "raw colours outside Palette:\n{}", found.join("\n"));
     }
 
     #[test]
