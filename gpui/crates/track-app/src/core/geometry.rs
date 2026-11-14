@@ -5,7 +5,7 @@ use chrono::{DateTime, Local, NaiveDate, TimeZone};
 pub const BUFFER_PX: f32 = 32.;
 pub const GUTTER_PX: f32 = 60.;
 /// Pixels per hour. The middle (default) level gives a 15-minute entry room for one line.
-pub const ZOOM_LEVELS: [f32; 3] = [48., 128., 192.];
+pub const ZOOM_LEVELS: [f32; 3] = [48., 120., 192.];
 pub const DEFAULT_ZOOM: usize = 1;
 
 pub fn snap_px(hour_px: f32) -> f32 {
