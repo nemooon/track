@@ -17,6 +17,8 @@ pub struct PersistState {
     pub output_cache: Vec<track_core::report::cache::CachedOutput>,
     /// How report durations are shown.
     pub duration_style: DurationStyle,
+    /// Reports add a 「休暇」 row (and leave in the heatmap).
+    pub include_leave: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -30,7 +32,7 @@ pub enum DurationStyle {
 
 impl Default for PersistState {
     fn default() -> Self {
-        Self { zoom_index: DEFAULT_ZOOM, reports_expanded: HashMap::new(), group_same_titles: false, output_cache: Vec::new(), duration_style: DurationStyle::Decimal }
+        Self { zoom_index: DEFAULT_ZOOM, reports_expanded: HashMap::new(), group_same_titles: false, output_cache: Vec::new(), duration_style: DurationStyle::Decimal, include_leave: false }
     }
 }
 

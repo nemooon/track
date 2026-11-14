@@ -367,3 +367,29 @@ fn moving_the_period_keeps_the_table_until_the_new_one_is_ready(cx: &mut TestApp
     assert_eq!(rows, Some(0), "last week has no entries");
     assert!(child.is_none() || matches!(child, Some(Children::Loaded(_))), "never left loading: {child:?}");
 }
+
+#[gpui::test]
+fn include_leave_toggle_adds_the_leave_row(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
+    f.db().set_leave(Local::now().date_naive(), Some(track_core::model::LeaveKind::Full)).unwrap();
+    let has_leave = |app: &gpui::Entity<crate::app::TrackApp>, cx: &mut gpui::VisualTestContext| row_keys(app, cx).iter().any(|k| k == track_core::reports::LEAVE_KEY);
+    assert!(!has_leave(&app, cx));
+    click(cx, "include-leave");
+    wait_io(cx);
+    assert!(app.read_with(cx, |a, cx| a.state.read(cx).persist.include_leave));
+    assert!(has_leave(&app, cx), "{:?}", row_keys(&app, cx));
+    click(cx, "include-leave");
+    wait_io(cx);
+    assert!(!has_leave(&app, cx));
+}
+
+#[gpui::test]
+fn leave_row_does_not_expand(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
+    f.db().set_leave(Local::now().date_naive(), Some(track_core::model::LeaveKind::Full)).unwrap();
+    click(cx, "include-leave");
+    wait_io(cx);
+    click(cx, "row-__leave__");
+    wait_io(cx);
+    assert!(app.read_with(cx, |a, cx| a.reports.read(cx).children.is_empty()), "nothing to open under 休暇");
+}

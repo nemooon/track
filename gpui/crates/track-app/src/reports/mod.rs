@@ -46,6 +46,8 @@ pub struct ReportsView {
     pub tag_ids: Vec<String>,
     nav: DateNav,
     pub data: Option<ReportResponse>,
+    /// 「休暇を含める」 (kept in the persist file).
+    pub include_leave: bool,
     /// Minutes per day for the activity heatmap (around the period, same filters).
     pub heatmap: Option<Vec<(NaiveDate, i64)>>,
     /// The heatmap day under the pointer: its week (or month) is marked as what a click picks.
@@ -80,6 +82,7 @@ impl ReportsView {
         cx.observe(&state, |_, _, cx| cx.notify()).detach();
         let filter_query = cx.new(|cx| InputState::new(window, cx));
         let subs = vec![cx.subscribe(&filter_query, |_, _, _: &InputEvent, cx| cx.notify())];
+        let include_leave = state.read(cx).persist.include_leave;
         let expanded = state.read(cx).persist.reports_expanded.get("project").cloned().unwrap_or_default().into_iter().collect();
         Self {
             state,
@@ -92,6 +95,7 @@ impl ReportsView {
             nav: DateNav::default(),
             data: None,
             heatmap: None,
+            include_leave,
             heat_hover: None,
             heat_shown: None,
             heat_from: None,
@@ -123,7 +127,7 @@ impl ReportsView {
             client_ids: self.client_ids.clone(),
             project_ids: self.project_ids.clone(),
             tag_ids: self.tag_ids.clone(),
-            include_leave: false,
+            include_leave: self.include_leave,
         }
     }
 
@@ -143,7 +147,7 @@ impl ReportsView {
             // The entries of the rows that will be open, fetched before anything changes on screen.
             let mut children = HashMap::new();
             if let Ok(data) = &result {
-                for r in &data.rows {
+                for r in data.rows.iter().filter(|r| r.key != track_core::reports::LEAVE_KEY) {
                     let path = row_path(group_by, &r.key);
                     if expand_all || expanded.contains(&path) {
                         let entries = api.report_entries(&child_query(&q, group_by, &r.key)).await;
@@ -208,7 +212,7 @@ impl ReportsView {
 
     fn load_visible_children(&mut self, cx: &mut Context<Self>) {
         let Some(data) = self.data.clone() else { return };
-        for r in &data.rows {
+        for r in data.rows.iter().filter(|r| r.key != track_core::reports::LEAVE_KEY) {
             let path = row_path(self.group_by, &r.key);
             if self.expanded.contains(&path) && !self.children.contains_key(&path) {
                 self.load_children(path, r.key.clone(), cx);
@@ -381,6 +385,17 @@ impl ReportsView {
                         .on_click(cx.listener(move |this, _, _, cx| this.set_duration_style(s, cx)))
                 },
             )))
+            .child(
+                controls::chip(&p, "include-leave", self.include_leave)
+                    .debug_selector(|| "include-leave".into())
+                    .child("休暇を含める")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.include_leave = !this.include_leave;
+                        let on = this.include_leave;
+                        this.state.update(cx, |s, _| s.update_persist(|p| p.include_leave = on));
+                        cx.notify();
+                    })),
+            )
     }
 
     fn render_filter(&self, kind: FilterKind, label: &'static str, cx: &mut Context<Self>) -> impl IntoElement {
@@ -659,7 +674,8 @@ impl ReportsView {
         let mut body: Vec<AnyElement> = Vec::new();
         for (i, r) in data.rows.iter().enumerate() {
             let path = row_path(self.group_by, &r.key);
-            let open = self.expanded.contains(&path);
+            let is_leave = r.key == track_core::reports::LEAVE_KEY;
+            let open = !is_leave && self.expanded.contains(&path);
             let (p2, k2) = (path.clone(), r.key.clone());
             let sel = format!("row-{}", r.key);
             body.push(
@@ -677,7 +693,8 @@ impl ReportsView {
                             .flex()
                             .items_center()
                             .gap_2()
-                            .child(div().size_4().flex_shrink_0().flex().items_center().justify_center().text_color(p.text_faint).child(Icon::new(if open { IconName::ChevronDown } else { IconName::ChevronRight }).size_3()))
+                            // 休暇 has nothing to open.
+                            .child(div().size_4().flex_shrink_0().flex().items_center().justify_center().text_color(p.text_faint).when(!is_leave, |d| d.child(Icon::new(if open { IconName::ChevronDown } else { IconName::ChevronRight }).size_3())))
                             .child(div().size_3().flex_shrink_0().rounded(RADIUS_SM).bg(hex(&row_color(r.color.as_deref(), i))))
                             .child(div().min_w_0().truncate().child(r.label.clone()))
                             .into_any_element(),
@@ -686,7 +703,8 @@ impl ReportsView {
                         div().font_family(MONO).child(format_duration(r.total_minutes, style)).into_any_element(),
                         share_cell(p, &r.key, r.total_minutes, total),
                     ))
-                    .on_click(cx.listener(move |this, _, _, cx| this.toggle_row(p2.clone(), k2.clone(), cx)))
+                    .when(!is_leave, |d| d.on_click(cx.listener(move |this, _, _, cx| this.toggle_row(p2.clone(), k2.clone(), cx))))
+                    .when(is_leave, |d| d.cursor_default())
                     .into_any_element(),
             );
             if !open {
