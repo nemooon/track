@@ -157,9 +157,12 @@ impl SettingsWindow {
         );
         let mut last_group = "";
         for s in SettingsSection::ALL {
+            // Groups are set apart by a little space, without headings.
             if s.group() != last_group {
+                if !last_group.is_empty() {
+                    col = col.child(div().h(px(12.)));
+                }
                 last_group = s.group();
-                col = col.child(div().px_2().pt_3().pb_1().text_xs().font_weight(FontWeight::MEDIUM).text_color(p.text_muted).child(last_group));
             }
             let active = self.section == s;
             let id = format!("settings-nav-{}", s.key());
