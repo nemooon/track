@@ -3,7 +3,6 @@ use track_core::model::TimeEntry;
 use crate::core::geometry::minutes_to_y;
 use crate::core::time::format_duration_calendar;
 use crate::ui::theme::*;
-use chrono::Local;
 use gpui::{
     BoxShadow, Div, FontWeight, InteractiveElement, ParentElement, Stateful, Styled, div, point,
     prelude::FluentBuilder, px,
@@ -49,8 +48,6 @@ pub fn render_block(p: Palette, entry: &TimeEntry, selected: bool, ghost: bool, 
         (mix(accent, 0.3, p.bg), mix(accent, 0.12, p.bg))
     };
     let text = p.text;
-    let start = entry.start.with_timezone(&Local);
-    let end = entry.end.with_timezone(&Local);
     let gross = (entry.end - entry.start).num_minutes();
     let dur = format!("{}{}", format_duration_calendar((gross - entry.break_minutes).max(0)), break_label(entry.break_minutes));
     let project_name = entry.project.as_ref().map(|p| p.name.clone()).unwrap_or_else(|| "プロジェクトなし".into());
@@ -80,45 +77,31 @@ pub fn render_block(p: Palette, entry: &TimeEntry, selected: bool, ghost: bool, 
         .shadow(shadows)
         .when(ghost, |d| d.opacity(0.6))
         .cursor(if ghost { gpui::CursorStyle::ClosedHand } else { gpui::CursorStyle::OpenHand })
-        .child(
+        .child({
+            let id = entry.id.clone();
+            let sel = move |part: &'static str| {
+                let id = id.clone();
+                move || format!("entry-{id}-{part}")
+            };
+            // Title with its duration at the right end, then project and tags, left-aligned. Short
+            // entries show as many lines as fit (a 15-minute one shows the title line).
             div()
                 .flex()
                 .flex_col()
-                .gap(px(2.))
                 .h_full()
                 .overflow_hidden()
                 .child(
                     div()
                         .flex()
-                        .items_start()
+                        .items_baseline()
                         .gap(px(6.))
-                        .child(div().min_w_0().flex_1().truncate().font_weight(FontWeight::SEMIBOLD).line_height(px(15.)).child(title.clone().unwrap_or(project_name.clone())))
-                        .child(
-                            div()
-                                .flex_shrink_0()
-                                .rounded_sm()
-                                .px_1()
-                                .text_size(px(9.))
-                                .font_weight(FontWeight::MEDIUM)
-                                .line_height(px(12.))
-                                .font_family(MONO)
-                                .text_color(p.text_muted)
-                                .bg(with_alpha(p.bg, 0.6))
-                                .child(format!("{}–{}", start.format("%H:%M"), end.format("%H:%M"))),
-                        ),
+                        .child(div().debug_selector(sel("title")).flex_1().min_w_0().truncate().font_weight(FontWeight::SEMIBOLD).line_height(px(15.)).child(title.clone().unwrap_or(project_name.clone())))
+                        .child(div().debug_selector(sel("duration")).flex_shrink_0().text_size(px(11.)).line_height(px(15.)).font_family(MONO).text_color(p.text_muted).child(dur)),
                 )
                 .when(title.is_some(), |d| {
-                    d.child(
-                        div()
-                            .flex()
-                            .items_baseline()
-                            .gap(px(6.))
-                            .line_height(px(14.))
-                            .child(div().min_w_0().flex_1().truncate().text_size(px(11.)).font_weight(FontWeight::MEDIUM).opacity(0.65).child(project_name.clone()))
-                            .child(div().ml_auto().flex_shrink_0().text_size(px(10.)).opacity(0.55).child(dur.clone())),
-                    )
+                    d.child(div().debug_selector(sel("project")).truncate().text_size(px(11.)).line_height(px(14.)).text_color(p.text_muted).child(project_name.clone()))
                 })
-                .when(title.is_none() || !entry.tags.is_empty(), |d| {
+                .when(!entry.tags.is_empty(), |d| {
                     d.child(
                         div()
                             .mt(px(2.))
@@ -129,20 +112,19 @@ pub fn render_block(p: Palette, entry: &TimeEntry, selected: bool, ghost: bool, 
                             .gap_y(px(2.))
                             .text_size(px(10.))
                             .line_height(px(13.))
+                            .text_color(p.text_muted)
                             .children(entry.tags.iter().map(|t| {
                                 div()
                                     .flex()
                                     .min_w_0()
                                     .items_center()
                                     .gap_1()
-                                    .opacity(0.65)
                                     .child(div().size(px(6.)).flex_shrink_0().rounded_full().bg(hex(&t.tag.color)))
                                     .child(div().truncate().child(t.tag.name.clone()))
-                            }))
-                            .when(title.is_none(), |d| d.child(div().ml_auto().opacity(0.55).child(dur))),
+                            })),
                     )
-                }),
-        )
+                })
+        })
 }
 
 

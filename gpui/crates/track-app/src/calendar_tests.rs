@@ -322,3 +322,18 @@ fn fifteen_minute_entry_fits_one_line_at_default_zoom(cx: &mut TestAppContext) {
     let h = cx.debug_bounds("entry-q").expect("15-minute entry").size.height;
     assert!(h >= px(25.), "one line needs 25px, got {h:?}");
 }
+
+/// Title with the duration at its right end, then project below, left-aligned; no time range.
+#[gpui::test]
+fn entry_block_puts_duration_beside_title_and_project_below(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = setup(cx);
+    let get = |cx: &mut gpui::VisualTestContext, s: &'static str| cx.debug_bounds(s).unwrap_or_else(|| panic!("{s}"));
+    let (title, dur, project) = (get(cx, "entry-a-title"), get(cx, "entry-a-duration"), get(cx, "entry-a-project"));
+    let block = get(cx, "entry-a");
+    assert!((dur.center().y - title.center().y).abs() <= px(2.), "duration on the title's line: {title:?} {dur:?}");
+    assert!(dur.origin.x >= title.origin.x + title.size.width - px(1.), "duration right of the title");
+    assert!(block.origin.x + block.size.width - (dur.origin.x + dur.size.width) <= px(12.), "duration at the right end");
+    assert!(project.origin.y >= title.origin.y + title.size.height - px(1.), "project below the title");
+    assert!((project.origin.x - title.origin.x).abs() <= px(1.), "project left-aligned with the title");
+    assert!(cx.debug_bounds("entry-a-span").is_none(), "no start–end time in the block");
+}
