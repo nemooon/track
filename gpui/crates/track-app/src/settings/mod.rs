@@ -139,7 +139,7 @@ impl SettingsWindow {
 
     fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let p = palette(cx);
-        let mut col = div().w(px(200.)).flex_shrink_0().h_full().flex().flex_col().gap_1().px_2().bg(p.surface).border_r_1().border_color(p.border);
+        let mut col = div().w(px(200.)).flex_shrink_0().h_full().flex().flex_col().gap(px(1.)).px_2().bg(p.surface).border_r_1().border_color(p.border);
         // The row with the traffic lights drags the window (the page beside it starts at the top).
         col = col.child(
             div()
@@ -160,7 +160,7 @@ impl SettingsWindow {
             // Groups are set apart by a little space, without headings.
             if s.group() != last_group {
                 if !last_group.is_empty() {
-                    col = col.child(div().h(px(12.)));
+                    col = col.child(div().h(px(6.)));
                 }
                 last_group = s.group();
             }
@@ -174,7 +174,7 @@ impl SettingsWindow {
                     .items_center()
                     .gap_2()
                     .px_2()
-                    .py(px(6.))
+                    .py(px(4.))
                     .rounded_md()
                     .text_sm()
                     .cursor_pointer()
