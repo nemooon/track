@@ -1,8 +1,10 @@
+mod day_menu;
 mod edit_dialog;
 mod entry_block;
 mod grid;
 mod picker;
 
+use std::collections::HashMap;
 use track_core::model::{EntryPatch, NewEntry, TimeEntry};
 use crate::app::AppState;
 use crate::core::interaction::{self, DragState, Edge, EntryCache};
@@ -30,6 +32,10 @@ pub struct CalendarView {
     pub day_count: DayCount,
     nav: DateNav,
     pub cache: EntryCache,
+    /// Stored leave rows of the shown days (holidays' automatic leave is worked out when drawn).
+    pub leaves: HashMap<NaiveDate, track_core::model::LeaveKind>,
+    /// The day whose 休暇・直行直帰 menu is open.
+    day_menu: Option<NaiveDate>,
     pub load_error: Option<String>,
     pub drag: DragState,
     pub editing: Option<String>,
@@ -65,6 +71,8 @@ impl CalendarView {
             day_count: DayCount::Workdays,
             nav: DateNav::default(),
             cache: EntryCache::default(),
+            leaves: HashMap::new(),
+            day_menu: None,
             load_error: None,
             drag: DragState::Idle,
             editing: None,
@@ -120,8 +128,10 @@ impl CalendarView {
         let Some((from, to)) = self.requested else { return };
         let api = self.state.read(cx).api.clone();
         let fut = api.entries(at_minutes(from, 0).to_utc(), at_minutes(to, 0).to_utc());
+        let leaves = api.leaves(from, to);
         self.load_task = Some(cx.spawn(async move |this, cx| {
             let result = fut.await;
+            let leaves = leaves.await;
             let _ = this.update(cx, |this, cx| {
                 if this.requested != Some((from, to)) {
                     return;
@@ -131,6 +141,10 @@ impl CalendarView {
                         this.cache = EntryCache::new(entries);
                         this.load_error = None;
                     }
+                    Err(e) => this.load_error = Some(e.message),
+                }
+                match leaves {
+                    Ok(rows) => this.leaves = rows.into_iter().map(|l| (l.date, l.kind)).collect(),
                     Err(e) => this.load_error = Some(e.message),
                 }
                 cx.notify();
@@ -267,7 +281,9 @@ impl CalendarView {
                     .when_some(holiday, |s, name| {
                         s.child(div().min_w_0().rounded(RADIUS_SM).bg(p.holiday).px_1().py(px(2.)).text_size(px(10.)).line_height(px(12.)).text_color(p.on_color).truncate().child(name))
                     })
+                    .children(self.day_mark(d, cx))
                     .child(div().flex_1())
+                    .child(self.render_day_menu(d, cx))
                     .when(total > 0, |s| s.child(div().flex_shrink_0().text_color(p.text_muted).font_weight(FontWeight::SEMIBOLD).child(self.duration(total, cx))))
             }))
     }
@@ -301,7 +317,8 @@ impl CalendarView {
         let is_work_day = settings.as_ref().is_some_and(|s| s.work_days.contains(&day.weekday().num_days_from_sunday())) && holiday_name(day).is_none();
         let body_h = 24. * hour_px + 1.;
         let bounds_store = self.column_bounds.clone();
-        let day_entries: Vec<&TimeEntry> = entries_for_day(rendered, day);
+        // A 直行直帰 day shows in the header, not in the time grid.
+        let day_entries: Vec<&TimeEntry> = entries_for_day(rendered, day).into_iter().filter(|e| e.kind != track_core::model::EntryKind::Direct).collect();
         let spans: Vec<(i64, i64)> = day_entries.iter().map(|e| {
             let (s, e2) = entry_span_minutes(e, day);
             (s, e2.min(DAY_MINUTES))

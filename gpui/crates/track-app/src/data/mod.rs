@@ -148,6 +148,23 @@ impl DataClient {
         self.call("entry_titles", move |db| db.entry_titles(Some(&p)))
     }
 
+    pub fn leaves(&self, from: chrono::NaiveDate, to: chrono::NaiveDate) -> impl Future<Output = DataResult<Vec<track_core::model::Leave>>> + Send + 'static {
+        self.call("leaves", move |db| db.leaves(from, to))
+    }
+
+    /// `None` is 「なし」 (on a holiday, 「休暇にしない」).
+    pub fn set_leave(&self, date: chrono::NaiveDate, kind: Option<track_core::model::LeaveKind>) -> impl Future<Output = DataResult<()>> + Send + 'static {
+        self.call("set_leave", move |db| db.set_leave(date, kind))
+    }
+
+    pub fn set_direct(&self, date: chrono::NaiveDate, project_id: String) -> impl Future<Output = DataResult<TimeEntry>> + Send + 'static {
+        self.call("set_direct", move |db| db.set_direct(date, &project_id))
+    }
+
+    pub fn remove_direct(&self, date: chrono::NaiveDate) -> impl Future<Output = DataResult<()>> + Send + 'static {
+        self.call("remove_direct", move |db| db.remove_direct(date))
+    }
+
     pub fn create_entry(&self, body: NewEntry) -> impl Future<Output = DataResult<TimeEntry>> + Send + 'static {
         self.call("create_entry", move |db| db.create_entry(body))
     }

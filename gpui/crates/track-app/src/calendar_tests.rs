@@ -369,3 +369,48 @@ fn a_narrow_short_block_still_shows_its_title(cx: &mut TestAppContext) {
     let title = cx.debug_bounds("entry-n-b-title").expect("title rendered");
     assert!(title.size.height >= px(10.), "{:?}", title.size);
 }
+
+fn click_id(cx: &mut gpui::VisualTestContext, id: String) {
+    let sel: &'static str = Box::leak(id.into_boxed_str());
+    let b = cx.debug_bounds(sel).unwrap_or_else(|| panic!("{sel} not rendered"));
+    cx.simulate_click(b.center(), Modifiers::none());
+}
+
+#[gpui::test]
+fn choosing_full_leave_marks_the_day(cx: &mut TestAppContext) {
+    let (_app, cx, f) = setup(cx);
+    click_id(cx, "day-menu-2026-11-12".into());
+    click_id(cx, "day-leave-full".into());
+    wait_io(cx);
+    let leaves = f.db().leaves(day(12), day(13)).unwrap();
+    assert_eq!(leaves.first().map(|l| l.kind), Some(track_core::model::LeaveKind::Full));
+    assert!(cx.debug_bounds("day-mark-2026-11-12").is_some(), "the header says 休暇");
+}
+
+#[gpui::test]
+fn direct_is_not_in_the_time_grid_but_counts(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
+    let days = visible_days(&app, cx);
+    let before = app.read_with(cx, |a, cx| a.calendar.read(cx).visible_total_minutes(&days));
+    click_id(cx, "day-menu-2026-11-12".into());
+    click_id(cx, "day-direct-p1".into());
+    wait_io(cx);
+    let direct = f.db().direct_entry(day(12)).unwrap().expect("direct entry");
+    assert!(cx.debug_bounds(Box::leak(format!("entry-{}", direct.id).into_boxed_str())).is_none(), "not in the time grid");
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).visible_total_minutes(&days)), before + 450);
+    assert!(cx.debug_bounds("day-mark-2026-11-12").is_some(), "the header says 直行直帰");
+}
+
+#[gpui::test]
+fn holiday_none_option_cancels_the_holiday_leave(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
+    app.update(cx, |a, cx| a.calendar.update(cx, |c, cx| {
+        c.anchor = day(3);
+        cx.notify();
+    }));
+    wait_io(cx);
+    click_id(cx, "day-menu-2026-11-03".into());
+    click_id(cx, "day-leave-none".into());
+    wait_io(cx);
+    assert_eq!(f.db().leave_minutes(day(3), day(4)).unwrap()[0].1, 0);
+}
