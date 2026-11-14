@@ -312,7 +312,7 @@ fn form_line(p: Palette, label: &str, control: impl IntoElement) -> Div {
     div().flex().items_center().gap_4().child(div().w(px(90.)).flex_shrink_0().text_xs().text_color(p.text_muted).child(label.to_string())).child(control)
 }
 
-fn icon_button(p: Palette, id: String, icon: IconName, title: &'static str, enabled: bool) -> gpui::Stateful<Div> {
+fn icon_button(p: Palette, id: String, icon: Icon, title: &'static str, enabled: bool) -> gpui::Stateful<Div> {
     let sel = id.clone();
     div()
         .id(SharedString::from(id))
@@ -322,7 +322,7 @@ fn icon_button(p: Palette, id: String, icon: IconName, title: &'static str, enab
         .text_color(p.text_muted)
         .when(enabled, |d| d.cursor_pointer().hover(|s| s.bg(p.hover).text_color(p.text)))
         .when(!enabled, |d| d.opacity(0.4))
-        .child(Icon::new(icon).size_4())
+        .child(icon.size_4())
         .tooltip(move |window, cx| gpui_component::tooltip::Tooltip::new(title).build(window, cx))
 }
 
@@ -366,10 +366,10 @@ impl Render for TagSettings {
             list_row(p, format!("tag-row-{}", t.id), false)
                 .child(div().size(px(10.)).rounded_full().bg(hex(&t.color)))
                 .child(div().flex_1().child(t.name.clone()))
-                .child(icon_button(p, format!("tag-edit-{}", t.id), IconName::Settings, "編集", true).on_click(cx.listener(move |this, _, w, cx| {
+                .child(icon_button(p, format!("tag-edit-{}", t.id), Icon::new(IconName::Settings), "編集", true).on_click(cx.listener(move |this, _, w, cx| {
                     this.open_editor(Draft { id: Some(edit_t.id.clone()), name: edit_t.name.clone(), color: edit_t.color.clone(), ..Draft::new(EditKind::Tag) }, w, cx)
                 })))
-                .child(icon_button(p, format!("tag-delete-{}", t.id), IconName::Delete, "削除", true).on_click(cx.listener(move |this, _, _, cx| {
+                .child(icon_button(p, format!("tag-delete-{}", t.id), crate::ui::icons::trash(), "削除", true).on_click(cx.listener(move |this, _, _, cx| {
                     this.deleting_tag = Some(del_t.clone());
                     cx.notify();
                 })))
