@@ -177,7 +177,7 @@ impl ReportsView {
                 match result {
                     Ok(data) => {
                         if this.expand_all {
-                            for r in &data.rows {
+                            for r in data.rows.iter().filter(|r| r.key != track_core::reports::LEAVE_KEY) {
                                 this.expanded.insert(row_path(this.group_by, &r.key));
                             }
                         }
@@ -259,12 +259,18 @@ impl ReportsView {
         cx.notify();
     }
 
+    /// Rows in the table that are clients/projects/tags (the 休暇 row is not one).
+    pub fn row_count(&self) -> Option<usize> {
+        self.data.as_ref().filter(|_| !self.loading).map(|d| d.rows.iter().filter(|r| r.key != track_core::reports::LEAVE_KEY).count())
+    }
+
     pub fn toggle_all(&mut self, cx: &mut Context<Self>) {
         if !self.expanded.is_empty() {
             self.expanded.clear();
             self.expand_all = false;
         } else {
-            for r in self.data.as_ref().map(|d| d.rows.clone()).unwrap_or_default() {
+            // 休暇 has nothing to open.
+            for r in self.data.as_ref().map(|d| d.rows.clone()).unwrap_or_default().iter().filter(|r| r.key != track_core::reports::LEAVE_KEY) {
                 self.expanded.insert(row_path(self.group_by, &r.key));
             }
             self.expand_all = true;
@@ -672,6 +678,7 @@ impl ReportsView {
             }
         };
         let mut body: Vec<AnyElement> = Vec::new();
+        let colours = colour_indexes(&data.rows);
         for (i, r) in data.rows.iter().enumerate() {
             let path = row_path(self.group_by, &r.key);
             let is_leave = r.key == track_core::reports::LEAVE_KEY;
@@ -695,7 +702,7 @@ impl ReportsView {
                             .gap_2()
                             // 休暇 has nothing to open.
                             .child(div().size_4().flex_shrink_0().flex().items_center().justify_center().text_color(p.text_faint).when(!is_leave, |d| d.child(Icon::new(if open { IconName::ChevronDown } else { IconName::ChevronRight }).size_3())))
-                            .child(div().size_3().flex_shrink_0().rounded(RADIUS_SM).bg(hex(&row_color(r.color.as_deref(), i))))
+                            .child(div().size_3().flex_shrink_0().rounded(RADIUS_SM).bg(hex(&row_color(r.color.as_deref(), colours[i]))))
                             .child(div().min_w_0().truncate().child(r.label.clone()))
                             .into_any_element(),
                         e(),
@@ -909,6 +916,21 @@ impl HasDateNav for ReportsView {
         };
         cx.notify();
     }
+}
+
+/// The palette slot of each row's colour, counting only real rows, so toggling the 休暇 row does
+/// not shift the colours of the rows below it.
+pub fn colour_indexes(rows: &[track_core::model::ReportRow]) -> Vec<usize> {
+    let mut next = 0;
+    rows.iter()
+        .map(|r| {
+            let i = next;
+            if r.key != track_core::reports::LEAVE_KEY {
+                next += 1;
+            }
+            i
+        })
+        .collect()
 }
 
 pub fn shift_month(d: NaiveDate, delta: i32) -> NaiveDate {

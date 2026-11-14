@@ -61,13 +61,20 @@ impl Db {
     /// Runs `f` inside a named savepoint: all of it or none of it.
     fn in_savepoint<T>(&mut self, f: impl FnOnce(&mut Db) -> Result<T>) -> Result<T> {
         self.conn().execute_batch("SAVEPOINT leave_direct")?;
+        let undo = |db: &Db| {
+            let _ = db.conn().execute_batch("ROLLBACK TO leave_direct; RELEASE leave_direct");
+        };
         match f(self) {
-            Ok(v) => {
-                self.conn().execute_batch("RELEASE leave_direct")?;
-                Ok(v)
-            }
+            // If even the release fails, roll back so no transaction is left open.
+            Ok(v) => match self.conn().execute_batch("RELEASE leave_direct") {
+                Ok(()) => Ok(v),
+                Err(e) => {
+                    undo(self);
+                    Err(e.into())
+                }
+            },
             Err(e) => {
-                let _ = self.conn().execute_batch("ROLLBACK TO leave_direct; RELEASE leave_direct");
+                undo(self);
                 Err(e)
             }
         }

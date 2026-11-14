@@ -547,13 +547,13 @@ impl TrackApp {
             Page::Reports => {
                 // The period total is already the table's 合計 row; only the row count goes here.
                 let reports = self.reports.read(cx);
-                let Some(data) = reports.data.as_ref().filter(|_| !reports.loading) else { return vec![] };
+                let Some(count) = reports.row_count() else { return vec![] };
                 let unit = match reports.group_by {
                     track_core::model::GroupBy::Client => "クライアント",
                     track_core::model::GroupBy::Project => "プロジェクト",
                     track_core::model::GroupBy::Tag => "タグ",
                 };
-                vec![div().debug_selector(|| "status-rows".into()).child(format!("{} {unit}", data.rows.len())).into_any_element()]
+                vec![div().debug_selector(|| "status-rows".into()).child(format!("{count} {unit}")).into_any_element()]
             }
         }
     }

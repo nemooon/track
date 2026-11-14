@@ -408,3 +408,40 @@ fn custom_outputs_never_get_leave(cx: &mut TestAppContext) {
     assert_eq!(ctx.total, shown_total - 450, "the total without leave");
     assert!(!ctx.query.include_leave);
 }
+
+fn with_leave_on(cx: &mut TestAppContext) -> (gpui::Entity<crate::app::TrackApp>, &mut gpui::VisualTestContext, Fixture) {
+    let (app, cx, f) = setup(cx);
+    f.db().set_leave(Local::now().date_naive(), Some(track_core::model::LeaveKind::Full)).unwrap();
+    click(cx, "include-leave");
+    wait_io(cx);
+    (app, cx, f)
+}
+
+#[gpui::test]
+fn the_row_count_leaves_out_leave(cx: &mut TestAppContext) {
+    let (app, cx, _f) = with_leave_on(cx);
+    let (rows, count) = app.read_with(cx, |a, cx| {
+        let r = a.reports.read(cx);
+        (r.data.as_ref().unwrap().rows.len(), r.row_count())
+    });
+    assert_eq!(count, Some(rows - 1), "休暇 is not a project");
+}
+
+#[gpui::test]
+fn expanding_all_never_opens_leave(cx: &mut TestAppContext) {
+    let (app, cx, _f) = with_leave_on(cx);
+    click(cx, "toggle-all");
+    wait_io(cx);
+    let expanded = app.read_with(cx, |a, cx| a.reports.read(cx).expanded.clone());
+    assert!(!expanded.is_empty());
+    assert!(!expanded.iter().any(|p| p.ends_with(track_core::reports::LEAVE_KEY)), "{expanded:?}");
+}
+
+#[test]
+fn row_colours_skip_the_leave_row() {
+    use track_core::model::ReportRow;
+    let row = |key: &str| ReportRow { key: key.into(), label: key.into(), color: None, total_minutes: 1 };
+    let rows = [row("a"), row(track_core::reports::LEAVE_KEY), row("b")];
+    let slots = crate::reports::colour_indexes(&rows);
+    assert_eq!((slots[0], slots[2]), (0, 1), "b keeps the second colour (休暇 has its own colour)");
+}
