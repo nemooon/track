@@ -11,6 +11,7 @@ fn q(range: ReportRange, group_by: GroupBy, day: u32) -> ReportQuery {
         client_ids: vec![],
         project_ids: vec![],
         tag_ids: vec![],
+        include_leave: false,
     }
 }
 
@@ -130,6 +131,7 @@ fn matches_bun_server_on_copy_db() {
                 client_ids: vec![],
                 project_ids: vec![],
                 tag_ids: vec![],
+                include_leave: false,
             };
             let ours = db.report(&query).unwrap();
             let url = format!(
@@ -207,4 +209,60 @@ fn heatmap_sums_each_day_with_the_filters() {
     assert_eq!(get(day(2026, 11, 10)), Some(120));
     assert_eq!(get(day(2026, 11, 20)), Some(30), "days outside the report's week count too");
     assert_eq!(get(day(2026, 11, 11)), Some(0));
+}
+
+fn work_schedule(db: &mut Db) {
+    db.update_settings(SettingsPatch { work_start: Some(600), work_end: Some(1110), work_days: Some(vec![1, 2, 3, 4, 5]), ..Default::default() }).unwrap();
+}
+
+fn with_leave(include: bool) -> ReportQuery {
+    ReportQuery { include_leave: include, ..q(ReportRange::Week, GroupBy::Project, 11) }
+}
+
+#[test]
+fn leave_row_only_when_asked() {
+    let (_d, mut db) = db();
+    work_schedule(&mut db);
+    add(&mut db, (10, 10, 0), (10, 11, 0), None, &[], 0);
+    db.set_leave(day(2026, 11, 12), Some(LeaveKind::Full)).unwrap();
+    let off = db.report(&with_leave(false)).unwrap();
+    assert!(off.rows.iter().all(|r| r.key != crate::reports::LEAVE_KEY));
+    assert_eq!(off.total_minutes, 60);
+    let on = db.report(&with_leave(true)).unwrap();
+    let leave = on.rows.iter().find(|r| r.key == crate::reports::LEAVE_KEY).expect("休暇 row");
+    assert_eq!((leave.label.as_str(), leave.total_minutes), ("休暇", 450));
+    assert_eq!(on.total_minutes, 510);
+}
+
+#[test]
+fn no_leave_row_with_filters() {
+    let (_d, mut db) = db();
+    work_schedule(&mut db);
+    let (p, _, _) = seed(&mut db);
+    db.set_leave(day(2026, 11, 12), Some(LeaveKind::Full)).unwrap();
+    let r = db.report(&ReportQuery { project_ids: vec![p], ..with_leave(true) }).unwrap();
+    assert!(r.rows.iter().all(|r| r.key != crate::reports::LEAVE_KEY));
+    assert_eq!(r.total_minutes, 0);
+}
+
+#[test]
+fn heatmap_adds_leave_when_asked() {
+    let (_d, mut db) = db();
+    work_schedule(&mut db);
+    let (p, _, _) = seed(&mut db);
+    let d = day(2026, 11, 12);
+    db.set_leave(d, Some(LeaveKind::Full)).unwrap();
+    let get = |q: &ReportQuery, db: &Db| db.heatmap(q).unwrap().into_iter().find(|(x, _)| *x == d).map(|(_, m)| m);
+    assert_eq!(get(&with_leave(false), &db), Some(0));
+    assert_eq!(get(&with_leave(true), &db), Some(450));
+    assert_eq!(get(&ReportQuery { project_ids: vec![p], ..with_leave(true) }, &db), Some(0), "not with a filter");
+}
+
+#[test]
+fn weekly_copy_never_has_leave() {
+    let (_d, mut db) = db();
+    work_schedule(&mut db);
+    add(&mut db, (10, 10, 0), (10, 11, 0), None, &[], 0);
+    db.set_leave(day(2026, 11, 12), Some(LeaveKind::Full)).unwrap();
+    assert!(!db.weekly_copy(&with_leave(true)).unwrap().contains("休暇"));
 }

@@ -123,6 +123,7 @@ impl ReportsView {
             client_ids: self.client_ids.clone(),
             project_ids: self.project_ids.clone(),
             tag_ids: self.tag_ids.clone(),
+            include_leave: false,
         }
     }
 

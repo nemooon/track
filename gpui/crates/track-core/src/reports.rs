@@ -8,6 +8,9 @@ use std::collections::HashMap;
 
 const NONE: &str = "__none__";
 const NONE_COLOR: &str = "#9ca3af";
+/// The 「休暇」 row (`ReportQuery.include_leave`).
+pub const LEAVE_KEY: &str = "__leave__";
+const LEAVE_COLOR: &str = "#a3a3a3";
 
 use crate::dates::local_midnight;
 
@@ -30,6 +33,11 @@ pub fn heatmap_range(q: &ReportQuery) -> (chrono::NaiveDate, chrono::NaiveDate) 
     let centre = week_start(first);
     let before = HEATMAP_WEEKS / 2;
     (centre - Duration::weeks(before), centre + Duration::weeks(HEATMAP_WEEKS - before))
+}
+
+/// Leave is added only when asked for and no filter is set.
+fn leave_applies(q: &ReportQuery) -> bool {
+    q.include_leave && q.client_ids.is_empty() && q.project_ids.is_empty() && q.tag_ids.is_empty()
 }
 
 fn split_none(ids: &[String]) -> (Vec<&String>, bool) {
@@ -136,8 +144,22 @@ impl Db {
         }
         // stable sort by minutes, ties keep first-seen order (like Array.prototype.sort)
         let mut out: Vec<ReportRow> = order.into_iter().filter_map(|k| rows.remove(&k)).collect();
+        if let Some(leave) = self.leave_in(q, from, to)?.filter(|m| *m > 0) {
+            total += leave;
+            out.push(ReportRow { key: LEAVE_KEY.into(), label: "休暇".into(), color: Some(LEAVE_COLOR.into()), total_minutes: leave });
+        }
         out.sort_by_key(|r| std::cmp::Reverse(r.total_minutes));
         Ok(ReportResponse { rows: out, total_minutes: total, range: DateSpan { from, to } })
+    }
+
+    /// Leave minutes in `[from, to)` when the query asks for them and sets no filter (leave
+    /// belongs to no client, project or tag).
+    fn leave_in(&self, q: &ReportQuery, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Option<i64>> {
+        if !leave_applies(q) {
+            return Ok(None);
+        }
+        let (f, t) = (from.with_timezone(&Local).date_naive(), to.with_timezone(&Local).date_naive());
+        Ok(Some(self.leave_minutes(f, t)?.iter().map(|(_, m)| m).sum()))
     }
 
     /// Minutes per local day over `heatmap_range`, with the query's filters (every day listed,
@@ -157,12 +179,18 @@ impl Db {
                 d += Duration::days(1);
             }
         }
+        if leave_applies(q) {
+            for ((_, m), (_, leave)) in days.iter_mut().zip(self.leave_minutes(from, to)?) {
+                *m += leave;
+            }
+        }
         Ok(days)
     }
 
-    /// Project totals for the query's range and filters, whatever the screen groups by.
+    /// Project totals for the query's range and filters, whatever the screen groups by (never
+    /// with leave).
     pub fn weekly_copy(&self, q: &ReportQuery) -> Result<String> {
-        let by_project = ReportQuery { group_by: GroupBy::Project, ..q.clone() };
+        let by_project = ReportQuery { group_by: GroupBy::Project, include_leave: false, ..q.clone() };
         Ok(crate::report::view::weekly_copy_text(&self.report(&by_project)?.rows))
     }
 

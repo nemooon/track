@@ -380,6 +380,8 @@ pub struct ReportQuery {
     pub client_ids: Vec<String>,
     pub project_ids: Vec<String>,
     pub tag_ids: Vec<String>,
+    /// Add a 「休暇」 row (and the heatmap's leave) when no filter is set.
+    pub include_leave: bool,
 }
 
 

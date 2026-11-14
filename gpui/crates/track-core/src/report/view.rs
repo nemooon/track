@@ -146,6 +146,7 @@ mod tests {
             client_ids: vec!["c1".into()],
             project_ids: vec!["p1".into(), "p2".into()],
             tag_ids: vec![],
+            include_leave: false,
         };
         let q = child_query(&base, GroupBy::Project, "p2");
         assert_eq!((q.client_ids.clone(), q.project_ids.clone()), (vec!["c1".to_string()], vec!["p2".to_string()]));
