@@ -85,10 +85,9 @@ impl ReportsView {
                     .cursor_pointer()
                     .bg(shade(level(minutes)))
                     // The report's period is strong; the weeks around it are faded.
+                    // Under the pointer, the days a click would show are not faded.
                     .when(!active && !picked, |c| c.opacity(0.35))
                     .when(d == today, |c| c.border_1().border_color(p.text_muted))
-                    // Under the pointer: the days a click would show are outlined.
-                    .when(picked, |c| c.border_1().border_color(p.text))
                     .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                         if *hovered {
                             this.heat_hover = Some(d);
