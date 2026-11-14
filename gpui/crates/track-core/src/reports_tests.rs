@@ -1,0 +1,311 @@
+use crate::model::*;
+use crate::repo::repo_tests::{db, local, seed};
+use crate::Db;
+use chrono::{Local, NaiveDate, TimeZone};
+
+fn q(range: ReportRange, group_by: GroupBy, day: u32) -> ReportQuery {
+    ReportQuery {
+        range,
+        anchor: Local.from_local_datetime(&NaiveDate::from_ymd_opt(2026, 11, day).unwrap().and_hms_opt(0, 0, 0).unwrap()).unwrap().to_utc(),
+        group_by,
+        client_ids: vec![],
+        project_ids: vec![],
+        tag_ids: vec![],
+        include_leave: false,
+    }
+}
+
+fn add(db: &mut Db, d: (u32, u32, u32), e: (u32, u32, u32), project: Option<&str>, tags: &[&str], brk: i64) -> TimeEntry {
+    db.create_entry(NewEntry {
+        project_id: project.map(String::from),
+        start: local(d.0, d.1, d.2),
+        end: local(e.0, e.1, e.2),
+        title: Some("x".into()),
+        tag_ids: tags.iter().map(|t| t.to_string()).collect(),
+        break_minutes: brk,
+        ..Default::default()
+    })
+    .unwrap()
+}
+
+#[test]
+fn week_range_sunday_start() {
+    let (_d, mut db) = db();
+    add(&mut db, (7, 10, 0), (7, 11, 0), None, &[], 0); // Saturday before
+    add(&mut db, (8, 10, 0), (8, 11, 0), None, &[], 0); // Sunday
+    add(&mut db, (14, 10, 0), (14, 12, 0), None, &[], 0); // Saturday
+    add(&mut db, (15, 10, 0), (15, 11, 0), None, &[], 0); // next Sunday
+    let r = db.report(&q(ReportRange::Week, GroupBy::Project, 12)).unwrap();
+    assert_eq!(r.total_minutes, 180);
+    assert_eq!(r.range.from, local(8, 0, 0));
+    assert_eq!(r.range.to, local(15, 0, 0));
+    assert_eq!((r.rows[0].key.as_str(), r.rows[0].label.as_str(), r.rows[0].color.as_deref()), ("__none__", "プロジェクトなし", Some("#9ca3af")));
+}
+
+#[test]
+fn clamps_to_range_and_prorates_break() {
+    let (_d, mut db) = db();
+    // Month view of November: an entry fully inside with a 30-minute break
+    add(&mut db, (12, 9, 0), (12, 12, 0), None, &[], 30);
+    let r = db.report(&q(ReportRange::Month, GroupBy::Project, 12)).unwrap();
+    assert_eq!(r.total_minutes, 150);
+    let es = db.report_entries(&q(ReportRange::Month, GroupBy::Project, 12)).unwrap();
+    assert_eq!(es.entries[0].minutes, 150);
+    assert_eq!(es.total_minutes, 150);
+}
+
+#[test]
+fn none_filters_and_client_project_filters() {
+    let (_d, mut db) = db();
+    let (p, _red, _blue) = seed(&mut db);
+    add(&mut db, (12, 9, 0), (12, 10, 0), Some(&p), &[], 0);
+    add(&mut db, (12, 11, 0), (12, 13, 0), None, &[], 0);
+    let mut query = q(ReportRange::Week, GroupBy::Project, 12);
+    query.project_ids = vec!["__none__".into()];
+    assert_eq!(db.report(&query).unwrap().total_minutes, 120);
+    query.project_ids = vec!["__none__".into(), p.clone()];
+    assert_eq!(db.report(&query).unwrap().total_minutes, 180);
+    let client = db.projects(false).unwrap()[0].client_id.clone();
+    query.project_ids = vec![];
+    query.client_ids = vec![client];
+    let r = db.report(&query).unwrap();
+    assert_eq!(r.total_minutes, 60);
+    assert_eq!(r.rows[0].label, "Acme · Alpha");
+}
+
+#[test]
+fn tag_filter_matches_entry_or_project_tag_and_none() {
+    let (_d, mut db) = db();
+    let (p, red, blue) = seed(&mut db); // project Alpha carries `red`
+    add(&mut db, (12, 9, 0), (12, 10, 0), Some(&p), &[], 0); // via project tag red
+    add(&mut db, (12, 10, 0), (12, 11, 0), None, &[&blue], 0); // entry tag blue
+    add(&mut db, (12, 11, 0), (12, 13, 0), None, &[], 0); // no tags at all
+    let mut query = q(ReportRange::Week, GroupBy::Tag, 12);
+    query.tag_ids = vec![red.clone()];
+    let r = db.report(&query).unwrap();
+    assert_eq!(r.total_minutes, 60);
+    assert_eq!(r.rows.iter().map(|x| x.key.clone()).collect::<Vec<_>>(), vec![red.clone()]);
+    query.tag_ids = vec!["__none__".into()];
+    assert_eq!(db.report(&query).unwrap().total_minutes, 120);
+    // tag filter on the entries endpoint
+    query.tag_ids = vec![blue.clone()];
+    assert_eq!(db.report_entries(&query).unwrap().entries.len(), 1);
+}
+
+#[test]
+fn group_by_tag_counts_entry_once_in_total() {
+    let (_d, mut db) = db();
+    let (p, red, blue) = seed(&mut db);
+    add(&mut db, (12, 9, 0), (12, 10, 0), Some(&p), &[&blue], 0); // red (project) + blue (entry)
+    add(&mut db, (12, 10, 0), (12, 10, 30), None, &[], 0);
+    let r = db.report(&q(ReportRange::Week, GroupBy::Tag, 12)).unwrap();
+    assert_eq!(r.total_minutes, 90);
+    let get = |k: &str| r.rows.iter().find(|x| x.key == k).map(|x| x.total_minutes);
+    assert_eq!((get(&red), get(&blue), get("__none__")), (Some(60), Some(60), Some(30)));
+    assert_eq!(r.rows.iter().find(|x| x.key == "__none__").unwrap().label, "タグなし");
+}
+
+#[test]
+fn rows_sorted_by_minutes_desc_and_client_grouping() {
+    let (_d, mut db) = db();
+    let (p, _r, _b) = seed(&mut db);
+    add(&mut db, (12, 9, 0), (12, 10, 0), Some(&p), &[], 0);
+    add(&mut db, (12, 10, 0), (12, 13, 0), None, &[], 0);
+    let r = db.report(&q(ReportRange::Week, GroupBy::Client, 12)).unwrap();
+    assert_eq!(r.rows.iter().map(|x| x.total_minutes).collect::<Vec<_>>(), vec![180, 60]);
+    assert_eq!((r.rows[1].label.as_str(), r.rows[1].color.as_deref()), ("Acme", None));
+}
+
+/// Same answers as the Bun server on the copy DB (`npm run local` on 8787 with the copy, --ignored).
+#[test]
+#[ignore]
+fn matches_bun_server_on_copy_db() {
+    let db = Db::open(&dirs::home_dir().unwrap().join(".track-gpui")).unwrap();
+    let today = Local::now().date_naive();
+    for range in [ReportRange::Week, ReportRange::Month] {
+        for group_by in [GroupBy::Client, GroupBy::Project, GroupBy::Tag] {
+            let query = ReportQuery {
+                range,
+                anchor: Local.from_local_datetime(&today.and_hms_opt(0, 0, 0).unwrap()).unwrap().to_utc(),
+                group_by,
+                client_ids: vec![],
+                project_ids: vec![],
+                tag_ids: vec![],
+                include_leave: false,
+            };
+            let ours = db.report(&query).unwrap();
+            let url = format!(
+                "http://127.0.0.1:8787/api/reports?range={}&anchor={}&groupBy={}",
+                if range == ReportRange::Week { "week" } else { "month" },
+                query.anchor.format("%Y-%m-%dT%H:%M:%S%.3fZ"),
+                match group_by { GroupBy::Client => "client", GroupBy::Project => "project", GroupBy::Tag => "tag" }
+            );
+            let out = std::process::Command::new("curl").args(["-s", &url]).output().unwrap();
+            let theirs: ReportResponse = serde_json::from_slice(&out.stdout).unwrap();
+            let norm = |r: &ReportResponse| {
+                let mut v: Vec<(String, String, Option<String>, i64)> = r.rows.iter().map(|x| (x.key.clone(), x.label.clone(), x.color.clone(), x.total_minutes)).collect();
+                v.sort();
+                (v, r.total_minutes)
+            };
+            assert_eq!(norm(&ours), norm(&theirs), "{range:?} {group_by:?}");
+        }
+    }
+}
+
+#[test]
+fn weekly_copy_uses_projects_regardless_of_group_by() {
+    let (_d, mut db) = db();
+    let (p, red, _blue) = seed(&mut db);
+    add(&mut db, (12, 9, 0), (12, 10, 30), Some(&p), &[&red], 0);
+    add(&mut db, (12, 11, 0), (12, 11, 45), None, &[], 0);
+    for g in [GroupBy::Tag, GroupBy::Client, GroupBy::Project] {
+        assert_eq!(db.weekly_copy(&q(ReportRange::Week, g, 12)).unwrap(), "Alpha\t1.5\nプロジェクトなし\t0.75", "{g:?}");
+    }
+}
+
+#[test]
+fn weekly_copy_follows_filters() {
+    let (_d, mut db) = db();
+    let (p, _red, blue) = seed(&mut db);
+    add(&mut db, (12, 9, 0), (12, 10, 0), Some(&p), &[], 0);
+    add(&mut db, (12, 11, 0), (12, 13, 0), None, &[&blue], 0);
+    let mut query = q(ReportRange::Week, GroupBy::Tag, 12);
+    query.tag_ids = vec![blue];
+    assert_eq!(db.weekly_copy(&query).unwrap(), "プロジェクトなし\t2");
+    let mut query = q(ReportRange::Week, GroupBy::Project, 12);
+    query.project_ids = vec![p];
+    assert_eq!(db.weekly_copy(&query).unwrap(), "Alpha\t1");
+}
+
+fn day(y: i32, m: u32, d: u32) -> NaiveDate {
+    NaiveDate::from_ymd_opt(y, m, d).unwrap()
+}
+
+#[test]
+fn heatmap_range_is_53_weeks_centred_on_the_week() {
+    // 11/11 is a Wednesday; its week starts on Sunday 11/8: 26 weeks before it, 26 after.
+    let (from, to) = crate::reports::heatmap_range(&q(ReportRange::Week, GroupBy::Project, 11));
+    assert_eq!((from, to), (day(2026, 5, 10), day(2027, 5, 16)));
+    assert_eq!((to - from).num_days(), 53 * 7);
+}
+
+#[test]
+fn heatmap_range_centres_the_months_first_week() {
+    // November 2026 starts on Sunday 11/1.
+    assert_eq!(crate::reports::heatmap_range(&q(ReportRange::Month, GroupBy::Project, 20)), (day(2026, 5, 3), day(2027, 5, 9)));
+}
+
+#[test]
+fn heatmap_sums_each_day_with_the_filters() {
+    let (_d, mut db) = db();
+    let (p, _, _) = seed(&mut db);
+    add(&mut db, (10, 9, 0), (10, 11, 0), Some(&p), &[], 0);
+    add(&mut db, (10, 13, 0), (10, 14, 0), None, &[], 0); // filtered out
+    add(&mut db, (20, 10, 0), (20, 10, 30), Some(&p), &[], 0);
+    let query = ReportQuery { project_ids: vec![p.clone()], ..q(ReportRange::Week, GroupBy::Project, 11) };
+    let days = db.heatmap(&query).unwrap();
+    assert_eq!(days.len(), 53 * 7, "one cell per day of the 53 weeks");
+    let get = |d: NaiveDate| days.iter().find(|(x, _)| *x == d).map(|(_, m)| *m);
+    assert_eq!(get(day(2026, 11, 10)), Some(120));
+    assert_eq!(get(day(2026, 11, 20)), Some(30), "days outside the report's week count too");
+    assert_eq!(get(day(2026, 11, 11)), Some(0));
+}
+
+fn work_schedule(db: &mut Db) {
+    db.update_settings(SettingsPatch { work_start: Some(600), work_end: Some(1110), work_days: Some(vec![1, 2, 3, 4, 5]), ..Default::default() }).unwrap();
+}
+
+fn with_leave(include: bool) -> ReportQuery {
+    ReportQuery { include_leave: include, ..q(ReportRange::Week, GroupBy::Project, 11) }
+}
+
+#[test]
+fn leave_row_only_when_asked() {
+    let (_d, mut db) = db();
+    work_schedule(&mut db);
+    add(&mut db, (10, 10, 0), (10, 11, 0), None, &[], 0);
+    db.set_leave(day(2026, 11, 12), Some(LeaveKind::Full)).unwrap();
+    let off = db.report(&with_leave(false)).unwrap();
+    assert!(off.rows.iter().all(|r| r.key != crate::reports::LEAVE_KEY));
+    assert_eq!(off.total_minutes, 60);
+    let on = db.report(&with_leave(true)).unwrap();
+    let leave = on.rows.iter().find(|r| r.key == crate::reports::LEAVE_KEY).expect("休暇 row");
+    assert_eq!((leave.label.as_str(), leave.total_minutes), ("休暇", 450));
+    assert_eq!(on.total_minutes, 510);
+}
+
+#[test]
+fn no_leave_row_with_filters() {
+    let (_d, mut db) = db();
+    work_schedule(&mut db);
+    let (p, _, _) = seed(&mut db);
+    db.set_leave(day(2026, 11, 12), Some(LeaveKind::Full)).unwrap();
+    let r = db.report(&ReportQuery { project_ids: vec![p], ..with_leave(true) }).unwrap();
+    assert!(r.rows.iter().all(|r| r.key != crate::reports::LEAVE_KEY));
+    assert_eq!(r.total_minutes, 0);
+}
+
+#[test]
+fn heatmap_adds_leave_when_asked() {
+    let (_d, mut db) = db();
+    work_schedule(&mut db);
+    let (p, _, _) = seed(&mut db);
+    let d = day(2026, 11, 12);
+    db.set_leave(d, Some(LeaveKind::Full)).unwrap();
+    let get = |q: &ReportQuery, db: &Db| db.heatmap(q).unwrap().into_iter().find(|(x, _)| *x == d).map(|(_, m)| m);
+    assert_eq!(get(&with_leave(false), &db), Some(0));
+    assert_eq!(get(&with_leave(true), &db), Some(450));
+    assert_eq!(get(&ReportQuery { project_ids: vec![p], ..with_leave(true) }, &db), Some(0), "not with a filter");
+}
+
+#[test]
+fn weekly_copy_never_has_leave() {
+    let (_d, mut db) = db();
+    work_schedule(&mut db);
+    add(&mut db, (10, 10, 0), (10, 11, 0), None, &[], 0);
+    db.set_leave(day(2026, 11, 12), Some(LeaveKind::Full)).unwrap();
+    assert!(!db.weekly_copy(&with_leave(true)).unwrap().contains("休暇"));
+}
+
+#[test]
+fn leave_breakdown_lists_each_day_with_its_kind() {
+    let (_d, mut db) = db();
+    work_schedule(&mut db);
+    db.set_leave(day(2026, 11, 10), Some(LeaveKind::Am)).unwrap();
+    db.set_leave(day(2026, 11, 12), Some(LeaveKind::Full)).unwrap();
+    db.set_leave(day(2026, 11, 13), Some(LeaveKind::Pm)).unwrap();
+    let month = ReportQuery { include_leave: true, ..q(ReportRange::Month, GroupBy::Project, 11) };
+    let days = db.report_leave(&month).unwrap();
+    let got: Vec<(NaiveDate, LeaveDayKind, i64)> = days.into_iter().map(|d| (d.date, d.kind, d.minutes)).collect();
+    assert_eq!(
+        got,
+        vec![
+            (day(2026, 11, 3), LeaveDayKind::Holiday("文化の日".into()), 450),
+            (day(2026, 11, 10), LeaveDayKind::Am, 225),
+            (day(2026, 11, 12), LeaveDayKind::Full, 450),
+            (day(2026, 11, 13), LeaveDayKind::Pm, 225),
+            (day(2026, 11, 23), LeaveDayKind::Holiday("勤労感謝の日".into()), 450),
+        ]
+    );
+    let row = db.report(&month).unwrap().rows.into_iter().find(|r| r.key == crate::reports::LEAVE_KEY).unwrap();
+    assert_eq!(row.total_minutes, 1800, "the breakdown adds up to the row");
+}
+
+#[test]
+fn leave_breakdown_is_empty_when_leave_is_not_shown() {
+    let (_d, mut db) = db();
+    work_schedule(&mut db);
+    let (p, _, _) = seed(&mut db);
+    db.set_leave(day(2026, 11, 12), Some(LeaveKind::Full)).unwrap();
+    assert!(db.report_leave(&with_leave(false)).unwrap().is_empty());
+    assert!(db.report_leave(&ReportQuery { project_ids: vec![p], ..with_leave(true) }).unwrap().is_empty());
+    assert_eq!(db.report_leave(&with_leave(true)).unwrap().len(), 1);
+}
+
+#[test]
+fn leave_day_labels() {
+    assert_eq!(LeaveDayKind::Full.label(), "休暇");
+    assert_eq!(LeaveDayKind::Am.label(), "前半休");
+    assert_eq!(LeaveDayKind::Pm.label(), "後半休");
+    assert_eq!(LeaveDayKind::Holiday("文化の日".into()).label(), "祝日 文化の日");
+}
