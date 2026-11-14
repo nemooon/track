@@ -214,6 +214,17 @@ pub fn resolve(setting: track_core::config::Appearance, system_dark: bool, env: 
     }
 }
 
+/// `TRACK_GPUI_APPEARANCE` (`light` / `dark`), the development override. Tests ignore the
+/// developer's shell so they behave the same everywhere.
+pub fn appearance_override() -> Option<String> {
+    if cfg!(test) { None } else { std::env::var("TRACK_GPUI_APPEARANCE").ok().filter(|v| v == "light" || v == "dark") }
+}
+
+/// Applies the saved setting, resolving 自動 with the current macOS appearance.
+pub fn apply_setting(setting: track_core::config::Appearance, system_dark: bool, cx: &mut gpui::App) {
+    apply_theme(resolve(setting, system_dark, appearance_override().as_deref()), cx);
+}
+
 /// Whether the platform appearance is a dark one.
 pub fn is_dark(a: gpui::WindowAppearance) -> bool {
     matches!(a, gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark)

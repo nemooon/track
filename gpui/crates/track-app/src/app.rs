@@ -527,8 +527,7 @@ impl TrackApp {
     /// The platform appearance changed (or tests simulate it): re-resolve with the saved setting.
     pub fn on_system_appearance(&mut self, system_dark: bool, cx: &mut Context<Self>) {
         let setting = self.state.read(cx).api.full_config().appearance;
-        let env = std::env::var("TRACK_GPUI_APPEARANCE").ok();
-        apply_theme(resolve(setting, system_dark, env.as_deref()), cx);
+        apply_setting(setting, system_dark, cx);
     }
 
     /// Page facts for the status bar.

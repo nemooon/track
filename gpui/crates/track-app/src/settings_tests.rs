@@ -57,7 +57,7 @@ fn sidebar_switches_sections(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("cmd-,");
     cx.run_until_parked();
     let (mut scx, view) = settings_cx(cx);
-    assert_eq!(view.read_with(&scx, |v, _| v.section), SettingsSection::Calendar);
+    assert_eq!(view.read_with(&scx, |v, _| v.section), SettingsSection::Appearance, "opens on the first section");
     for (sel, section) in [
         ("settings-nav-projects", SettingsSection::Projects),
         ("settings-nav-ai", SettingsSection::Ai),
@@ -589,4 +589,22 @@ fn appearance_save_failure_keeps_theme(cx: &mut TestAppContext) {
     wait_io(&mut scx);
     assert_eq!(cx.update(|_, cx| palette(cx)), Palette::light());
     assert!(scx.debug_bounds("appearance-error").is_some());
+}
+
+#[gpui::test]
+fn settings_window_follows_macos_on_its_own(cx: &mut TestAppContext) {
+    use crate::ui::theme::{Palette, palette};
+    let (_app, cx, _f) = open_app_db(cx, |_| {});
+    let (mut scx, view) = open_section(cx, "settings-nav-calendar");
+    view.update(&mut scx, |v, cx| v.on_system_appearance(true, cx));
+    assert_eq!(scx.update(|_, cx| palette(cx)), Palette::dark(), "the settings window re-resolves even with the main window closed");
+}
+
+#[gpui::test]
+fn settings_open_on_the_first_section(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = open_app_db(cx, |_| {});
+    cx.simulate_keystrokes("cmd-,");
+    cx.run_until_parked();
+    let (mut scx, _view) = settings_cx(cx);
+    assert!(scx.debug_bounds("appearance-system").is_some(), "外観 is first in the list, so it opens first");
 }

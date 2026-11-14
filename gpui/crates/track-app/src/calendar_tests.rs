@@ -3,6 +3,9 @@ use crate::testing::{Fixture, insert_entry, open_app_db, wait_io};
 use chrono::{Local, NaiveDate, TimeZone};
 use gpui::{Modifiers, MouseButton, TestAppContext, point, px};
 
+/// Pixels per hour at the default zoom.
+const HOUR: f32 = crate::core::geometry::ZOOM_LEVELS[crate::core::geometry::DEFAULT_ZOOM];
+
 fn day(d: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(2026, 11, d).unwrap()
 }
@@ -54,10 +57,10 @@ fn drag_on_empty_space_opens_picker_placeholder(cx: &mut TestAppContext) {
     let (app, cx, _f) = setup(cx);
     let b = cx.debug_bounds("entry-a").expect("entry block");
     let x = b.center().x;
-    let start = point(x, b.origin.y + px(96. * 3.));
+    let start = point(x, b.origin.y + px(HOUR * 3.));
     cx.simulate_mouse_down(start, MouseButton::Left, Modifiers::none());
-    cx.simulate_mouse_move(point(x, start.y + px(96.)), Some(MouseButton::Left), Modifiers::none());
-    cx.simulate_mouse_up(point(x, start.y + px(96.)), MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_move(point(x, start.y + px(HOUR)), Some(MouseButton::Left), Modifiers::none());
+    cx.simulate_mouse_up(point(x, start.y + px(HOUR)), MouseButton::Left, Modifiers::none());
     let drag = app.read_with(cx, |a, cx| a.calendar.read(cx).drag.clone());
     let DragState::Picking { day_index, start_min, end_min } = drag else { panic!("expected Picking, got {drag:?}") };
     assert_eq!(day_index, 3);
@@ -71,7 +74,7 @@ fn drag_entry_one_column_right_and_30_minutes_down(cx: &mut gpui::VisualTestCont
     let grab = b.center();
     cx.simulate_mouse_down(grab, MouseButton::Left, Modifiers::none());
     let col_w = b.size.width + px(6.);
-    let to = point(grab.x + col_w, grab.y + px(48.));
+    let to = point(grab.x + col_w, grab.y + px(HOUR / 2.));
     cx.simulate_mouse_move(to, Some(MouseButton::Left), Modifiers::none());
     cx.simulate_mouse_up(to, MouseButton::Left, Modifiers::none());
 }
@@ -118,7 +121,7 @@ fn resize_bottom_edge_extends_entry(cx: &mut TestAppContext) {
     let b = cx.debug_bounds("entry-a").expect("entry block");
     let edge = point(b.center().x, b.origin.y + b.size.height - px(2.));
     cx.simulate_mouse_down(edge, MouseButton::Left, Modifiers::none());
-    let to = point(edge.x, edge.y + px(48.));
+    let to = point(edge.x, edge.y + px(HOUR / 2.));
     cx.simulate_mouse_move(to, Some(MouseButton::Left), Modifiers::none());
     cx.simulate_mouse_up(to, MouseButton::Left, Modifiers::none());
     wait_io(cx);
@@ -152,10 +155,10 @@ fn delete_restores_entry_when_saving_fails(cx: &mut TestAppContext) {
 
 fn drag_create_one_hour(cx: &mut gpui::VisualTestContext) {
     let b = cx.debug_bounds("entry-a").expect("entry block");
-    let start = point(b.center().x, b.origin.y + px(96. * 3.)); // 10:00 entry → 13:xx area
+    let start = point(b.center().x, b.origin.y + px(HOUR * 3.)); // 10:00 entry → 13:xx area
     cx.simulate_mouse_down(start, MouseButton::Left, Modifiers::none());
-    cx.simulate_mouse_move(point(start.x, start.y + px(96.)), Some(MouseButton::Left), Modifiers::none());
-    cx.simulate_mouse_up(point(start.x, start.y + px(96.)), MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_move(point(start.x, start.y + px(HOUR)), Some(MouseButton::Left), Modifiers::none());
+    cx.simulate_mouse_up(point(start.x, start.y + px(HOUR)), MouseButton::Left, Modifiers::none());
 }
 
 /// Entries on the 12th other than the fixture's "a".
@@ -243,9 +246,9 @@ fn changing_period_mid_drag_cancels_instead_of_saving_elsewhere(cx: &mut TestApp
     let (app, cx, f) = setup(cx);
     let b = cx.debug_bounds("entry-a").expect("entry block");
     cx.simulate_mouse_down(b.center(), MouseButton::Left, Modifiers::none());
-    cx.simulate_mouse_move(point(b.center().x, b.center().y + px(48.)), Some(MouseButton::Left), Modifiers::none());
+    cx.simulate_mouse_move(point(b.center().x, b.center().y + px(HOUR / 2.)), Some(MouseButton::Left), Modifiers::none());
     cx.simulate_keystrokes("cmd-]");
-    cx.simulate_mouse_up(point(b.center().x, b.center().y + px(48.)), MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_up(point(b.center().x, b.center().y + px(HOUR / 2.)), MouseButton::Left, Modifiers::none());
     wait_io(cx);
     assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).drag.clone()), DragState::Idle);
     let e = stored(&f, "a").unwrap();
@@ -257,7 +260,7 @@ fn changing_period_mid_drag_cancels_instead_of_saving_elsewhere(cx: &mut TestApp
 fn hover_time_label_is_one_line_left_of_the_line(cx: &mut TestAppContext) {
     let (_app, cx, _f) = setup(cx);
     let b = cx.debug_bounds("entry-a").expect("entry block");
-    let at = point(b.center().x, b.origin.y + px(96. * 3.));
+    let at = point(b.center().x, b.origin.y + px(HOUR * 3.));
     cx.simulate_mouse_move(at, None, Modifiers::none());
     let label = cx.debug_bounds("hover-time").expect("hover label");
     assert!(label.size.height <= px(16.), "single line, got {:?}", label.size);
@@ -307,4 +310,15 @@ fn selection_leaves_the_status_bar_when_off_screen(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("cmd-]");
     wait_io(cx);
     assert!(cx.debug_bounds("status-selection").is_none(), "the selected entry is not on screen any more");
+}
+
+/// At the default (middle) zoom a 15-minute entry shows one full line: border 2 + padding 8 + line 15.
+#[gpui::test]
+fn fifteen_minute_entry_fits_one_line_at_default_zoom(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
+    insert_entry(&f.db(), "q", at(12, 14, 0), at(12, 14, 15), None, "短い作業");
+    app.update(cx, |a, cx| a.calendar.update(cx, |c, cx| c.reload(cx)));
+    wait_io(cx);
+    let h = cx.debug_bounds("entry-q").expect("15-minute entry").size.height;
+    assert!(h >= px(25.), "one line needs 25px, got {h:?}");
 }

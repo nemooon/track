@@ -91,9 +91,16 @@ pub struct SettingsWindow {
 }
 
 impl SettingsWindow {
-    pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
+    pub fn new(state: Entity<AppState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         cx.observe(&state, |_, _, cx| cx.notify()).detach();
-        SettingsWindow { state, section: SettingsSection::Calendar, appearance: None, calendar: None, reports: None, projects: None, ai: None, backup: None }
+        cx.observe_window_appearance(window, |this, window, cx| this.on_system_appearance(is_dark(window.appearance()), cx)).detach();
+        SettingsWindow { state, section: SettingsSection::ALL[0], appearance: None, calendar: None, reports: None, projects: None, ai: None, backup: None }
+    }
+
+    /// macOS switched light/dark: follow it (when 自動) even if the main window is closed.
+    pub fn on_system_appearance(&mut self, system_dark: bool, cx: &mut Context<Self>) {
+        let setting = self.state.read(cx).api.full_config().appearance;
+        apply_setting(setting, system_dark, cx);
     }
 
     pub fn show(&mut self, section: SettingsSection, cx: &mut Context<Self>) {
@@ -214,7 +221,7 @@ pub fn open_settings(state: Entity<AppState>, cx: &mut App) {
             ..Default::default()
         },
         |window, cx| {
-            let view = cx.new(|cx| SettingsWindow::new(state, cx));
+            let view = cx.new(|cx| SettingsWindow::new(state, window, cx));
             cx.set_global(OpenSettings { window: window.window_handle(), view: view.downgrade() });
             cx.new(|cx| Root::new(view, window, cx))
         },

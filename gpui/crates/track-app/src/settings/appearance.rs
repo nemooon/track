@@ -26,8 +26,7 @@ impl AppearanceSettings {
                     Ok(saved) => {
                         this.current = saved.appearance;
                         this.error = None;
-                        let env = std::env::var("TRACK_GPUI_APPEARANCE").ok();
-                        apply_theme(resolve(saved.appearance, is_dark(cx.window_appearance()), env.as_deref()), cx);
+                        apply_setting(saved.appearance, is_dark(cx.window_appearance()), cx);
                     }
                     Err(e) => this.error = Some(format!("保存できませんでした: {}", e.message)),
                 }
@@ -57,6 +56,12 @@ impl Render for AppearanceSettings {
             form::card(p, "外観", "画面の明るさです。自動は macOS の設定に合わせます。")
                 .child(form::row(p, "配色", "明るい配色と暗い配色を切り替えます。", buttons)),
         )
+        .when_some(appearance_override(), |d, v| {
+            d.child(div().debug_selector(|| "appearance-override".into()).text_sm().text_color(p.text_muted).child(format!(
+                "開発用の TRACK_GPUI_APPEARANCE={v} が設定されているため、画面は{}のままです（選択は保存されます）。",
+                if v == "dark" { "暗い配色" } else { "明るい配色" }
+            )))
+        })
         .when_some(self.error.clone(), |d, e| d.child(div().debug_selector(|| "appearance-error".into()).text_sm().text_color(p.danger).child(e)))
     }
 }

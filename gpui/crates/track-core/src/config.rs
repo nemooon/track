@@ -112,7 +112,10 @@ fn read_object(data_dir: &Path) -> Map<String, Value> {
 
 fn write_object(data_dir: &Path, obj: Map<String, Value>) -> Result<()> {
     std::fs::create_dir_all(data_dir)?;
-    let tmp = data_dir.join(format!(".{FILE}.{}.tmp", std::process::id()));
+    // Unique per write, so two threads of one process never share the temp file.
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = data_dir.join(format!(".{FILE}.{}.{n}.tmp", std::process::id()));
     std::fs::write(&tmp, serde_json::to_string_pretty(&Value::Object(obj)).unwrap() + "\n")?;
     std::fs::rename(&tmp, path_of(data_dir))?;
     Ok(())
