@@ -7,11 +7,11 @@ use crate::ops::{Operation, Table};
 use crate::Db;
 use chrono::{DateTime, Utc};
 
-/// Project colours for the settings screen and the CLI. The first ten are the Tauri app's
-/// `PROJECT_COLORS` (src/client/lib/utils.ts), kept first so automatic choices do not change.
+/// Project colours for the settings screen and the CLI, in hue order (red → rose) with the two
+/// greys last. The Tauri app's ten `PROJECT_COLORS` (src/client/lib/utils.ts) are all included.
 pub const PROJECT_COLORS: [&str; 20] = [
-    "#ef4444", "#f97316", "#eab308", "#22c55e", "#06b6d4", "#3b82f6", "#6366f1", "#a855f7", "#ec4899", "#64748b",
-    "#f59e0b", "#84cc16", "#10b981", "#14b8a6", "#0ea5e9", "#8b5cf6", "#d946ef", "#f43f5e", "#b45309", "#78716c",
+    "#ef4444", "#f97316", "#b45309", "#f59e0b", "#eab308", "#84cc16", "#22c55e", "#10b981", "#14b8a6", "#06b6d4",
+    "#0ea5e9", "#3b82f6", "#6366f1", "#8b5cf6", "#a855f7", "#d946ef", "#ec4899", "#f43f5e", "#64748b", "#78716c",
 ];
 
 /// The colour the settings screen would give the next project.

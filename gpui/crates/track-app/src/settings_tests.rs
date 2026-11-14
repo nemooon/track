@@ -206,7 +206,7 @@ fn add_client_then_project_with_color(cx: &mut TestAppContext) {
     wait_io(&mut scx);
     wait_io(cx);
     let project = f.db().projects(true).unwrap().into_iter().find(|x| x.name == "新案件").expect("project created");
-    assert_eq!((project.client_id.as_str(), project.color.as_str()), (client.id.as_str(), "#22c55e"));
+    assert_eq!((project.client_id.as_str(), project.color.as_str()), (client.id.as_str(), track_core::edit::PROJECT_COLORS[3]));
     let in_main = app.read_with(cx, |a, cx| a.state.read(cx).data.as_ref().map(|d| d.projects.iter().any(|x| x.id == project.id)));
     assert_eq!(in_main, Some(true), "the main window's project list has it");
 }

@@ -106,7 +106,7 @@ fn project_create_requires_confirmation() {
     let (code, out) = e.run(&["project", "create", "--client-id", &e.client, "--name", "Gamma", "--confirmed"]);
     assert_eq!(code, 0, "{out}");
     assert_eq!(out["project"]["name"], "Gamma");
-    assert_eq!(out["project"]["color"], "#eab308", "third project gets the third colour");
+    assert_eq!(out["project"]["color"], track_core::edit::PROJECT_COLORS[2], "third project gets the third colour");
 }
 
 #[test]

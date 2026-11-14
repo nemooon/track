@@ -189,7 +189,7 @@ fn undo_of_tag_delete_conflicts_when_a_tagged_entry_is_gone() {
 }
 
 #[test]
-fn project_colours_are_twenty_distinct_and_keep_the_first_ten() {
+fn project_colours_are_twenty_distinct_in_hue_order() {
     use crate::edit::PROJECT_COLORS;
     assert_eq!(PROJECT_COLORS.len(), 20);
     let mut seen = std::collections::HashSet::new();
@@ -197,6 +197,15 @@ fn project_colours_are_twenty_distinct_and_keep_the_first_ten() {
         assert!(c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|x| x.is_ascii_hexdigit()), "{c}");
         assert!(seen.insert(c.to_lowercase()), "duplicate {c}");
     }
-    // Existing projects and the CLI's automatic choice keep their colours.
-    assert_eq!(&PROJECT_COLORS[..10], &["#ef4444", "#f97316", "#eab308", "#22c55e", "#06b6d4", "#3b82f6", "#6366f1", "#a855f7", "#ec4899", "#64748b"]);
+    // Hue order (red → rose), the two greys last.
+    let hue = |c: &str| {
+        let v: Vec<f32> = (0..3).map(|i| u8::from_str_radix(&c[1 + 2 * i..3 + 2 * i], 16).unwrap() as f32 / 255.).collect();
+        let (max, min) = (v.iter().cloned().fold(0., f32::max), v.iter().cloned().fold(1., f32::min));
+        let d = max - min;
+        let h = if d == 0. { 0. } else if max == v[0] { ((v[1] - v[2]) / d).rem_euclid(6.) } else if max == v[1] { (v[2] - v[0]) / d + 2. } else { (v[0] - v[1]) / d + 4. };
+        (h * 60., if max == 0. { 0. } else { d / max })
+    };
+    let chroma: Vec<f32> = PROJECT_COLORS[..18].iter().map(|c| hue(c).0).collect();
+    assert!(chroma.windows(2).all(|w| w[0] <= w[1]), "hue order: {chroma:?}");
+    assert!(PROJECT_COLORS[18..].iter().all(|c| hue(c).1 < 0.3), "greys last");
 }
