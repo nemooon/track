@@ -107,25 +107,6 @@ impl Db {
         Ok(n > 0)
     }
 
-    /// Every project's net minutes in `[from, to)` and its latest entry start (projects without
-    /// entries are listed with 0 / None). Minutes are counted like reports: clipped to the range,
-    /// with the break prorated.
-    pub fn project_activity(&self, from: chrono::DateTime<chrono::Utc>, to: chrono::DateTime<chrono::Utc>) -> Result<Vec<crate::model::ProjectActivity>> {
-        let mut minutes: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
-        for e in self.entries(from, to)? {
-            if let Some(p) = &e.project_id {
-                *minutes.entry(p.clone()).or_default() += crate::reports::visible_minutes(&e, from, to);
-            }
-        }
-        let mut st = self.conn().prepare(r#"SELECT p.id, MAX(e.start) FROM "Project" p LEFT JOIN "TimeEntry" e ON e.projectId = p.id GROUP BY p.id"#)?;
-        let rows = st.query_map([], |r| {
-            let id: String = r.get(0)?;
-            let last: Option<String> = r.get(1)?;
-            Ok(crate::model::ProjectActivity { minutes: minutes.get(&id).copied().unwrap_or(0), project_id: id, last_start: last.as_deref().and_then(time::from_db) })
-        })?;
-        Ok(rows.collect::<std::result::Result<_, _>>()?)
-    }
-
     pub fn client(&self, id: &str) -> Result<Client> {
         self.conn()
             .query_row(r#"SELECT id, name, archived FROM "Client" WHERE id = ?1"#, [id], |r| Ok(Client { id: r.get(0)?, name: r.get(1)?, archived: r.get::<_, i64>(2)? != 0 }))

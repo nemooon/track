@@ -628,13 +628,17 @@ fn colour_and_client_save_immediately(cx: &mut TestAppContext) {
     let (_app, cx, f) = open_app_db(cx, |db| {
         db.conn().execute(r#"INSERT INTO "Client"(id, name, createdAt) VALUES ('c2', 'Bolt', '2026-11-01T00:00:00.000+00:00')"#, []).unwrap();
     });
-    let (mut scx, _p) = projects_section(cx);
+    let (mut scx, p) = projects_section(cx);
     click(&mut scx, "detail-color-3");
     wait_io(&mut scx);
     assert_eq!(f.db().project("p1").unwrap().color, track_core::edit::PROJECT_COLORS[3]);
-    click(&mut scx, "detail-client-c2");
+    assert!(scx.debug_bounds("detail-client").is_some(), "the client is a select");
+    let select = p.read_with(&scx, |p, _| p.client_select.clone()).expect("client select");
+    assert_eq!(select.read_with(&scx, |s, _| s.selected_value().cloned()), Some("c1".to_string()));
+    scx.update(|_, cx| select.update(cx, |_, cx| cx.emit(gpui_component::select::SelectEvent::Confirm(Some("c2".to_string())))));
     wait_io(&mut scx);
     assert_eq!(f.db().project("p1").unwrap().client_id, "c2");
+    assert_eq!(select.read_with(&scx, |s, _| s.selected_value().cloned()), Some("c2".to_string()));
 }
 
 #[gpui::test]
@@ -824,15 +828,4 @@ fn a_save_reads_once(cx: &mut TestAppContext) {
     click(&mut scx, "detail-color-3");
     wait_io(&mut scx);
     assert_eq!(p.read_with(&scx, |p, _| p.reloads) - before, 1);
-}
-
-#[gpui::test]
-fn activity_shows_month_and_last_entry(cx: &mut TestAppContext) {
-    use crate::testing::{insert_entry, local, visible_weekday};
-    let day = visible_weekday();
-    let (_app, cx, _f) = open_app_db(cx, move |db| insert_entry(db, "e1", local(day, 9, 0), local(day, 10, 30), Some("p1"), "作業"));
-    let (mut scx, p) = projects_section(cx);
-    let text = p.read_with(&scx, |p, _| p.activity_label("p1"));
-    assert!(text.contains("1h 30m") || text.contains("1:30"), "{text}");
-    assert!(scx.debug_bounds("detail-activity").is_some());
 }

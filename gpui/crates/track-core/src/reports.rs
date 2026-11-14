@@ -60,7 +60,7 @@ fn matches(e: &TimeEntry, q: &ReportQuery) -> bool {
 }
 
 /// Minutes inside [from, to) minus the prorated break.
-pub(crate) fn visible_minutes(e: &TimeEntry, from: DateTime<Utc>, to: DateTime<Utc>) -> i64 {
+fn visible_minutes(e: &TimeEntry, from: DateTime<Utc>, to: DateTime<Utc>) -> i64 {
     let s = e.start.max(from);
     let en = e.end.min(to);
     let vis_ms = (en - s).num_milliseconds() as f64;

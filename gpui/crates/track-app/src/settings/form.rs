@@ -41,6 +41,16 @@ pub fn row(p: Palette, title: &str, description: &str, control: impl IntoElement
 }
 
 pub fn button(p: Palette, id: impl Into<ElementId>, label: &str, primary: bool, enabled: bool) -> Stateful<Div> {
+    frame(p, id, primary, enabled).child(label.to_string())
+}
+
+/// A button with an icon before its label.
+pub fn button_with_icon(p: Palette, id: impl Into<ElementId>, icon: gpui_component::Icon, label: &str, primary: bool, enabled: bool) -> Stateful<Div> {
+    use gpui_component::Sizable;
+    frame(p, id, primary, enabled).gap_1p5().child(icon.small()).child(label.to_string())
+}
+
+fn frame(p: Palette, id: impl Into<ElementId>, primary: bool, enabled: bool) -> Stateful<Div> {
     let id = id.into();
     let sel = format!("{id}");
     div()
@@ -58,7 +68,6 @@ pub fn button(p: Palette, id: impl Into<ElementId>, label: &str, primary: bool, 
         .when(!primary, |d| d.border_1().border_color(p.border).text_color(p.text))
         .when(enabled, |d| d.cursor_pointer().hover(|s| s.opacity(0.85)))
         .when(!enabled, |d| d.opacity(0.4))
-        .child(label.to_string())
 }
 
 /// The bottom bar: 「保存済み」 when clean, otherwise 変更を破棄 / 変更を保存, plus any error.

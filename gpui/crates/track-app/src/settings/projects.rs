@@ -4,20 +4,41 @@
 use crate::app::AppState;
 use crate::data::{DataClient, DataResult};
 use crate::ui::theme::*;
-use chrono::{Datelike, Local, NaiveDate};
 use gpui::{
     AnyElement, AppContext, Context, Div, Entity, Focusable, FontWeight, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px,
 };
 use gpui_component::color_picker::{ColorPickerEvent, ColorPickerState};
 use gpui_component::input::{Input, InputEvent, InputState};
-use gpui_component::{Icon, IconName};
-use std::collections::HashMap;
+use gpui_component::searchable_list::SearchableListItem;
+use gpui_component::select::{Select, SelectEvent, SelectState};
+use gpui_component::{Icon, IconName, IndexPath};
 use std::future::Future;
-use track_core::model::{Client, ClientPatch, Project, ProjectActivity, ProjectPatch};
+use track_core::model::{Client, ClientPatch, Project, ProjectPatch};
 
 /// The project colours (shared with track-cli).
 pub use track_core::edit::PROJECT_COLORS as COLORS;
+
+/// A client in the project's client select.
+#[derive(Clone)]
+pub struct ClientItem {
+    id: String,
+    name: SharedString,
+}
+
+impl SearchableListItem for ClientItem {
+    type Value = String;
+
+    fn title(&self) -> SharedString {
+        self.name.clone()
+    }
+
+    fn value(&self) -> &String {
+        &self.id
+    }
+}
+
+type ClientSelect = SelectState<Vec<ClientItem>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Selection {
@@ -29,7 +50,6 @@ pub struct ProjectSettings {
     state: Entity<AppState>,
     pub clients: Vec<Client>,
     pub projects: Vec<Project>,
-    activity: HashMap<String, ProjectActivity>,
     pub selected: Option<Selection>,
     /// The name field of the selected item, and which item it was made for.
     pub name: Option<Entity<InputState>>,
@@ -41,6 +61,9 @@ pub struct ProjectSettings {
     /// The eyedropper's state for the selected project.
     pub picker: Option<Entity<ColorPickerState>>,
     picker_for: Option<String>,
+    /// The client select for the selected project, and the project and choices it was made for.
+    pub client_select: Option<Entity<ClientSelect>>,
+    client_select_for: Option<(String, Vec<(String, String)>)>,
     /// The colour being picked; saved when the popover closes, not on every slider step.
     pending_color: Option<(String, gpui::Hsla)>,
     pub error: Option<String>,
@@ -56,22 +79,6 @@ fn api(state: &Entity<AppState>, cx: &gpui::App) -> DataClient {
     state.read(cx).api.clone()
 }
 
-/// This month, as UTC bounds.
-fn month_bounds() -> (chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>) {
-    let today = Local::now().date_naive();
-    let first = NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap();
-    let next = if today.month() == 12 { NaiveDate::from_ymd_opt(today.year() + 1, 1, 1) } else { NaiveDate::from_ymd_opt(today.year(), today.month() + 1, 1) }.unwrap();
-    (track_core::dates::local_midnight(first), track_core::dates::local_midnight(next))
-}
-
-fn hours(minutes: i64) -> String {
-    match (minutes / 60, minutes % 60) {
-        (0, m) => format!("{m}m"),
-        (h, 0) => format!("{h}h"),
-        (h, m) => format!("{h}h {m}m"),
-    }
-}
-
 impl ProjectSettings {
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
         // Restores and outside writes (CLI, AI) re-read everything; follow them.
@@ -80,7 +87,6 @@ impl ProjectSettings {
             state,
             clients: vec![],
             projects: vec![],
-            activity: HashMap::new(),
             selected: None,
             name: None,
             name_for: None,
@@ -88,6 +94,8 @@ impl ProjectSettings {
             focus_name: false,
             picker: None,
             picker_for: None,
+            client_select: None,
+            client_select_for: None,
             pending_color: None,
             error: None,
             revert_name: false,
@@ -99,19 +107,16 @@ impl ProjectSettings {
         s
     }
 
-    /// Re-reads clients, projects (archived included) and this month's activity, keeping the
-    /// selection by id.
+    /// Re-reads clients and projects (archived included), keeping the selection by id.
     pub fn reload(&mut self, cx: &mut Context<Self>) {
         let api = api(&self.state, cx);
-        let (from, to) = month_bounds();
-        let (c, p, a) = (api.clients(), api.projects_all(), api.project_activity(from, to));
+        let (c, p) = (api.clients(), api.projects_all());
         cx.spawn(async move |this, cx| {
-            let result = async { Ok::<_, crate::data::DataError>((c.await?, p.await?, a.await?)) }.await;
+            let result = async { Ok::<_, crate::data::DataError>((c.await?, p.await?)) }.await;
             let _ = this.update(cx, |this, cx| {
                 match result {
-                    Ok((c, p, a)) => {
+                    Ok((c, p)) => {
                         (this.clients, this.projects) = (c, p);
-                        this.activity = a.into_iter().map(|x| (x.project_id.clone(), x)).collect();
                         if !this.loaded {
                             this.loaded = true;
                             if this.selected.is_none() {
@@ -197,16 +202,6 @@ impl ProjectSettings {
         match self.selected.as_ref()? {
             Selection::Project(id) => self.project(id).map(|p| p.name.clone()),
             Selection::Client(id) => self.client(id).map(|c| c.name.clone()),
-        }
-    }
-
-    /// 「今月 12h 30m・最終記録 11/12」 (or 「記録なし」).
-    pub fn activity_label(&self, project_id: &str) -> String {
-        let a = self.activity.get(project_id);
-        let minutes = a.map(|a| a.minutes).unwrap_or(0);
-        match a.and_then(|a| a.last_start) {
-            Some(t) => format!("今月 {}・最終記録 {}", hours(minutes), t.with_timezone(&Local).format("%-m/%-d")),
-            None => "記録なし".into(),
         }
     }
 
@@ -346,6 +341,39 @@ impl ProjectSettings {
             }
             Selection::Client(_) => (self.picker, self.picker_for) = (None, None),
         }
+        self.sync_client_select(&sel, window, cx);
+    }
+
+    /// The selected project's client select: archived clients are offered only when the project
+    /// already belongs to one. Picking another client saves at once.
+    fn sync_client_select(&mut self, sel: &Selection, window: &mut Window, cx: &mut Context<Self>) {
+        let Selection::Project(id) = sel else {
+            (self.client_select, self.client_select_for) = (None, None);
+            return;
+        };
+        let Some(current) = self.project(id).map(|p| p.client_id.clone()) else { return };
+        let choices: Vec<(String, String)> = self.clients.iter().filter(|c| !c.archived || c.id == current).map(|c| (c.id.clone(), c.name.clone())).collect();
+        let key = (id.clone(), choices.clone());
+        if self.client_select_for.as_ref() != Some(&key) {
+            let at = choices.iter().position(|(cid, _)| *cid == current).map(IndexPath::new);
+            let items: Vec<ClientItem> = choices.into_iter().map(|(id, name)| ClientItem { id, name: name.into() }).collect();
+            let select = cx.new(|cx| SelectState::new(items, at, window, cx));
+            let pid = id.clone();
+            cx.subscribe(&select, move |this, _, ev: &SelectEvent<Vec<ClientItem>>, cx| {
+                let SelectEvent::Confirm(Some(cid)) = ev else { return };
+                if this.project(&pid).is_some_and(|p| p.client_id != *cid) {
+                    let api = api(&this.state, cx);
+                    this.write(api.update_project(pid.clone(), ProjectPatch { client_id: Some(cid.clone()), ..Default::default() }), cx);
+                }
+            })
+            .detach();
+            (self.client_select, self.client_select_for) = (Some(select), Some(key));
+        } else if let Some(select) = self.client_select.clone()
+            && select.read(cx).selected_value() != Some(&current)
+        {
+            // A failed save or an outside change: show the saved client.
+            select.update(cx, |s, cx| s.set_selected_value(&current, window, cx));
+        }
     }
 
     fn render_tree(&self, p: Palette, cx: &mut Context<Self>) -> Div {
@@ -454,8 +482,8 @@ impl ProjectSettings {
     }
 
     fn render_detail(&self, p: Palette, cx: &mut Context<Self>) -> AnyElement {
-        let label = |t: &'static str| div().w(px(96.)).flex_none().text_sm().text_color(p.text_muted).child(t);
-        let line = |l: &'static str, control: AnyElement| div().flex().items_start().gap_3().py_2().child(label(l)).child(div().flex_1().min_w_0().child(control));
+        let label = |t: &'static str| div().text_sm().font_weight(FontWeight::MEDIUM).text_color(p.text_muted).child(t);
+        let line = |l: &'static str, control: AnyElement| div().flex().flex_col().gap_1p5().py_2().child(label(l)).child(control);
         let name_field = self.name.as_ref().map(|n| div().debug_selector(|| "detail-name".into()).child(Input::new(n)).into_any_element()).unwrap_or_else(|| div().into_any_element());
         let error = self.error.clone().map(|e| div().debug_selector(|| "detail-error".into()).mt_2().text_sm().text_color(p.danger).child(e));
         let archive_button = |archived: bool, enabled: bool, note: Option<&'static str>, cx: &mut Context<Self>| {
@@ -464,7 +492,14 @@ impl ProjectSettings {
                 .items_center()
                 .gap_3()
                 .child(
-                    super::form::button(p, "detail-archive", if archived { "アーカイブを戻す" } else { "アーカイブ" }, false, enabled)
+                    super::form::button_with_icon(
+                        p,
+                        "detail-archive",
+                        if archived { crate::ui::icons::archive_restore() } else { crate::ui::icons::archive() },
+                        if archived { "アーカイブを戻す" } else { "アーカイブする" },
+                        false,
+                        enabled,
+                    )
                         .debug_selector(|| "detail-archive".into())
                         .when(enabled, |d| d.on_click(cx.listener(|this, _, _, cx| this.toggle_archive(cx)))),
                 )
@@ -495,36 +530,17 @@ impl ProjectSettings {
                     None => swatches,
                 };
                 let client_archived = self.client(&pj.client_id).is_some_and(|c| c.archived);
-                let chips = div().flex().flex_wrap().gap_2().children(self.clients.iter().filter(|c| !c.archived || c.id == pj.client_id).map(|c| {
-                    let (cid, pid, on) = (c.id.clone(), id.clone(), c.id == pj.client_id);
-                    let sid = format!("detail-client-{}", c.id);
-                    let sid2 = sid.clone();
-                    div()
-                        .id(SharedString::from(sid))
-                        .debug_selector(move || sid2.clone())
-                        .px_2()
-                        .py_1()
-                        .rounded(px(5.))
-                        .text_sm()
-                        .cursor_pointer()
-                        .border_1()
-                        .map(|d| if on { d.bg(p.primary).text_color(p.on_color).border_color(p.primary) } else { d.border_color(p.border).hover(move |s| s.bg(p.hover)) })
-                        .child(c.name.clone())
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            if !on {
-                                let api = api(&this.state, cx);
-                                this.write(api.update_project(pid.clone(), ProjectPatch { client_id: Some(cid.clone()), ..Default::default() }), cx)
-                            }
-                        }))
-                }));
+                let client = match self.client_select.as_ref() {
+                    Some(select) => div().debug_selector(|| "detail-client".into()).w(px(240.)).child(Select::new(select)).into_any_element(),
+                    None => div().into_any_element(),
+                };
                 div()
                     .flex()
                     .flex_col()
                     .child(div().text_lg().font_weight(FontWeight::SEMIBOLD).mb_2().child(pj.name.clone()))
                     .child(line("名前", name_field))
-                    .child(line("クライアント", chips.into_any_element()))
+                    .child(line("クライアント", client))
                     .child(line("色", swatches.into_any_element()))
-                    .child(line("記録", div().debug_selector(|| "detail-activity".into()).text_sm().font_family(MONO).text_color(p.text_muted).child(self.activity_label(&id)).into_any_element()))
                     .child(div().mt_4().child(archive_button(pj.archived, !(pj.archived && client_archived), (pj.archived && client_archived).then_some("クライアントのアーカイブを先に戻してください"), cx)))
                     .children(error)
                     .into_any_element()

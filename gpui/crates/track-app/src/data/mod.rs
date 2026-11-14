@@ -215,10 +215,6 @@ impl DataClient {
         })
     }
 
-    pub fn project_activity(&self, from: chrono::DateTime<chrono::Utc>, to: chrono::DateTime<chrono::Utc>) -> impl Future<Output = DataResult<Vec<track_core::model::ProjectActivity>>> + Send + 'static {
-        self.call("project_activity", move |db| db.project_activity(from, to))
-    }
-
     pub fn projects_all(&self) -> impl Future<Output = DataResult<Vec<Project>>> + Send + 'static {
         self.call("projects_all", |db| db.projects(true))
     }
