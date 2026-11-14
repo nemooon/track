@@ -250,6 +250,10 @@ impl DataClient {
         self.call("delete_client", move |db| db.delete_client(&id))
     }
 
+    pub fn tag_usage(&self) -> impl Future<Output = DataResult<Vec<track_core::model::TagUsage>>> + Send + 'static {
+        self.call("tag_usage", |db| db.tag_usage())
+    }
+
     pub fn create_tag(&self, name: String, color: String) -> impl Future<Output = DataResult<String>> + Send + 'static {
         self.call("create_tag", move |db| db.create_tag(&name, &color))
     }

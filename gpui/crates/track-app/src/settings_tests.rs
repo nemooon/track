@@ -185,9 +185,15 @@ fn tags_section(cx: &mut VisualTestContext) -> (VisualTestContext, Entity<crate:
     (scx, t)
 }
 
-fn type_tag_name(scx: &mut VisualTestContext, t: &Entity<crate::settings::tags::TagSettings>, text: &str) {
-    let input = t.read_with(scx, |t, _| t.editor.as_ref().expect("editor open").name.clone());
-    scx.update(|w, cx| input.update(cx, |i, cx| i.set_value(text.to_string(), w, cx)));
+/// Types into the tag name field being edited and presses Enter.
+fn enter_tag_name(scx: &mut VisualTestContext, t: &Entity<crate::settings::tags::TagSettings>, text: &str) {
+    let input = t.read_with(scx, |t, _| t.editing.as_ref().map(|(_, i)| i.clone()).expect("tag name field"));
+    scx.update(|w, cx| input.update(cx, |i, cx| {
+        i.focus(w, cx);
+        i.set_value(text.to_string(), w, cx)
+    }));
+    scx.update(|_, cx| input.update(cx, |_, cx| cx.emit(gpui_component::input::InputEvent::PressEnter { secondary: false, shift: false })));
+    wait_io(scx);
 }
 
 #[gpui::test]
@@ -198,29 +204,85 @@ fn tags_are_not_on_the_projects_page(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn tag_crud(cx: &mut TestAppContext) {
+fn adding_a_tag_starts_renaming_it(cx: &mut TestAppContext) {
     let (_app, cx, f) = open_app_db(cx, |_| {});
-    let (mut scx, p) = tags_section(cx);
+    let (mut scx, t) = tags_section(cx);
     click(&mut scx, "tag-add");
-    type_tag_name(&mut scx, &p, "定例");
-    click(&mut scx, "editor-save");
     wait_io(&mut scx);
-    assert!(scx.debug_bounds("editor-error").is_some(), "同じ名前のタグが既にあります");
-    type_tag_name(&mut scx, &p, "新タグ");
-    click(&mut scx, "editor-save");
+    let id = t.read_with(&scx, |t, _| t.editing.as_ref().map(|(id, _)| id.clone())).expect("the new tag is being renamed");
+    enter_tag_name(&mut scx, &t, "新タグ");
+    assert_eq!(f.db().tags().unwrap().into_iter().find(|x| x.id == id).unwrap().name, "新タグ");
+    assert!(t.read_with(&scx, |t, _| t.editing.is_none()));
+}
+
+#[gpui::test]
+fn double_click_renames_a_tag_and_escape_cancels(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, t) = tags_section(cx);
+    double_click(&mut scx, "tag-row-t1");
+    let input = t.read_with(&scx, |t, _| t.editing.as_ref().map(|(_, i)| i.clone())).expect("editing");
+    scx.update(|w, cx| input.update(cx, |i, cx| {
+        i.focus(w, cx);
+        i.set_value("取り消す".to_string(), w, cx)
+    }));
+    scx.dispatch_action(gpui_component::input::Escape);
     wait_io(&mut scx);
-    let tag = f.db().tags().unwrap().into_iter().find(|t| t.name == "新タグ").expect("tag created");
-    let edit = Box::leak(format!("tag-edit-{}", tag.id).into_boxed_str());
-    click(&mut scx, edit);
-    click(&mut scx, "editor-color-0");
-    click(&mut scx, "editor-save");
+    assert!(t.read_with(&scx, |t, _| t.editing.is_none()));
+    assert_eq!(f.db().tags().unwrap()[0].name, "定例");
+    double_click(&mut scx, "tag-row-t1");
+    enter_tag_name(&mut scx, &t, "週次");
+    assert_eq!(f.db().tags().unwrap()[0].name, "週次");
+}
+
+#[gpui::test]
+fn a_taken_tag_name_shows_an_error_on_the_row(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, t) = tags_section(cx);
+    click(&mut scx, "tag-add");
     wait_io(&mut scx);
-    assert_eq!(f.db().tags().unwrap().into_iter().find(|t| t.id == tag.id).unwrap().color, "#ef4444");
-    let del = Box::leak(format!("tag-delete-{}", tag.id).into_boxed_str());
-    click(&mut scx, del);
+    let id = t.read_with(&scx, |t, _| t.editing.as_ref().map(|(id, _)| id.clone())).unwrap();
+    enter_tag_name(&mut scx, &t, "定例");
+    assert!(scx.debug_bounds(sel(format!("tag-error-{id}"))).is_some(), "同じ名前のタグが既にあります");
+    assert_ne!(f.db().tags().unwrap().into_iter().find(|x| x.id == id).unwrap().name, "定例");
+}
+
+#[gpui::test]
+fn the_colour_dot_opens_swatches_that_save_at_once(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, _t) = tags_section(cx);
+    assert!(scx.debug_bounds("tag-colors-t1").is_none());
+    click(&mut scx, "tag-color-t1");
+    click(&mut scx, "tag-colors-t1-0");
+    wait_io(&mut scx);
+    assert_eq!(f.db().tags().unwrap()[0].color, track_core::edit::PROJECT_COLORS[0]);
+    assert!(scx.debug_bounds("tag-colors-t1").is_none(), "closes after picking");
+}
+
+#[gpui::test]
+fn a_tag_row_shows_how_much_it_is_used(cx: &mut TestAppContext) {
+    use crate::testing::{insert_entry, local, visible_weekday};
+    let day = visible_weekday();
+    let (_app, cx, _f) = open_app_db(cx, move |db| {
+        insert_entry(db, "e1", local(day, 9, 0), local(day, 10, 0), Some("p1"), "作業");
+        db.conn().execute(r#"INSERT INTO "TagOnEntry"(id, tagId, entryId) VALUES ('te1', 't1', 'e1')"#, []).unwrap();
+    });
+    let (mut scx, t) = tags_section(cx);
+    assert_eq!(t.read_with(&scx, |t, _| t.usage_label("t1")), "1 プロジェクト・1 件");
+    assert!(scx.debug_bounds("tag-usage-t1").is_some());
+}
+
+#[gpui::test]
+fn deleting_a_tag_asks_first(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, _t) = tags_section(cx);
+    click(&mut scx, "tag-delete-t1");
+    assert!(!f.db().tags().unwrap().is_empty(), "nothing is deleted before confirming");
+    click(&mut scx, "tag-delete-cancel");
+    assert!(scx.debug_bounds("tag-delete-confirm").is_none());
+    click(&mut scx, "tag-delete-t1");
     click(&mut scx, "tag-delete-confirm");
     wait_io(&mut scx);
-    assert!(f.db().tags().unwrap().iter().all(|t| t.id != tag.id));
+    assert!(f.db().tags().unwrap().is_empty());
 }
 
 fn format_editor(view: &Entity<SettingsWindow>, scx: &mut VisualTestContext) -> Entity<crate::settings::format_editor::FormatEditor> {

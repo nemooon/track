@@ -19,6 +19,15 @@ pub struct Tag {
     pub color: String,
 }
 
+/// How much a tag is used: projects it is on and entries that carry it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TagUsage {
+    pub tag_id: String,
+    pub projects: i64,
+    pub entries: i64,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TagLink {

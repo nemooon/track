@@ -85,6 +85,18 @@ impl Db {
         Ok(id)
     }
 
+    /// Every tag with the number of projects it is on and entries that carry it.
+    pub fn tag_usage(&self) -> Result<Vec<crate::model::TagUsage>> {
+        let mut st = self.conn().prepare(
+            r#"SELECT t.id,
+                      (SELECT COUNT(*) FROM "TagOnProject" tp WHERE tp.tagId = t.id),
+                      (SELECT COUNT(*) FROM "TagOnEntry" te WHERE te.tagId = t.id)
+               FROM "Tag" t ORDER BY t.name"#,
+        )?;
+        let rows = st.query_map([], |r| Ok(crate::model::TagUsage { tag_id: r.get(0)?, projects: r.get(1)?, entries: r.get(2)? }))?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
     pub fn create_tag(&mut self, name: &str, color: &str) -> Result<String> {
         self.ensure_writable()?;
         check_name(name, 50)?;

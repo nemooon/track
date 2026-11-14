@@ -127,3 +127,16 @@ fn projects_with_entries_lists_only_projects_that_have_some() {
     entry(&mut db, &p1);
     assert_eq!(db.projects_with_entries().unwrap(), vec![p1]);
 }
+
+#[test]
+fn tag_usage_counts_projects_and_entries_per_tag() {
+    let (_d, mut db) = db();
+    let (p, red, blue) = seed(&mut db);
+    for _ in 0..2 {
+        db.create_entry(NewEntry { project_id: Some(p.clone()), start: local(12, 9, 0), end: local(12, 10, 0), tag_ids: vec![red.clone()], ..Default::default() }).unwrap();
+    }
+    let usage = db.tag_usage().unwrap();
+    let get = |id: &str| usage.iter().find(|u| u.tag_id == id).map(|u| (u.projects, u.entries));
+    assert_eq!(get(&red), Some((1, 2)));
+    assert_eq!(get(&blue), Some((0, 0)), "unused tags are listed too");
+}
