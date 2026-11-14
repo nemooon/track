@@ -543,3 +543,50 @@ fn light_theme_is_forced_and_shared_with_settings_window(cx: &mut TestAppContext
     let (mut scx, _view) = open_section(cx, "settings-nav-calendar");
     assert_eq!(scx.update(|_, cx| palette(cx)), main, "the settings window reads the same palette");
 }
+
+fn appearance_saved(f: &crate::testing::Fixture) -> String {
+    config_json(f)["appearance"].as_str().unwrap_or_default().to_string()
+}
+
+#[gpui::test]
+fn choosing_dark_saves_and_switches_both_windows(cx: &mut TestAppContext) {
+    use crate::ui::theme::{Palette, is_dark, palette};
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, _v) = open_section(cx, "settings-nav-appearance");
+    click(&mut scx, "appearance-dark");
+    wait_io(&mut scx);
+    wait_io(cx);
+    assert_eq!(appearance_saved(&f), "dark");
+    assert_eq!(cx.update(|_, cx| palette(cx)), Palette::dark(), "main window");
+    assert_eq!(scx.update(|_, cx| palette(cx)), Palette::dark(), "settings window");
+    click(&mut scx, "appearance-system");
+    wait_io(&mut scx);
+    wait_io(cx);
+    let expected = if cx.update(|_, cx| is_dark(cx.window_appearance())) { Palette::dark() } else { Palette::light() };
+    assert_eq!(appearance_saved(&f), "system");
+    assert_eq!(cx.update(|_, cx| palette(cx)), expected);
+}
+
+#[gpui::test]
+fn system_change_follows_only_when_automatic(cx: &mut TestAppContext) {
+    use crate::ui::theme::{Palette, palette};
+    let (app, cx, f) = open_app_db(cx, |_| {});
+    f.data.save_config_blocking(track_core::config::ConfigPatch { appearance: Some(track_core::config::Appearance::Light), ..Default::default() });
+    app.update(cx, |a, cx| a.on_system_appearance(true, cx));
+    assert_eq!(cx.update(|_, cx| palette(cx)), Palette::light(), "fixed to light");
+    f.data.save_config_blocking(track_core::config::ConfigPatch { appearance: Some(track_core::config::Appearance::System), ..Default::default() });
+    app.update(cx, |a, cx| a.on_system_appearance(true, cx));
+    assert_eq!(cx.update(|_, cx| palette(cx)), Palette::dark(), "automatic follows macOS");
+}
+
+#[gpui::test]
+fn appearance_save_failure_keeps_theme(cx: &mut TestAppContext) {
+    use crate::ui::theme::{Palette, palette};
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    f.data.fail_ops(&["save_config"]);
+    let (mut scx, _v) = open_section(cx, "settings-nav-appearance");
+    click(&mut scx, "appearance-dark");
+    wait_io(&mut scx);
+    assert_eq!(cx.update(|_, cx| palette(cx)), Palette::light());
+    assert!(scx.debug_bounds("appearance-error").is_some());
+}

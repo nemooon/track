@@ -120,6 +120,12 @@ impl DataClient {
         }
     }
 
+    /// Tests: save settings synchronously, bypassing the DB thread.
+    #[cfg(test)]
+    pub fn save_config_blocking(&self, patch: track_core::config::ConfigPatch) {
+        track_core::config::save_config_in(&self.data_dir, patch, &self.dev_root).unwrap();
+    }
+
     #[cfg(test)]
     pub fn fail_ops(&self, ops: &[&'static str]) {
         self.failing.lock().unwrap().extend(ops.iter().copied());

@@ -10,6 +10,7 @@ use gpui::{
 use gpui_component::{Icon, IconName, Root};
 
 pub mod ai;
+pub mod appearance;
 pub mod backup;
 pub mod calendar;
 pub mod form;
@@ -19,6 +20,7 @@ pub mod reports;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsSection {
+    Appearance,
     Calendar,
     Reports,
     Projects,
@@ -27,10 +29,11 @@ pub enum SettingsSection {
 }
 
 impl SettingsSection {
-    pub const ALL: [SettingsSection; 5] = [Self::Calendar, Self::Reports, Self::Projects, Self::Ai, Self::Backup];
+    pub const ALL: [SettingsSection; 6] = [Self::Appearance, Self::Calendar, Self::Reports, Self::Projects, Self::Ai, Self::Backup];
 
     pub fn label(self) -> &'static str {
         match self {
+            Self::Appearance => "外観",
             Self::Calendar => "カレンダー",
             Self::Reports => "レポート",
             Self::Projects => "プロジェクト",
@@ -42,7 +45,7 @@ impl SettingsSection {
     /// Group heading in the sidebar (SettingsLayout's categoryGroups, without メモ).
     pub fn group(self) -> &'static str {
         match self {
-            Self::Calendar | Self::Reports => "ビュー",
+            Self::Appearance | Self::Calendar | Self::Reports => "ビュー",
             Self::Projects | Self::Ai => "共通",
             Self::Backup => "データ",
         }
@@ -54,6 +57,7 @@ impl SettingsSection {
 
     fn key(self) -> &'static str {
         match self {
+            Self::Appearance => "appearance",
             Self::Calendar => "calendar",
             Self::Reports => "reports",
             Self::Projects => "projects",
@@ -64,6 +68,7 @@ impl SettingsSection {
 
     fn icon(self) -> IconName {
         match self {
+            Self::Appearance => IconName::Eye,
             Self::Calendar => IconName::Calendar,
             Self::Reports => IconName::ChartPie,
             Self::Projects => IconName::Folder,
@@ -77,6 +82,7 @@ pub struct SettingsWindow {
     pub state: Entity<AppState>,
     pub section: SettingsSection,
     /// Section views, created the first time each is shown.
+    pub appearance: Option<Entity<appearance::AppearanceSettings>>,
     pub calendar: Option<Entity<calendar::CalendarSettings>>,
     pub reports: Option<Entity<reports::ReportSettings>>,
     pub projects: Option<Entity<projects::ProjectSettings>>,
@@ -87,7 +93,7 @@ pub struct SettingsWindow {
 impl SettingsWindow {
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
         cx.observe(&state, |_, _, cx| cx.notify()).detach();
-        SettingsWindow { state, section: SettingsSection::Calendar, calendar: None, reports: None, projects: None, ai: None, backup: None }
+        SettingsWindow { state, section: SettingsSection::Calendar, appearance: None, calendar: None, reports: None, projects: None, ai: None, backup: None }
     }
 
     pub fn show(&mut self, section: SettingsSection, cx: &mut Context<Self>) {
@@ -98,6 +104,7 @@ impl SettingsWindow {
     fn section_view(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<gpui::AnyView> {
         let state = self.state.clone();
         match self.section {
+            SettingsSection::Appearance => Some(self.appearance.get_or_insert_with(|| cx.new(|cx| appearance::AppearanceSettings::new(state, cx))).clone().into()),
             SettingsSection::Calendar => Some(self.calendar.get_or_insert_with(|| cx.new(|cx| calendar::CalendarSettings::new(state, cx))).clone().into()),
             SettingsSection::Reports => {
                 if self.reports.is_none() {
