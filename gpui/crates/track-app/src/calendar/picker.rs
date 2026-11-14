@@ -199,8 +199,9 @@ impl ProjectPicker {
     }
 }
 
-/// Client-grouped project list with a trailing 「プロジェクトなし」 row (ProjectPickerPopover / ProjectSelectPopover).
-pub fn project_list<V: 'static>(projects: &[Project], query: &str, on_pick: PickFn<V>, cx: &mut Context<V>) -> AnyElement {
+/// Client-grouped project list, with a trailing 「プロジェクトなし」 row when `with_none`
+/// (ProjectPickerPopover / ProjectSelectPopover; the 直行直帰 menu has none).
+pub fn project_list<V: 'static>(projects: &[Project], query: &str, with_none: bool, on_pick: PickFn<V>, cx: &mut Context<V>) -> AnyElement {
     let p = palette(cx);
     let groups = filter_projects(projects, query);
     let row = |id: gpui::SharedString, color: gpui::Hsla, label: String| {
@@ -238,7 +239,7 @@ pub fn project_list<V: 'static>(projects: &[Project], query: &str, on_pick: Pick
                         .on_click(cx.listener(move |this, _, w, cx| on_pick(this, Some(pid.clone()), w, cx)))
                 }))
         }))
-        .child({
+        .when(with_none, |d| d.child({
             let on_pick = on_pick.clone();
             row("pick-project-none".into(), p.text_faint, "プロジェクトなし".into())
                 .mt_1()
@@ -247,7 +248,7 @@ pub fn project_list<V: 'static>(projects: &[Project], query: &str, on_pick: Pick
                 .text_color(p.text_muted)
                 .debug_selector(|| "project-none".into())
                 .on_click(cx.listener(move |this, _, w, cx| on_pick(this, None, w, cx)))
-        })
+        }))
         .into_any_element()
 }
 
@@ -306,7 +307,7 @@ impl Render for ProjectPicker {
             });
             return shell
                 .child(div().border_b_1().border_color(p.border).child(Input::new(&self.query).appearance(false).px_3().py_2()))
-                .child(project_list(&projects, &q, on_pick, cx));
+                .child(project_list(&projects, &q, true, on_pick, cx));
         };
         let matches = self.matches(cx);
         let visible = self.show_suggestions && !matches.is_empty();

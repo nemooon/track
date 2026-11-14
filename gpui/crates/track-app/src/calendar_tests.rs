@@ -393,12 +393,25 @@ fn direct_is_not_in_the_time_grid_but_counts(cx: &mut TestAppContext) {
     let days = visible_days(&app, cx);
     let before = app.read_with(cx, |a, cx| a.calendar.read(cx).visible_total_minutes(&days));
     click_id(cx, "day-menu-2026-11-12".into());
-    click_id(cx, "day-direct-p1".into());
+    click_id(cx, "project-p1".into());
     wait_io(cx);
     let direct = f.db().direct_entry(day(12)).unwrap().expect("direct entry");
     assert!(cx.debug_bounds(Box::leak(format!("entry-{}", direct.id).into_boxed_str())).is_none(), "not in the time grid");
     assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).visible_total_minutes(&days)), before + 450);
     assert!(cx.debug_bounds("day-mark-2026-11-12").is_some(), "the header says 直行直帰");
+}
+
+#[gpui::test]
+fn direct_uses_the_shared_project_list(cx: &mut TestAppContext) {
+    let (_app, cx, f) = setup(cx);
+    click_id(cx, "day-menu-2026-11-12".into());
+    assert!(cx.debug_bounds("project-p1").is_some() && cx.debug_bounds("project-p2").is_some());
+    assert!(cx.debug_bounds("project-none").is_none(), "a direct visit needs a project");
+    cx.simulate_input("bet");
+    assert!(cx.debug_bounds("project-p1").is_none(), "the search narrows the list");
+    click_id(cx, "project-p2".into());
+    wait_io(cx);
+    assert_eq!(f.db().direct_entry(day(12)).unwrap().and_then(|e| e.project_id).as_deref(), Some("p2"));
 }
 
 #[gpui::test]

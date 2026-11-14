@@ -242,7 +242,7 @@ impl Render for EditForm {
                                                 }
                                             }))
                                             .child(div().border_b_1().border_color(p.border).child(Input::new(&self.select_query).appearance(false).px_3().py_2()))
-                                            .child(project_list(&self.projects, &q, on_pick, cx)),
+                                            .child(project_list(&self.projects, &q, true, on_pick, cx)),
                                     ),
                                 )
                                 .with_priority(20)),

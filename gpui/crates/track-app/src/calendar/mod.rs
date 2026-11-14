@@ -54,6 +54,8 @@ pub struct CalendarView {
     pub leaves: HashMap<NaiveDate, track_core::model::LeaveKind>,
     /// The day whose 休暇・直行直帰 menu is open.
     day_menu: Option<NaiveDate>,
+    /// The 直行直帰 search in the open day menu.
+    direct_query: Option<Entity<gpui_component::input::InputState>>,
     pub load_error: Option<String>,
     pub drag: DragState,
     pub editing: Option<String>,
@@ -91,6 +93,7 @@ impl CalendarView {
             cache: EntryCache::default(),
             leaves: HashMap::new(),
             day_menu: None,
+            direct_query: None,
             load_error: None,
             drag: DragState::Idle,
             editing: None,
