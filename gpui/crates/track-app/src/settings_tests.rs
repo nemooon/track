@@ -622,3 +622,21 @@ fn project_editor_offers_the_added_colours(cx: &mut TestAppContext) {
     wait_io(&mut scx);
     assert_eq!(f.db().project("p1").unwrap().color, "#78716c");
 }
+
+#[gpui::test]
+fn project_editor_takes_any_colour_from_the_picker(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    let b = scx.debug_bounds("project-edit-p1").expect("edit");
+    scx.simulate_click(b.center(), Modifiers::none());
+    wait_io(&mut scx);
+    assert!(scx.debug_bounds("editor-color-custom").is_some(), "a button for any colour");
+    let picker = p.read_with(&scx, |s, _| s.editor.as_ref().and_then(|e| e.picker.clone())).expect("picker state");
+    let teal: gpui::Hsla = gpui::rgb(0x123456).into();
+    // What the picker emits when the user commits a colour.
+    scx.update(|_, cx| picker.update(cx, |_, cx| cx.emit(gpui_component::color_picker::ColorPickerEvent::Change(Some(teal)))));
+    scx.run_until_parked();
+    click(&mut scx, "editor-save");
+    wait_io(&mut scx);
+    assert_eq!(f.db().project("p1").unwrap().color, "#123456");
+}

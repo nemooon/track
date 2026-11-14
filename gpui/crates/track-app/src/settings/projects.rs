@@ -9,6 +9,7 @@ use gpui::{
     AnyElement, AppContext, Context, Div, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px,
 };
+use gpui_component::color_picker::{ColorPicker, ColorPickerEvent, ColorPickerState};
 use gpui_component::input::{Input, InputState};
 use gpui_component::{Icon, IconName};
 use std::future::Future;
@@ -49,6 +50,8 @@ pub struct Editor {
     pub color: String,
     pub tag_ids: Vec<String>,
     pub error: Option<String>,
+    /// 「その他の色…」: any colour, for projects and tags.
+    pub picker: Option<Entity<ColorPickerState>>,
 }
 
 pub struct ProjectSettings {
@@ -147,7 +150,19 @@ impl ProjectSettings {
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("名前").default_value(d.name));
         cx.observe(&input, |_, _, cx| cx.notify()).detach();
         input.update(cx, |i, cx| i.focus(window, cx));
-        self.editor = Some(Editor { kind: d.kind, id: d.id, name: input, client_id: d.client_id, color: d.color, tag_ids: d.tag_ids, error: None });
+        let picker = (d.kind != EditKind::Client).then(|| {
+            let initial = hex(&d.color);
+            let picker = cx.new(|cx| ColorPickerState::new(window, cx).default_value(initial));
+            cx.subscribe(&picker, |this, _, ev: &ColorPickerEvent, cx| {
+                if let (ColorPickerEvent::Change(Some(c)), Some(ed)) = (ev, this.editor.as_mut()) {
+                    ed.color = to_hex(*c);
+                    cx.notify();
+                }
+            })
+            .detach();
+            picker
+        });
+        self.editor = Some(Editor { kind: d.kind, id: d.id, name: input, client_id: d.client_id, color: d.color, tag_ids: d.tag_ids, error: None, picker });
         cx.notify();
     }
 
@@ -193,7 +208,8 @@ impl ProjectSettings {
             (EditKind::Tag, false) => "タグ追加",
             (EditKind::Tag, true) => "タグ編集",
         };
-        let colors = div().flex().flex_wrap().gap_2().children(COLORS.iter().enumerate().map(|(i, c)| {
+        let custom = !COLORS.iter().any(|c| c.eq_ignore_ascii_case(&ed.color));
+        let colors = div().flex().flex_wrap().items_center().gap_2().children(COLORS.iter().enumerate().map(|(i, c)| {
             let selected = ed.color == *c;
             let id = format!("editor-color-{i}");
             let sel = id.clone();
@@ -212,7 +228,12 @@ impl ProjectSettings {
                     }
                     cx.notify();
                 }))
-        }));
+        }))
+        .when(custom, |d| d.child(div().debug_selector(|| "editor-color-current".into()).size(px(24.)).rounded_full().bg(hex(&ed.color)).border_2().border_color(p.text)))
+        .when_some(ed.picker.clone(), |d, picker| {
+            let featured = COLORS.iter().map(|c| gpui::Hsla::from(hex(c))).collect();
+            d.child(div().debug_selector(|| "editor-color-custom".into()).child(ColorPicker::new(&picker).featured_colors(featured).label("その他の色…")))
+        });
         let chip = |id: String, label: String, on: bool| {
             let sel = id.clone();
             div()

@@ -18,6 +18,13 @@ pub fn mix(a: impl Into<Rgba>, p: f32, b: impl Into<Rgba>) -> Rgba {
     Rgba { r: a.r * p + b.r * (1. - p), g: a.g * p + b.g * (1. - p), b: a.b * p + b.b * (1. - p), a: a.a * p + b.a * (1. - p) }
 }
 
+/// `#rrggbb` for a colour (alpha dropped), the form project and tag colours are stored in.
+pub fn to_hex(c: impl Into<Rgba>) -> String {
+    let c: Rgba = c.into();
+    let b = |v: f32| (v.clamp(0., 1.) * 255.).round() as u8;
+    format!("#{:02x}{:02x}{:02x}", b(c.r), b(c.g), b(c.b))
+}
+
 pub fn with_alpha(c: impl Into<Rgba>, a: f32) -> Hsla {
     Rgba { a, ..c.into() }.into()
 }
@@ -333,6 +340,12 @@ mod tests {
         let mut found = Vec::new();
         walk(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut found);
         assert!(found.is_empty(), "raw colours outside Palette:\n{}", found.join("\n"));
+    }
+
+    #[test]
+    fn to_hex_round_trips_hex() {
+        assert_eq!(to_hex(hex("#123456")), "#123456");
+        assert_eq!(to_hex(gpui::Hsla::from(rgb(0xf43f5e))), "#f43f5e");
     }
 
     #[test]
