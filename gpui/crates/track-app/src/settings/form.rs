@@ -2,6 +2,42 @@
 use crate::ui::theme::*;
 use gpui::{AnyElement, Div, ElementId, FontWeight, InteractiveElement, IntoElement, ParentElement, Stateful, Styled, div, prelude::FluentBuilder, px};
 
+/// A section: a heading area (title, description) followed by its form area. Sections after the
+/// first are separated by a border instead of being boxed in cards.
+pub fn section(p: Palette, id: &'static str, title: &str, description: &str, first: bool) -> Div {
+    let heading = format!("{id}-heading");
+    div()
+        .debug_selector(move || id.into())
+        .flex()
+        .flex_col()
+        .gap_5()
+        .pb_6()
+        .when(!first, |d| d.pt_6().border_t_1().border_color(p.border))
+        .child(
+            div()
+                .debug_selector(move || heading.clone())
+                .child(div().text_base().font_weight(FontWeight::SEMIBOLD).child(title.to_string()))
+                .when(!description.is_empty(), |d| d.child(div().mt_1().text_xs().text_color(p.text_muted).child(description.to_string()))),
+        )
+}
+
+/// A field in a section: the label and its help above the control.
+pub fn field(p: Palette, id: &'static str, title: &str, description: &str, control: impl IntoElement) -> Div {
+    let label = format!("{id}-label");
+    div()
+        .debug_selector(move || id.into())
+        .flex()
+        .flex_col()
+        .gap_2()
+        .child(
+            div()
+                .debug_selector(move || label.clone())
+                .child(div().text_sm().font_weight(FontWeight::MEDIUM).child(title.to_string()))
+                .when(!description.is_empty(), |d| d.child(div().mt(px(2.)).text_xs().text_color(p.text_muted).child(description.to_string()))),
+        )
+        .child(control)
+}
+
 /// A titled card with a short description.
 pub fn card(p: Palette, title: &str, description: &str) -> Div {
     div()

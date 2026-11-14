@@ -413,6 +413,21 @@ fn config_json(f: &crate::testing::Fixture) -> serde_json::Value {
 }
 
 #[gpui::test]
+fn ai_page_is_headings_and_fields_not_cards(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = open_app_db(cx, |_| {});
+    let (mut scx, _ai) = ai_section(cx);
+    let provider = scx.debug_bounds("ai-section-provider").expect("provider section");
+    let heading = scx.debug_bounds("ai-section-provider-heading").expect("its heading");
+    let field = scx.debug_bounds("ai-field-provider").expect("the provider field");
+    assert!(heading.bottom() <= field.top(), "the heading comes before the form");
+    let next = scx.debug_bounds("ai-section-apple").or_else(|| scx.debug_bounds("ai-section-codex")).expect("the provider's section");
+    assert!(next.top() >= provider.bottom(), "sections follow one another");
+    let label = scx.debug_bounds("ai-field-provider-label").expect("field label");
+    let control = scx.debug_bounds("ai-provider-codex").expect("a provider button");
+    assert!(label.bottom() <= control.top(), "labels sit above their controls");
+}
+
+#[gpui::test]
 fn switch_provider_and_save_config(cx: &mut TestAppContext) {
     let (app, cx, f) = open_app_db(cx, |_| {});
     std::fs::write(f.dir.join(track_core::config::FILE), r#"{"futureKey":1}"#).unwrap();

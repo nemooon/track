@@ -219,8 +219,9 @@ impl AiSettings {
             (None, true) => "Codexのモデル一覧を取得しています…".into(),
             (None, false) => String::new(),
         };
-        form::card(p, "Codex", "利用するモデルと実行環境を設定します。")
-            .child(form::row(p, 
+        form::section(p, "ai-section-codex", "Codex", "利用するモデルと実行環境を設定します。", false)
+            .child(form::field(p, 
+                "ai-field-codex-model",
                 "モデル",
                 "空欄ではCodex側の既定モデルを使います。任意のモデルIDも入力できます。",
                 div()
@@ -239,7 +240,8 @@ impl AiSettings {
                     )
                     .child(div().text_xs().text_color(p.text_muted).child("実行ファイルの変更を保存すると、そのCodexから候補を取得します。")),
             ))
-            .child(form::row(p, 
+            .child(form::field(p, 
+                "ai-field-codex-executable",
                 "codex実行ファイル",
                 "空欄ではPATHとChatGPTアプリから新しいバージョンを自動検出します。",
                 div()
@@ -284,14 +286,16 @@ impl Render for AiSettings {
                 }))
         }));
         let mut root = div().child(
-            form::card(p, "生成プロバイダー", "メモタイトルと週報の生成に共通で使う実行環境です。").child(form::row(p, "プロバイダー", "利用するAI環境を選択します。", providers)),
+            form::section(p, "ai-section-provider", "生成プロバイダー", "メモタイトルと週報の生成に共通で使う実行環境です。", true)
+                .child(form::field(p, "ai-field-provider", "プロバイダー", "利用するAI環境を選択します。", providers)),
         );
         root = match self.provider.as_str() {
             "codex" => root.child(self.render_codex(cx)),
             "custom-command" => root.child(
-                form::card(p, "カスタムコマンド", "任意のローカルコマンドをAI処理に利用します。")
-                    .child(form::row(p, "実行ファイル", "AI処理に使用するコマンドの絶対パスです。", div().w_full().child(Input::new(&self.command_executable))))
-                    .child(form::row(p, 
+                form::section(p, "ai-section-command", "カスタムコマンド", "任意のローカルコマンドをAI処理に利用します。", false)
+                    .child(form::field(p, "ai-field-command-executable", "実行ファイル", "AI処理に使用するコマンドの絶対パスです。", div().w_full().child(Input::new(&self.command_executable))))
+                    .child(form::field(p, 
+                        "ai-field-command-args",
                         "引数",
                         "コマンドへ渡す引数を1行に1つ入力します。",
                         div()
@@ -305,14 +309,15 @@ impl Render for AiSettings {
                     )),
             ),
             _ => root.child(
-                form::card(p, "Apple Intelligence", "Appleの端末内モデルを使うための設定です。")
-                    .child(form::row(p, "利用方法", "Appleの端末内モデルを利用します。", div().text_sm().text_color(p.text).child("macOS 26以降で利用できます。APIキーや外部通信は不要です。"))),
+                form::section(p, "ai-section-apple", "Apple Intelligence", "Appleの端末内モデルを使うための設定です。", false)
+                    .child(form::field(p, "ai-field-apple", "利用方法", "Appleの端末内モデルを利用します。", div().text_sm().text_color(p.text).child("macOS 26以降で利用できます。APIキーや外部通信は不要です。"))),
             ),
         };
         let status = (!dirty).then(|| self.status.clone()).flatten();
         root.when(validation.is_some() || status.is_some(), |d| {
-            d.child(form::card(p, "状態", "現在の設定でAI機能を利用できるか確認します。").when_some(status, |d, s| {
-                d.child(form::row(p, 
+            d.child(form::section(p, "ai-section-status", "状態", "現在の設定でAI機能を利用できるか確認します。", false).when_some(status, |d, s| {
+                d.child(form::field(p, 
+                    "ai-field-status",
                     "接続状態",
                     "",
                     div()
