@@ -138,7 +138,22 @@ impl SettingsWindow {
 
     fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let p = palette(cx);
-        let mut col = div().w(px(200.)).flex_shrink_0().h_full().flex().flex_col().gap_1().pt(px(44.)).px_2().bg(p.surface).border_r_1().border_color(p.border);
+        let mut col = div().w(px(200.)).flex_shrink_0().h_full().flex().flex_col().gap_1().px_2().bg(p.surface).border_r_1().border_color(p.border);
+        // The row with the traffic lights drags the window (the page beside it starts at the top).
+        col = col.child(
+            div()
+                .id("settings-drag")
+                .debug_selector(|| "settings-drag".into())
+                .flex_shrink_0()
+                .h(px(40.))
+                .on_mouse_down(gpui::MouseButton::Left, |ev, window, _| {
+                    if ev.click_count == 2 {
+                        window.titlebar_double_click();
+                    } else {
+                        window.start_window_move();
+                    }
+                }),
+        );
         let mut last_group = "";
         for s in SettingsSection::ALL {
             if s.group() != last_group {
@@ -190,21 +205,6 @@ impl Render for SettingsWindow {
                     .h_full()
                     .flex()
                     .flex_col()
-                    // No page title: an empty strip level with the traffic lights drags the window.
-                    .child(
-                        div()
-                            .id("settings-drag")
-                            .debug_selector(|| "settings-drag".into())
-                            .flex_shrink_0()
-                            .h(TITLE_BAR_HEIGHT)
-                            .on_mouse_down(gpui::MouseButton::Left, |ev, window, _| {
-                                if ev.click_count == 2 {
-                                    window.titlebar_double_click();
-                                } else {
-                                    window.start_window_move();
-                                }
-                            }),
-                    )
                     .child(if self.section == SettingsSection::Projects {
                         // The projects page fills the height and scrolls its two panes itself.
                         div().flex_1().min_h_0().children(content).into_any_element()
@@ -216,7 +216,7 @@ impl Render for SettingsWindow {
                             .min_h_0()
                             .overflow_y_scroll()
                             .px_8()
-                            .pt_2()
+                            .pt_6()
                             .pb_8()
                             .children(content)
                             .into_any_element()

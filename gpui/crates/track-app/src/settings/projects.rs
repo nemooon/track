@@ -790,7 +790,8 @@ impl ProjectSettings {
                     .cursor_pointer()
                     .border_1()
                     .map(|d| if on { d.bg(c).border_color(c).text_color(p.on_color) } else { d.border_color(p.border).hover(move |s| s.bg(p.hover)) })
-                    .when(!on, |d| d.child(div().size(px(8.)).rounded_full().bg(c)))
+                    // The dot stays (white when on), so the chip keeps its size.
+                    .child(div().size(px(8.)).rounded_full().bg(if on { p.on_color } else { gpui::Hsla::from(c) }))
                     .child(t.name.clone())
                     .on_click(cx.listener(move |this, _, _, cx| this.toggle_tag(&pid, &tid, cx)))
             }))
@@ -864,11 +865,12 @@ impl Render for ProjectSettings {
                     .h_full()
                     .overflow_y_scroll()
                     .px_3()
+                    .pt_2()
                     .pb_6()
                     .border_r_1()
                     .border_color(p.border_subtle)
                     .child(self.render_tree(p, cx)),
             )
-            .child(div().id("projects-detail").flex_1().min_w_0().h_full().overflow_y_scroll().px_8().pt_2().pb_8().child(self.render_detail(p, cx)))
+            .child(div().id("projects-detail").flex_1().min_w_0().h_full().overflow_y_scroll().px_8().pt_6().pb_8().child(self.render_detail(p, cx)))
     }
 }

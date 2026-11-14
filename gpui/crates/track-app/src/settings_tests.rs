@@ -550,14 +550,15 @@ fn settings_window_follows_macos_on_its_own(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn pages_have_no_title_and_start_below_the_traffic_lights(cx: &mut TestAppContext) {
+fn pages_start_at_the_top_and_the_sidebar_drags_the_window(cx: &mut TestAppContext) {
     let (_app, cx, _f) = open_app_db(cx, |_| {});
     let (mut scx, _p) = projects_section(cx);
     assert!(scx.debug_bounds("settings-title").is_none(), "no page title");
     let drag = scx.debug_bounds("settings-drag").expect("a strip to drag the window by");
-    assert_eq!((drag.top(), drag.size.height), (gpui::px(0.), crate::ui::theme::TITLE_BAR_HEIGHT));
+    let nav = scx.debug_bounds("settings-nav-appearance").expect("sidebar");
+    assert!(drag.right() <= nav.right() + gpui::px(16.), "the strip is in the sidebar, by the traffic lights");
     let tree = scx.debug_bounds("tree-client-c1").expect("tree");
-    assert!(tree.top() >= drag.bottom(), "the page starts below the strip");
+    assert!(tree.top() < crate::ui::theme::TITLE_BAR_HEIGHT, "no empty band above the page");
 }
 
 #[gpui::test]
@@ -814,6 +815,16 @@ fn a_client_with_entries_cannot_be_deleted(cx: &mut TestAppContext) {
     click(&mut scx, "tree-client-delete-c1");
     assert!(scx.debug_bounds("tree-client-delete-confirm").is_none(), "the icon is disabled");
     assert!(f.db().client("c1").is_ok());
+}
+
+#[gpui::test]
+fn a_tag_chip_keeps_its_size_when_toggled(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = open_app_db(cx, |_| {});
+    let (mut scx, _p) = projects_section(cx);
+    let on = scx.debug_bounds("detail-tag-t1").expect("chip").size;
+    click(&mut scx, "detail-tag-t1");
+    wait_io(&mut scx);
+    assert_eq!(scx.debug_bounds("detail-tag-t1").expect("chip").size, on);
 }
 
 #[gpui::test]
