@@ -223,7 +223,7 @@ impl ProjectSettings {
                 .rounded_md()
                 .text_xs()
                 .cursor_pointer()
-                .when(on, |d| d.bg(p.text).text_color(p.bg))
+                .when(on, |d| d.bg(p.primary).text_color(p.on_color))
                 .when(!on, |d| d.border_1().border_color(p.border).text_color(p.text))
                 .child(label)
         };
@@ -326,14 +326,14 @@ fn list_row(p: Palette, id: String, archived: bool) -> gpui::Stateful<Div> {
         .px_4()
         .py_2()
         .border_b_1()
-        .border_color(p.hover)
+        .border_color(p.border_subtle)
         .text_sm()
         .when(archived, |d| d.bg(p.surface).text_color(p.text_muted))
 }
 
 fn archived_badge(p: Palette, id: String) -> Div {
     let sel = id.clone();
-    div().debug_selector(move || sel.clone()).px_2().rounded_md().bg(p.border).text_xs().text_color(p.text_muted).child("アーカイブ済み")
+    div().debug_selector(move || sel.clone()).px_2().rounded_md().bg(p.selected).text_xs().text_color(p.text_muted).child("アーカイブ済み")
 }
 
 impl Render for ProjectSettings {

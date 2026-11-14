@@ -354,7 +354,7 @@ impl ReportsView {
                     .px_3()
                     .text_xs()
                     .cursor_pointer()
-                    .map(|d| if active { d.border_color(p.text).bg(p.text).text_color(p.bg) } else { d.border_color(p.border).bg(p.bg).text_color(p.text).hover(|s| s.bg(p.surface)) })
+                    .map(|d| if active { d.border_color(p.text).bg(p.primary).text_color(p.on_color) } else { d.border_color(p.border).bg(p.bg).text_color(p.text).hover(|s| s.bg(p.surface)) })
                     .child(filter_label(label, &options, &selected))
                     .child(div().opacity(0.7).child(Icon::new(IconName::ChevronDown).size_3()))
                     .on_click(cx.listener(move |this, _, w, cx| {
@@ -396,7 +396,7 @@ impl ReportsView {
                                     .justify_center()
                                     .rounded_sm()
                                     .border_1()
-                                    .map(|d| if checked { d.border_color(p.text).bg(p.text).text_color(p.bg) } else { d.border_color(p.border).bg(p.bg) })
+                                    .map(|d| if checked { d.border_color(p.text).bg(p.primary).text_color(p.on_color) } else { d.border_color(p.border).bg(p.bg) })
                                     .when(checked, |d| d.child(Icon::new(IconName::Check).size_3())),
                             )
                             .when_some(o.color.clone(), |d, c| d.child(div().size(px(10.)).flex_shrink_0().rounded_full().bg(hex(&c))))
@@ -600,7 +600,7 @@ impl ReportsView {
                     .flex()
                     .flex_wrap()
                     .gap_1()
-                    .children(tags.iter().map(|t| div().rounded_full().px(px(6.)).text_size(px(10.)).text_color(p.bg).bg(hex(&t.color)).child(t.name.clone())))
+                    .children(tags.iter().map(|t| div().rounded_full().px(px(6.)).text_size(px(10.)).text_color(p.on_color).bg(hex(&t.color)).child(t.name.clone())))
                     .into_any_element()
             }
         };
@@ -615,7 +615,7 @@ impl ReportsView {
                     .id(gpui::SharedString::from(format!("row-{path}")))
                     .debug_selector(move || sel.clone())
                     .border_b_1()
-                    .border_color(p.hover)
+                    .border_color(p.border_subtle)
                     .py_2()
                     .text_sm()
                     .cursor_pointer()
@@ -643,7 +643,7 @@ impl ReportsView {
             let child_row = |content: AnyElement, date: AnyElement, tags: AnyElement, minutes: i64| {
                 div()
                     .border_b_1()
-                    .border_color(p.hover)
+                    .border_color(p.border_subtle)
                     .py(px(6.))
                     .text_sm()
                     .text_color(p.text)

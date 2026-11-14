@@ -16,7 +16,7 @@ pub fn card(p: Palette, title: &str, description: &str) -> Div {
                 .px_5()
                 .py_3()
                 .border_b_1()
-                .border_color(p.hover)
+                .border_color(p.border_subtle)
                 .child(div().text_sm().font_weight(FontWeight::SEMIBOLD).child(title.to_string()))
                 .when(!description.is_empty(), |d| d.child(div().mt(px(2.)).text_xs().text_color(p.text_muted).child(description.to_string()))),
         )
@@ -54,7 +54,7 @@ pub fn button(p: Palette, id: impl Into<ElementId>, label: &str, primary: bool, 
         .rounded_md()
         .text_sm()
         .font_weight(FontWeight::MEDIUM)
-        .when(primary, |d| d.bg(p.text).text_color(p.bg))
+        .when(primary, |d| d.bg(p.primary).text_color(p.on_color))
         .when(!primary, |d| d.border_1().border_color(p.border).text_color(p.text))
         .when(enabled, |d| d.cursor_pointer().hover(|s| s.opacity(0.85)))
         .when(!enabled, |d| d.opacity(0.4))

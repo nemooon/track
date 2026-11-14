@@ -79,6 +79,13 @@ pub struct Palette {
     /// AI-generated columns and formats.
     pub ai: Hsla,
     pub ai_bg: Hsla,
+    /// Dark primary buttons and their hover.
+    pub primary: Hsla,
+    pub primary_hover: Hsla,
+    /// Text on a saturated fill (primary buttons, tag and holiday chips).
+    pub on_color: Hsla,
+    /// Attention dot (pending AI change).
+    pub warning: Hsla,
 }
 
 impl gpui::Global for Palette {}
@@ -126,6 +133,10 @@ impl Palette {
             info_hover: c(0xdbeafe),
             ai: c(0x6d28d9),
             ai_bg: c(0xede9fe),
+            primary: c(0x1f2328),
+            primary_hover: c(0x3a3f45),
+            on_color: c(0xffffff),
+            warning: c(0xd97706),
         }
     }
 }
@@ -182,6 +193,13 @@ mod tests {
         assert!(contrast(p.text, p.bg) >= 7.0, "text on bg");
         assert!(contrast(p.text_muted, p.bg) >= 4.5, "muted text on bg");
         assert!(contrast(p.text, p.surface) >= 7.0, "text on surface");
+    }
+
+    #[test]
+    fn primary_button_has_a_hover_shade_and_readable_text() {
+        let p = Palette::light();
+        assert_ne!(p.primary, p.primary_hover);
+        assert!(contrast(p.on_color, p.primary) >= 7.0);
     }
 
     /// Every colour on screen comes from `Palette`, so a dark palette only needs new values.

@@ -33,11 +33,9 @@ fn ai_notice(n: &AiOpNotice, p: Palette, cx: &mut Context<TrackApp>) -> impl Int
         .max_w(px(640.))
         .items_center()
         .gap_2()
-        .child(div().size(px(6.)).rounded_full().bg(p.holiday).flex_none())
-        .map(|d| match n.error.clone() {
-            Some(e) => d.child(div().debug_selector(|| "ai-op-error".into()).min_w_0().truncate().text_color(p.danger).child(e)),
-            None => d.child(div().min_w_0().truncate().text_color(p.text).child(format!("AI が {} 件変更しました：{}", n.count(), n.summary()))),
-        })
+        .child(div().size(px(6.)).rounded_full().bg(p.warning).flex_none())
+        .child(div().debug_selector(|| "ai-op-summary".into()).min_w_0().truncate().text_color(p.text).child(format!("AI が {} 件変更しました：{}", n.count(), n.summary())))
+        .when_some(n.error.clone(), |d, e| d.child(div().debug_selector(|| "ai-op-error".into()).flex_shrink_0().max_w(px(280.)).truncate().text_color(p.danger).child(e)))
         .child(
             div()
                 .id("ai-op-undo")

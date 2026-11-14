@@ -272,7 +272,7 @@ impl CalendarView {
                                         .h(px(20.))
                                         .child(div().text_color(p.text_muted).font_weight(FontWeight::SEMIBOLD).child(weekday_ja(d)))
                                         .when_some(holiday, |s, name| {
-                                            s.child(div().rounded_sm().bg(p.holiday).px_1().py(px(2.)).text_size(px(10.)).line_height(px(12.)).text_color(p.bg).truncate().child(name))
+                                            s.child(div().rounded_sm().bg(p.holiday).px_1().py(px(2.)).text_size(px(10.)).line_height(px(12.)).text_color(p.on_color).truncate().child(name))
                                         }),
                                 ),
                             )
@@ -419,11 +419,11 @@ impl CalendarView {
                                 .top(px(-7.))
                                 .whitespace_nowrap()
                                 .rounded_full()
-                                .bg(p.text)
+                                .bg(p.primary)
                                 .px_1()
                                 .text_size(px(9.))
                                 .line_height(px(13.))
-                                .text_color(p.bg)
+                                .text_color(p.on_color)
                                 .child(format!("{:02}:{:02}", m / 60, m % 60)),
                         ),
                 )

@@ -272,7 +272,7 @@ impl Render for AiSettings {
                 .rounded_md()
                 .text_sm()
                 .cursor_pointer()
-                .when(on, |d| d.bg(p.text).text_color(p.bg))
+                .when(on, |d| d.bg(p.primary).text_color(p.on_color))
                 .when(!on, |d| d.border_1().border_color(p.border).text_color(p.text))
                 .child(*label)
                 .on_click(cx.listener(move |this, _, _, cx| {

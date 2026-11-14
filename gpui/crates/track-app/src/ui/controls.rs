@@ -58,12 +58,12 @@ pub fn error_banner(p: &Palette, retry_id: &'static str, message: &str) -> State
         .py_2()
         .bg(p.danger_bg)
         .border_b_1()
-        .border_color(p.border)
+        .border_color(p.danger_border)
         .text_xs()
         .text_color(p.danger)
         .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child("データを読み込めません"))
         .child(div().flex_1().truncate().child(message.to_string()))
-        .child(div().rounded_md().bg(p.text).text_color(p.bg).px_3().py_1().cursor_pointer().child("再試行"))
+        .child(div().rounded_md().bg(p.primary).text_color(p.on_color).px_3().py_1().cursor_pointer().hover(move |s| s.bg(p.primary_hover)).child("再試行"))
 }
 
 #[allow(dead_code)]

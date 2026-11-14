@@ -236,3 +236,15 @@ fn reports_status_bar_shows_row_count_not_a_second_total(cx: &mut TestAppContext
     assert!(bar.contains(&rows.center()));
     assert!(cx.debug_bounds("status-total").is_none(), "the table's 合計 row already shows the total");
 }
+
+#[gpui::test]
+fn status_bar_hides_row_count_while_loading(cx: &mut TestAppContext) {
+    let (app, cx, _f) = setup(cx);
+    assert!(cx.debug_bounds("status-rows").is_some());
+    app.update(cx, |a, cx| a.reports.update(cx, |r, cx| {
+        r.loading = true;
+        cx.notify();
+    }));
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("status-rows").is_none(), "no stale count from the previous period");
+}

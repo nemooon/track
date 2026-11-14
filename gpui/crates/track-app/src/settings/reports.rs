@@ -140,7 +140,7 @@ impl Render for ReportSettings {
                 .px_5()
                 .py_3()
                 .border_b_1()
-                .border_color(p.hover)
+                .border_color(p.border_subtle)
                 .cursor_pointer()
                 .hover(|s| s.bg(p.surface))
                 .child(div().flex_1().text_sm().font_weight(FontWeight::MEDIUM).child(if f.name.is_empty() { "名前未設定".to_string() } else { f.name.clone() }))

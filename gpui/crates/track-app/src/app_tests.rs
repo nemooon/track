@@ -335,3 +335,17 @@ fn ai_notice_lives_in_the_status_bar(cx: &mut TestAppContext) {
     let window_h = cx.update(|w, _| w.viewport_size().height);
     assert!((bar.origin.y + bar.size.height - window_h).abs() <= gpui::px(1.), "the status bar is at the bottom");
 }
+
+#[gpui::test]
+fn failed_undo_keeps_the_summary_next_to_the_reason(cx: &mut TestAppContext) {
+    let (app, cx, f) = seeded(cx, false);
+    refresh(&app, cx);
+    ai_rename(&mut f.db(), "a", "AI");
+    refresh(&app, cx);
+    f.db().update_entry("a", track_core::model::EntryPatch { title: Some(Some("手修正".into())), ..Default::default() }).unwrap();
+    let b = cx.debug_bounds("ai-op-undo").expect("undo button");
+    cx.simulate_click(b.center(), gpui::Modifiers::none());
+    settle(cx);
+    assert!(cx.debug_bounds("ai-op-error").is_some(), "the reason is shown");
+    assert!(cx.debug_bounds("ai-op-summary").is_some(), "and which change it was");
+}

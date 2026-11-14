@@ -298,3 +298,13 @@ fn status_bar_shows_calendar_total(cx: &mut TestAppContext) {
     let total = cx.debug_bounds("status-total").expect("calendar total in the status bar");
     assert!(bar.contains(&total.center()));
 }
+
+#[gpui::test]
+fn selection_leaves_the_status_bar_when_off_screen(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = setup(cx);
+    click(cx, "entry-a");
+    assert!(cx.debug_bounds("status-selection").is_some());
+    cx.simulate_keystrokes("cmd-]");
+    wait_io(cx);
+    assert!(cx.debug_bounds("status-selection").is_none(), "the selected entry is not on screen any more");
+}

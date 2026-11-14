@@ -470,8 +470,8 @@ impl TrackApp {
                                 .px_3()
                                 .py_1()
                                 .rounded_md()
-                                .bg(p.text)
-                                .text_color(p.bg)
+                                .bg(p.primary)
+                                .text_color(p.on_color)
                                 .text_xs()
                                 .cursor_pointer()
                                 .child("再試行")
@@ -546,7 +546,7 @@ impl TrackApp {
             Page::Reports => {
                 // The period total is already the table's 合計 row; only the row count goes here.
                 let reports = self.reports.read(cx);
-                let Some(data) = reports.data.as_ref() else { return vec![] };
+                let Some(data) = reports.data.as_ref().filter(|_| !reports.loading) else { return vec![] };
                 let unit = match reports.group_by {
                     track_core::model::GroupBy::Client => "クライアント",
                     track_core::model::GroupBy::Project => "プロジェクト",

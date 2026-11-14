@@ -179,7 +179,7 @@ fn picker<V: HasDateNav>(nav: DateNav, value: NaiveDate, kind: NavKind, cx: &mut
                 .cursor_pointer()
                 .map(|s| {
                     if selected {
-                        s.bg(p.text).text_color(p.bg).font_weight(gpui::FontWeight::SEMIBOLD)
+                        s.bg(p.primary).text_color(p.on_color).font_weight(gpui::FontWeight::SEMIBOLD)
                     } else if this_month {
                         s.text_color(p.accent).font_weight(gpui::FontWeight::BOLD).hover(move |h| h.bg(p.hover))
                     } else {
@@ -209,7 +209,7 @@ fn picker<V: HasDateNav>(nav: DateNav, value: NaiveDate, kind: NavKind, cx: &mut
     }));
     let day_color = move |d: NaiveDate, dow: usize, selected: bool| {
         if selected {
-            p.bg
+            p.on_color
         } else if d.month() != vm.month() {
             p.text_faint
         } else if d == today {
@@ -234,7 +234,7 @@ fn picker<V: HasDateNav>(nav: DateNav, value: NaiveDate, kind: NavKind, cx: &mut
                     .rounded_md()
                     .p(px(2.))
                     .cursor_pointer()
-                    .map(|s| if selected { s.bg(p.text).font_weight(gpui::FontWeight::SEMIBOLD) } else { s.hover(|h| h.bg(p.hover)) })
+                    .map(|s| if selected { s.bg(p.primary).font_weight(gpui::FontWeight::SEMIBOLD) } else { s.hover(|h| h.bg(p.hover)) })
                     .children((0..7).map(|i| {
                         let d = ws + Duration::days(i);
                         div()
@@ -267,7 +267,7 @@ fn picker<V: HasDateNav>(nav: DateNav, value: NaiveDate, kind: NavKind, cx: &mut
                             .text_xs()
                             .cursor_pointer()
                             .text_color(day_color(d, i as usize, selected))
-                            .map(|s| if selected { s.bg(p.text).font_weight(gpui::FontWeight::SEMIBOLD) } else { s.hover(|h| h.bg(p.hover)) })
+                            .map(|s| if selected { s.bg(p.primary).font_weight(gpui::FontWeight::SEMIBOLD) } else { s.hover(|h| h.bg(p.hover)) })
                             .when(!selected && d == today, |s| s.font_weight(gpui::FontWeight::BOLD))
                             .child(d.day().to_string())
                             .debug_selector(move || format!("pick-{d}"))

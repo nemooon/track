@@ -330,7 +330,7 @@ impl Render for CustomOutput {
                         .text_sm()
                         .child(div().flex().bg(p.surface).text_color(p.text_muted).font_weight(FontWeight::MEDIUM).children(f.columns.iter().map(|c| div().flex_1().px_3().py_2().child(report_copy_column_header(c)))))
                         .children(self.result.iter().map(|r| {
-                            div().flex().border_t_1().border_color(p.hover).text_color(p.text).children(f.columns.iter().map(|c| div().flex_1().px_3().py_2().child(aggregation_column_value(r, c, self.result_total))))
+                            div().flex().border_t_1().border_color(p.border_subtle).text_color(p.text).children(f.columns.iter().map(|c| div().flex_1().px_3().py_2().child(aggregation_column_value(r, c, self.result_total))))
                         })),
                 )
                 .child(
@@ -484,9 +484,9 @@ impl Render for CustomOutput {
                     .when(!self.result.is_empty() && !self.generating, |d| {
                         d.child(
                             button("output-copy")
-                                .bg(p.text)
-                                .text_color(p.bg)
-                                .hover(|s| s.bg(p.text))
+                                .bg(p.primary)
+                                .text_color(p.on_color)
+                                .hover(move |s| s.bg(p.primary_hover))
                                 .child(Icon::new(if self.copied { IconName::Check } else { IconName::Copy }).size_4())
                                 .child(if self.copied { "コピーしました" } else { "結果をコピー" })
                                 .on_click(cx.listener(|this, _, _, cx| this.copy(cx))),

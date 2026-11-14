@@ -154,9 +154,9 @@ impl Render for WeeklyReport {
                     .when(!self.generating && self.error.is_none(), |d| {
                         d.child(
                             button("weekly-copy")
-                                .bg(p.text)
-                                .text_color(p.bg)
-                                .hover(|s| s.bg(p.text))
+                                .bg(p.primary)
+                                .text_color(p.on_color)
+                                .hover(move |s| s.bg(p.primary_hover))
                                 .child(Icon::new(if self.copied { IconName::Check } else { IconName::Copy }).size_4())
                                 .child(if self.copied { "コピーしました" } else { "週報をコピー" })
                                 .on_click(cx.listener(|this, _, _, cx| this.copy(cx))),

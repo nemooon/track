@@ -219,7 +219,7 @@ impl Render for BackupSettings {
                 .px_5()
                 .py_3()
                 .border_b_1()
-                .border_color(p.hover)
+                .border_color(p.border_subtle)
                 .child(div().text_sm().font_weight(FontWeight::MEDIUM).child(s.created_at.with_timezone(&Local).format("%Y/%-m/%-d %-H:%M:%S").to_string()))
                 .when(i == 0, |d| d.child(div().debug_selector(|| "backup-latest".into()).px_2().rounded_md().bg(p.success_bg).text_xs().text_color(p.success).child("最新")))
                 .child(div().text_xs().text_color(p.text_muted).child(if s.auto { "自動バックアップ" } else { "手動バックアップ" }))
@@ -310,7 +310,7 @@ impl Render for BackupSettings {
                             .px_5()
                             .py_3()
                             .border_b_1()
-                            .border_color(p.hover)
+                            .border_color(p.border_subtle)
                             .child(form::button(p, "backup-now", if self.busy { "処理中…" } else { "今すぐバックアップ" }, true, !self.busy).on_click(cx.listener(|this, _, _, cx| this.backup_now(cx))))
                             .when_some(self.notice.clone(), |d, n| d.child(div().text_xs().text_color(p.text_muted).child(n))),
                     )

@@ -261,7 +261,7 @@ pub fn tag_chip(p: Palette, id: gpui::SharedString, tag: &Tag, active: bool, loc
         .text_size(px(11.))
         .map(|d| {
             if active {
-                d.border_color(gpui::transparent_black()).bg(hex(&tag.color)).text_color(p.bg)
+                d.border_color(gpui::transparent_black()).bg(hex(&tag.color)).text_color(p.on_color)
             } else {
                 d.border_color(p.border).bg(p.bg).text_color(p.text_muted).hover(|s| s.bg(p.surface))
             }
@@ -329,7 +329,7 @@ impl Render for ProjectPicker {
                             .p_1()
                             .text_color(p.text_muted)
                             .cursor_pointer()
-                            .hover(|s| s.bg(p.border).text_color(p.text))
+                            .hover(move |s| s.bg(p.hover).text_color(p.text))
                             .child(Icon::new(IconName::ChevronLeft).size_3p5())
                             .on_click(cx.listener(|this, _, w, cx| this.back(w, cx))),
                     )
@@ -362,7 +362,7 @@ impl Render for ProjectPicker {
                                 .text_sm()
                                 .truncate()
                                 .cursor_pointer()
-                                .map(|d| if self.active == Some(i) { d.bg(p.border) } else { d.hover(|s| s.bg(p.hover)) })
+                                .map(|d| if self.active == Some(i) { d.bg(p.selected) } else { d.hover(|s| s.bg(p.hover)) })
                                 .child(t.clone())
                                 .on_hover(cx.listener(move |this, h: &bool, _, cx| {
                                     if *h {
@@ -398,14 +398,14 @@ impl Render for ProjectPicker {
                         .id("picker-submit")
                         .debug_selector(|| "picker-submit".into())
                         .rounded_md()
-                        .bg(p.text)
+                        .bg(p.primary)
                         .px_3()
                         .py(px(6.))
                         .text_xs()
                         .font_weight(FontWeight::MEDIUM)
-                        .text_color(p.bg)
+                        .text_color(p.on_color)
                         .cursor_pointer()
-                        .hover(|s| s.bg(p.text))
+                        .hover(move |s| s.bg(p.primary_hover))
                         .child("作成 (⌘↵)")
                         .on_click(cx.listener(|this, _, _, cx| this.submit(cx))),
                 ),

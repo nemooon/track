@@ -289,9 +289,9 @@ impl Render for EditForm {
                             )
                             .child(
                                 footer_button("edit-save")
-                                    .bg(p.text)
-                                    .text_color(p.bg)
-                                    .hover(|s| s.bg(p.text))
+                                    .bg(p.primary)
+                                    .text_color(p.on_color)
+                                    .hover(move |s| s.bg(p.primary_hover))
                                     .child("保存")
                                     .on_click(cx.listener(|this, _, _, cx| this.save(cx))),
                             ),
