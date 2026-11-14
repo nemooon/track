@@ -3,27 +3,27 @@ use crate::ui::theme::*;
 use gpui::{AnyElement, Div, ElementId, FontWeight, InteractiveElement, IntoElement, ParentElement, Stateful, Styled, div, prelude::FluentBuilder, px};
 
 /// A titled card with a short description.
-pub fn card(title: &str, description: &str) -> Div {
+pub fn card(p: Palette, title: &str, description: &str) -> Div {
     div()
         .flex()
         .flex_col()
         .mb_5()
         .rounded_lg()
         .border_1()
-        .border_color(n200())
+        .border_color(p.border)
         .child(
             div()
                 .px_5()
                 .py_3()
                 .border_b_1()
-                .border_color(n100())
+                .border_color(p.hover)
                 .child(div().text_sm().font_weight(FontWeight::SEMIBOLD).child(title.to_string()))
-                .when(!description.is_empty(), |d| d.child(div().mt(px(2.)).text_xs().text_color(n500()).child(description.to_string()))),
+                .when(!description.is_empty(), |d| d.child(div().mt(px(2.)).text_xs().text_color(p.text_muted).child(description.to_string()))),
         )
 }
 
 /// A row inside a card: label and help on the left, the control on the right.
-pub fn row(title: &str, description: &str, control: impl IntoElement) -> Div {
+pub fn row(p: Palette, title: &str, description: &str, control: impl IntoElement) -> Div {
     div()
         .flex()
         .items_start()
@@ -35,12 +35,12 @@ pub fn row(title: &str, description: &str, control: impl IntoElement) -> Div {
                 .w(px(180.))
                 .flex_shrink_0()
                 .child(div().text_sm().font_weight(FontWeight::MEDIUM).child(title.to_string()))
-                .when(!description.is_empty(), |d| d.child(div().mt(px(2.)).text_xs().text_color(n500()).child(description.to_string()))),
+                .when(!description.is_empty(), |d| d.child(div().mt(px(2.)).text_xs().text_color(p.text_muted).child(description.to_string()))),
         )
         .child(div().flex_1().min_w_0().child(control))
 }
 
-pub fn button(id: impl Into<ElementId>, label: &str, primary: bool, enabled: bool) -> Stateful<Div> {
+pub fn button(p: Palette, id: impl Into<ElementId>, label: &str, primary: bool, enabled: bool) -> Stateful<Div> {
     let id = id.into();
     let sel = format!("{id}");
     div()
@@ -54,8 +54,8 @@ pub fn button(id: impl Into<ElementId>, label: &str, primary: bool, enabled: boo
         .rounded_md()
         .text_sm()
         .font_weight(FontWeight::MEDIUM)
-        .when(primary, |d| d.bg(n900()).text_color(white()))
-        .when(!primary, |d| d.border_1().border_color(n200()).text_color(n700()))
+        .when(primary, |d| d.bg(p.text).text_color(p.bg))
+        .when(!primary, |d| d.border_1().border_color(p.border).text_color(p.text))
         .when(enabled, |d| d.cursor_pointer().hover(|s| s.opacity(0.85)))
         .when(!enabled, |d| d.opacity(0.4))
         .child(label.to_string())
@@ -69,7 +69,7 @@ pub struct Actions<'a> {
     pub error: Option<&'a str>,
 }
 
-pub fn actions(a: Actions, discard: impl IntoElement, save: impl IntoElement) -> AnyElement {
+pub fn actions(p: Palette, a: Actions, discard: impl IntoElement, save: impl IntoElement) -> AnyElement {
     let saved_id = format!("{}-saved", a.prefix);
     let error_id = format!("{}-error", a.prefix);
     div()
@@ -78,8 +78,8 @@ pub fn actions(a: Actions, discard: impl IntoElement, save: impl IntoElement) ->
         .justify_end()
         .gap_3()
         .mb_8()
-        .when_some(a.error.map(str::to_string), |d, e| d.child(div().debug_selector(move || error_id.clone()).mr_auto().text_xs().text_color(red700()).child(e)))
-        .when(!a.dirty && a.error.is_none(), |d| d.child(div().debug_selector(move || saved_id.clone()).text_xs().text_color(n500()).child("保存済み")))
+        .when_some(a.error.map(str::to_string), |d, e| d.child(div().debug_selector(move || error_id.clone()).mr_auto().text_xs().text_color(p.danger).child(e)))
+        .when(!a.dirty && a.error.is_none(), |d| d.child(div().debug_selector(move || saved_id.clone()).text_xs().text_color(p.text_muted).child("保存済み")))
         .when(a.dirty, |d| d.child(discard))
         .when(a.dirty || a.saving, |d| d.child(save))
         .into_any_element()

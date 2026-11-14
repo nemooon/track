@@ -206,6 +206,7 @@ impl FormatEditor {
     }
 
     fn render_column(&self, index: usize, c: &ReportCopyColumn, count: usize, cx: &mut Context<Self>) -> AnyElement {
+        let p = palette(cx);
         let small = |id: String, icon: IconName, enabled: bool| {
             let sel = id.clone();
             div()
@@ -213,8 +214,8 @@ impl FormatEditor {
                 .debug_selector(move || sel.clone())
                 .p_1()
                 .rounded_md()
-                .text_color(n500())
-                .when(enabled, |d| d.cursor_pointer().hover(|s| s.bg(n100()).text_color(n900())))
+                .text_color(p.text_muted)
+                .when(enabled, |d| d.cursor_pointer().hover(|s| s.bg(p.hover).text_color(p.text)))
                 .when(!enabled, |d| d.opacity(0.3))
                 .child(Icon::new(icon).size_4())
         };
@@ -226,13 +227,13 @@ impl FormatEditor {
             .px_4()
             .py_3()
             .border_b_1()
-            .border_color(n100())
+            .border_color(p.hover)
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap_3()
-                    .child(div().w(px(70.)).flex_shrink_0().text_xs().font_weight(FontWeight::MEDIUM).text_color(n600()).child(column_kind_label(c)))
+                    .child(div().w(px(70.)).flex_shrink_0().text_xs().font_weight(FontWeight::MEDIUM).text_color(p.text_muted).child(column_kind_label(c)))
                     .when_some(inputs.map(|i| i.header.clone()), |d, h| d.child(div().flex_1().child(Input::new(&h))))
                     .child(small(format!("column-up-{index}"), IconName::ArrowUp, index > 0).on_click(cx.listener(move |this, _, _, cx| this.move_column(index, true, cx))))
                     .child(small(format!("column-down-{index}"), IconName::ArrowDown, index + 1 < count).on_click(cx.listener(move |this, _, _, cx| this.move_column(index, false, cx))))
@@ -256,8 +257,8 @@ impl FormatEditor {
                     .rounded_md()
                     .text_xs()
                     .cursor_pointer()
-                    .when(current == fmt, |d| d.bg(n900()).text_color(white()))
-                    .when(current != fmt, |d| d.border_1().border_color(n200()).text_color(n600()))
+                    .when(current == fmt, |d| d.bg(p.text).text_color(p.bg))
+                    .when(current != fmt, |d| d.border_1().border_color(p.border).text_color(p.text_muted))
                     .child(*label)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if let Some(ReportCopyColumn::Field { duration_format, .. }) = this.draft.columns.get_mut(index) {
@@ -274,6 +275,7 @@ impl FormatEditor {
     }
 
     fn add_buttons(&self, cx: &mut Context<Self>) -> Div {
+        let p = palette(cx);
         let chip = |id: String, label: String| {
             let sel = id.clone();
             div()
@@ -283,10 +285,10 @@ impl FormatEditor {
                 .py_1()
                 .rounded_md()
                 .border_1()
-                .border_color(n200())
+                .border_color(p.border)
                 .text_xs()
                 .cursor_pointer()
-                .hover(|s| s.bg(n100()))
+                .hover(|s| s.bg(p.hover))
                 .child(label)
         };
         let key = |f: ReportCopyField| serde_json::to_value(f).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
@@ -297,7 +299,7 @@ impl FormatEditor {
             .gap_2()
             .px_4()
             .py_3()
-            .child(div().text_xs().text_color(n500()).child("項目を追加:"))
+            .child(div().text_xs().text_color(p.text_muted).child("項目を追加:"))
             .children(FIELDS.iter().map(|f| {
                 let f = *f;
                 chip(format!("add-column-{}", key(f)), field_label(f).to_string()).on_click(cx.listener(move |this, _, w, cx| this.insert_column(field_column(f), w, cx)))
@@ -317,6 +319,7 @@ impl FormatEditor {
 
 impl Render for FormatEditor {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
         let current = self.current(cx);
         let saved = self.saved(cx);
         let dirty = saved.as_ref() != Some(&current);
@@ -332,8 +335,8 @@ impl Render for FormatEditor {
                 .rounded_md()
                 .text_xs()
                 .cursor_pointer()
-                .when(on, |d| d.bg(n900()).text_color(white()))
-                .when(!on, |d| d.border_1().border_color(n200()).text_color(n700()))
+                .when(on, |d| d.bg(p.text).text_color(p.bg))
+                .when(!on, |d| d.border_1().border_color(p.border).text_color(p.text))
                 .child(label)
         };
         let comma = current.delimiter == "comma";
@@ -349,9 +352,9 @@ impl Render for FormatEditor {
                     .gap_1()
                     .mb_4()
                     .text_sm()
-                    .text_color(n600())
+                    .text_color(p.text_muted)
                     .cursor_pointer()
-                    .hover(|s| s.text_color(n900()))
+                    .hover(|s| s.text_color(p.text))
                     .child(Icon::new(IconName::ChevronLeft).size_4())
                     .child("出力フォーマット")
                     .on_click(cx.listener(|_, _, _, cx| cx.emit(CloseEditor))),
@@ -363,12 +366,12 @@ impl Render for FormatEditor {
                     .gap_2()
                     .mb_4()
                     .child(div().text_lg().font_weight(FontWeight::SEMIBOLD).child(if current.name.trim().is_empty() { "名前未設定".to_string() } else { current.name.clone() }))
-                    .child(div().px_2().rounded_md().text_xs().bg(n100()).text_color(n600()).child(if report_copy_format_uses_ai(&current) { "AI使用" } else { "AIなし" })),
+                    .child(div().px_2().rounded_md().text_xs().bg(p.hover).text_color(p.text_muted).child(if report_copy_format_uses_ai(&current) { "AI使用" } else { "AIなし" })),
             )
             .child(
-                form::card("基本設定", "")
-                    .child(form::row("名前", "", div().w(px(320.)).child(Input::new(&self.name))))
-                    .child(form::row(
+                form::card(p, "基本設定", "")
+                    .child(form::row(p, "名前", "", div().w(px(320.)).child(Input::new(&self.name))))
+                    .child(form::row(p, 
                         "区切り文字",
                         "",
                         div()
@@ -383,7 +386,7 @@ impl Render for FormatEditor {
                                 cx.notify();
                             }))),
                     ))
-                    .child(form::row(
+                    .child(form::row(p, 
                         "見出し行",
                         "",
                         toggle("include-header", "先頭行に項目名を含める", current.include_header).on_click(cx.listener(|this, _, _, cx| {
@@ -393,11 +396,11 @@ impl Render for FormatEditor {
                     )),
             )
             .child(
-                form::card("AIへの指示", "集計全体への指示です。空欄でもAI生成項目や概要項目があればAIを使用します。")
+                form::card(p, "AIへの指示", "集計全体への指示です。空欄でもAI生成項目や概要項目があればAIを使用します。")
                     .child(div().px_5().py_4().child(div().h(px(90.)).child(Textarea::new(&self.ai_prompt).h_full()))),
             )
             .child(
-                form::card("出力項目", "追加後も見出しを変更できます。上下の矢印で出力順を変更します。")
+                form::card(p, "出力項目", "追加後も見出しを変更できます。上下の矢印で出力順を変更します。")
                     .children(columns)
                     .child(self.add_buttons(cx)),
             )
@@ -407,16 +410,16 @@ impl Render for FormatEditor {
                         .mb_4()
                         .p_4()
                         .rounded_lg()
-                        .bg(red50())
+                        .bg(p.danger_bg)
                         .flex()
                         .items_center()
                         .gap_3()
                         .child(div().flex_1().text_sm().child(format!("「{}」を削除しますか？", current.name)))
-                        .child(form::button("format-delete-cancel", "キャンセル", false, true).on_click(cx.listener(|this, _, _, cx| {
+                        .child(form::button(p, "format-delete-cancel", "キャンセル", false, true).on_click(cx.listener(|this, _, _, cx| {
                             this.confirm_delete = false;
                             cx.notify();
                         })))
-                        .child(form::button("format-delete-confirm", "削除", true, true).on_click(cx.listener(|this, _, _, cx| this.delete(cx)))),
+                        .child(form::button(p, "format-delete-confirm", "削除", true, true).on_click(cx.listener(|this, _, _, cx| this.delete(cx)))),
                 )
             })
             .child(
@@ -426,7 +429,7 @@ impl Render for FormatEditor {
                     .gap_3()
                     .mb_8()
                     .child(
-                        form::button("format-delete", if can_delete { "このフォーマットを削除" } else { "最後の出力フォーマットは削除できません" }, false, can_delete)
+                        form::button(p, "format-delete", if can_delete { "このフォーマットを削除" } else { "最後の出力フォーマットは削除できません" }, false, can_delete)
                             .when(can_delete, |d| {
                                 d.on_click(cx.listener(|this, _, _, cx| {
                                     this.confirm_delete = true;
@@ -434,10 +437,10 @@ impl Render for FormatEditor {
                                 }))
                             }),
                     )
-                    .child(div().flex_1().child(form::actions(
+                    .child(div().flex_1().child(form::actions(p, 
                         form::Actions { prefix: "format", dirty, saving: self.saving, error: error.as_deref() },
-                        form::button("format-discard", "変更を破棄", false, !self.saving).on_click(cx.listener(|this, _, w, cx| this.discard(w, cx))),
-                        form::button("format-save", if self.saving { "保存中…" } else { "変更を保存" }, true, can_save).on_click(cx.listener(|this, _, _, cx| this.save(cx))),
+                        form::button(p, "format-discard", "変更を破棄", false, !self.saving).on_click(cx.listener(|this, _, w, cx| this.discard(w, cx))),
+                        form::button(p, "format-save", if self.saving { "保存中…" } else { "変更を保存" }, true, can_save).on_click(cx.listener(|this, _, _, cx| this.save(cx))),
                     ))),
             )
     }

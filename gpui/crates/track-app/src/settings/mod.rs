@@ -115,12 +115,13 @@ impl SettingsWindow {
     }
 
     fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let mut col = div().w(px(200.)).flex_shrink_0().h_full().flex().flex_col().gap_1().pt(px(44.)).px_2().bg(n50()).border_r_1().border_color(n200());
+        let p = palette(cx);
+        let mut col = div().w(px(200.)).flex_shrink_0().h_full().flex().flex_col().gap_1().pt(px(44.)).px_2().bg(p.surface).border_r_1().border_color(p.border);
         let mut last_group = "";
         for s in SettingsSection::ALL {
             if s.group() != last_group {
                 last_group = s.group();
-                col = col.child(div().px_2().pt_3().pb_1().text_xs().font_weight(FontWeight::MEDIUM).text_color(n500()).child(last_group));
+                col = col.child(div().px_2().pt_3().pb_1().text_xs().font_weight(FontWeight::MEDIUM).text_color(p.text_muted).child(last_group));
             }
             let active = self.section == s;
             let id = format!("settings-nav-{}", s.key());
@@ -136,8 +137,8 @@ impl SettingsWindow {
                     .rounded_md()
                     .text_sm()
                     .cursor_pointer()
-                    .when(active, |d| d.bg(n200()).font_weight(FontWeight::MEDIUM).text_color(n900()))
-                    .when(!active, |d| d.text_color(n700()).hover(|h| h.bg(n100())))
+                    .when(active, |d| d.bg(p.selected).font_weight(FontWeight::MEDIUM).text_color(p.text))
+                    .when(!active, |d| d.text_color(p.text).hover(|h| h.bg(p.hover)))
                     .child(Icon::new(s.icon()).size_4())
                     .child(s.label())
                     .on_click(cx.listener(move |this, _, _, cx| this.show(s, cx))),
@@ -149,14 +150,15 @@ impl SettingsWindow {
 
 impl Render for SettingsWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
         let content = self.section_view(window, cx);
         let editing_format = self.reports.as_ref().is_some_and(|r| r.read(cx).editing.is_some());
         div()
             .id("settings-window")
             .size_full()
             .flex()
-            .bg(white())
-            .text_color(n900())
+            .bg(p.bg)
+            .text_color(p.text)
             .font_family(".SystemUIFont")
             .child(self.render_sidebar(cx))
             .child(

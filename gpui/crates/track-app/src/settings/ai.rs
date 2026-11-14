@@ -192,6 +192,7 @@ impl AiSettings {
     }
 
     fn render_codex(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
         let models = self.models.clone();
         let candidates = div().flex().flex_wrap().gap_2().children(models.iter().flat_map(|c| c.models.iter().cloned()).enumerate().map(|(i, (id, label))| {
             let sel = format!("codex-model-{i}");
@@ -203,10 +204,10 @@ impl AiSettings {
                 .py(px(2.))
                 .rounded_md()
                 .border_1()
-                .border_color(n200())
+                .border_color(p.border)
                 .text_xs()
                 .cursor_pointer()
-                .hover(|s| s.bg(n100()))
+                .hover(|s| s.bg(p.hover))
                 .child(label)
                 .on_click(cx.listener(move |this, _, w, cx| {
                     this.codex_model.update(cx, |m, cx| m.set_value(id.clone(), w, cx));
@@ -218,8 +219,8 @@ impl AiSettings {
             (None, true) => "Codexのモデル一覧を取得しています…".into(),
             (None, false) => String::new(),
         };
-        form::card("Codex", "利用するモデルと実行環境を設定します。")
-            .child(form::row(
+        form::card(p, "Codex", "利用するモデルと実行環境を設定します。")
+            .child(form::row(p, 
                 "モデル",
                 "空欄ではCodex側の既定モデルを使います。任意のモデルIDも入力できます。",
                 div()
@@ -233,12 +234,12 @@ impl AiSettings {
                             .flex()
                             .items_start()
                             .gap_2()
-                            .child(div().flex_1().min_w_0().text_xs().text_color(n500()).child(detail))
-                            .child(form::button("codex-models-refresh", "更新", false, !self.models_loading).on_click(cx.listener(|this, _, _, cx| this.load_models(cx)))),
+                            .child(div().flex_1().min_w_0().text_xs().text_color(p.text_muted).child(detail))
+                            .child(form::button(p, "codex-models-refresh", "更新", false, !self.models_loading).on_click(cx.listener(|this, _, _, cx| this.load_models(cx)))),
                     )
-                    .child(div().text_xs().text_color(n500()).child("実行ファイルの変更を保存すると、そのCodexから候補を取得します。")),
+                    .child(div().text_xs().text_color(p.text_muted).child("実行ファイルの変更を保存すると、そのCodexから候補を取得します。")),
             ))
-            .child(form::row(
+            .child(form::row(p, 
                 "codex実行ファイル",
                 "空欄ではPATHとChatGPTアプリから新しいバージョンを自動検出します。",
                 div()
@@ -246,13 +247,14 @@ impl AiSettings {
                     .flex_col()
                     .gap_2()
                     .child(div().w_full().child(Input::new(&self.codex_executable)))
-                    .child(div().text_xs().text_color(n500()).child("Codexの既存のログインを再利用し、TrackはAPIキーを保存しません。")),
+                    .child(div().text_xs().text_color(p.text_muted).child("Codexの既存のログインを再利用し、TrackはAPIキーを保存しません。")),
             ))
     }
 }
 
 impl Render for AiSettings {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
         let dirty = self.dirty(cx);
         let validation = self.validation(cx);
         let error = validation.map(str::to_string).or(self.save_error.clone());
@@ -270,8 +272,8 @@ impl Render for AiSettings {
                 .rounded_md()
                 .text_sm()
                 .cursor_pointer()
-                .when(on, |d| d.bg(n900()).text_color(white()))
-                .when(!on, |d| d.border_1().border_color(n200()).text_color(n700()))
+                .when(on, |d| d.bg(p.text).text_color(p.bg))
+                .when(!on, |d| d.border_1().border_color(p.border).text_color(p.text))
                 .child(*label)
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.provider = key.clone();
@@ -282,14 +284,14 @@ impl Render for AiSettings {
                 }))
         }));
         let mut root = div().child(
-            form::card("生成プロバイダー", "メモタイトルと週報の生成に共通で使う実行環境です。").child(form::row("プロバイダー", "利用するAI環境を選択します。", providers)),
+            form::card(p, "生成プロバイダー", "メモタイトルと週報の生成に共通で使う実行環境です。").child(form::row(p, "プロバイダー", "利用するAI環境を選択します。", providers)),
         );
         root = match self.provider.as_str() {
             "codex" => root.child(self.render_codex(cx)),
             "custom-command" => root.child(
-                form::card("カスタムコマンド", "任意のローカルコマンドをAI処理に利用します。")
-                    .child(form::row("実行ファイル", "AI処理に使用するコマンドの絶対パスです。", div().w_full().child(Input::new(&self.command_executable))))
-                    .child(form::row(
+                form::card(p, "カスタムコマンド", "任意のローカルコマンドをAI処理に利用します。")
+                    .child(form::row(p, "実行ファイル", "AI処理に使用するコマンドの絶対パスです。", div().w_full().child(Input::new(&self.command_executable))))
+                    .child(form::row(p, 
                         "引数",
                         "コマンドへ渡す引数を1行に1つ入力します。",
                         div()
@@ -297,20 +299,20 @@ impl Render for AiSettings {
                             .flex_col()
                             .gap_2()
                             .child(div().h(px(100.)).child(Textarea::new(&self.command_args).h_full()))
-                            .child(div().text_xs().text_color(n500()).child(
+                            .child(div().text_xs().text_color(p.text_muted).child(
                                 "シェルは使わず、プロンプトを標準入力へ渡します。認証はコマンド側の既存設定を使います。利用するサービスの規約とライセンスは、ご自身で確認してください。",
                             )),
                     )),
             ),
             _ => root.child(
-                form::card("Apple Intelligence", "Appleの端末内モデルを使うための設定です。")
-                    .child(form::row("利用方法", "Appleの端末内モデルを利用します。", div().text_sm().text_color(n700()).child("macOS 26以降で利用できます。APIキーや外部通信は不要です。"))),
+                form::card(p, "Apple Intelligence", "Appleの端末内モデルを使うための設定です。")
+                    .child(form::row(p, "利用方法", "Appleの端末内モデルを利用します。", div().text_sm().text_color(p.text).child("macOS 26以降で利用できます。APIキーや外部通信は不要です。"))),
             ),
         };
         let status = (!dirty).then(|| self.status.clone()).flatten();
         root.when(validation.is_some() || status.is_some(), |d| {
-            d.child(form::card("状態", "現在の設定でAI機能を利用できるか確認します。").when_some(status, |d, s| {
-                d.child(form::row(
+            d.child(form::card(p, "状態", "現在の設定でAI機能を利用できるか確認します。").when_some(status, |d, s| {
+                d.child(form::row(p, 
                     "接続状態",
                     "",
                     div()
@@ -325,10 +327,10 @@ impl Render for AiSettings {
                 ))
             }))
         })
-        .child(form::actions(
+        .child(form::actions(p, 
             Actions { prefix: "ai", dirty, saving: self.saving, error: error.as_deref() },
-            form::button("ai-discard", "変更を破棄", false, !self.saving).on_click(cx.listener(|this, _, w, cx| this.reset(w, cx))),
-            form::button("ai-save", if self.saving { "保存中…" } else { "変更を保存" }, true, can_save).on_click(cx.listener(|this, _, _, cx| this.save(cx))),
+            form::button(p, "ai-discard", "変更を破棄", false, !self.saving).on_click(cx.listener(|this, _, w, cx| this.reset(w, cx))),
+            form::button(p, "ai-save", if self.saving { "保存中…" } else { "変更を保存" }, true, can_save).on_click(cx.listener(|this, _, _, cx| this.save(cx))),
         ))
     }
 }

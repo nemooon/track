@@ -121,6 +121,7 @@ impl ReportSettings {
 
 impl Render for ReportSettings {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
         if let Some(editor) = &self.editing {
             return div().child(editor.clone());
         }
@@ -139,9 +140,9 @@ impl Render for ReportSettings {
                 .px_5()
                 .py_3()
                 .border_b_1()
-                .border_color(n100())
+                .border_color(p.hover)
                 .cursor_pointer()
-                .hover(|s| s.bg(n50()))
+                .hover(|s| s.bg(p.surface))
                 .child(div().flex_1().text_sm().font_weight(FontWeight::MEDIUM).child(if f.name.is_empty() { "名前未設定".to_string() } else { f.name.clone() }))
                 .child(
                     div()
@@ -149,16 +150,16 @@ impl Render for ReportSettings {
                         .rounded_md()
                         .text_xs()
                         .when(ai, |d| d.bg(gpui::rgb(0xede9fe)).text_color(gpui::rgb(0x6d28d9)))
-                        .when(!ai, |d| d.bg(n100()).text_color(n600()))
+                        .when(!ai, |d| d.bg(p.hover).text_color(p.text_muted))
                         .child(if ai { "AI使用" } else { "AIなし" }),
                 )
-                .child(div().text_xs().text_color(n500()).child(format!("{}列 · {}", f.columns.len(), if f.delimiter == "comma" { "CSV" } else { "TSV" })))
+                .child(div().text_xs().text_color(p.text_muted).child(format!("{}列 · {}", f.columns.len(), if f.delimiter == "comma" { "CSV" } else { "TSV" })))
                 .on_click(cx.listener(move |this, _, w, cx| this.open_format(open.clone(), w, cx)))
         });
         let can_add = formats.len() < 20 && !self.adding;
-        let formats_card = form::card("出力フォーマット", "フォーマットを選択すると、専用の編集画面を開きます。")
+        let formats_card = form::card(p, "出力フォーマット", "フォーマットを選択すると、専用の編集画面を開きます。")
             .children(rows)
-            .child(div().px_5().py_3().child(form::button("format-add", "出力フォーマットを追加", false, can_add).when(can_add, |d| {
+            .child(div().px_5().py_3().child(form::button(p, "format-add", "出力フォーマットを追加", false, can_add).when(can_add, |d| {
                 d.on_click(cx.listener(|this, _, w, cx| this.add_format(w, cx)))
             })));
         let value = self.template.read(cx).value().to_string();
@@ -169,7 +170,7 @@ impl Render for ReportSettings {
         div()
             .child(formats_card)
             .child(
-                form::card("週報テンプレート", "AIが週の工数をまとめる際の出力構成を設定します。").child(form::row(
+                form::card(p, "週報テンプレート", "AIが週の工数をまとめる際の出力構成を設定します。").child(form::row(p, 
                     "出力テンプレート",
                     "Markdownの見出しや固定文を利用できます。",
                     div()
@@ -177,13 +178,13 @@ impl Render for ReportSettings {
                         .flex_col()
                         .gap_2()
                         .child(div().h(px(300.)).child(Textarea::new(&self.template).h_full()))
-                        .child(div().text_xs().text_color(n500()).child("Markdownの見出しや固定文をそのまま書けます。{{期間}} と {{合計時間}} は生成時に置き換わります。")),
+                        .child(div().text_xs().text_color(p.text_muted).child("Markdownの見出しや固定文をそのまま書けます。{{期間}} と {{合計時間}} は生成時に置き換わります。")),
                 )),
             )
-            .child(form::actions(
+            .child(form::actions(p, 
                 Actions { prefix: "template", dirty, saving: self.saving, error: error.as_deref() },
-                form::button("template-discard", "変更を破棄", false, !self.saving).on_click(cx.listener(|this, _, w, cx| this.reset(w, cx))),
-                form::button("template-save", if self.saving { "保存中…" } else { "変更を保存" }, true, can_save).on_click(cx.listener(|this, _, _, cx| this.save(cx))),
+                form::button(p, "template-discard", "変更を破棄", false, !self.saving).on_click(cx.listener(|this, _, w, cx| this.reset(w, cx))),
+                form::button(p, "template-save", if self.saving { "保存中…" } else { "変更を保存" }, true, can_save).on_click(cx.listener(|this, _, _, cx| this.save(cx))),
             ))
     }
 }

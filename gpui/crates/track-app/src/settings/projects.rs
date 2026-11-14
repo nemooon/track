@@ -183,6 +183,7 @@ impl ProjectSettings {
     }
 
     fn render_editor(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let p = palette(cx);
         let ed = self.editor.as_ref()?;
         let title = match (ed.kind, ed.id.is_some()) {
             (EditKind::Client, false) => "クライアント追加",
@@ -204,7 +205,7 @@ impl ProjectSettings {
                 .rounded_full()
                 .cursor_pointer()
                 .bg(hex(c))
-                .when(selected, |d| d.border_2().border_color(n900()))
+                .when(selected, |d| d.border_2().border_color(p.text))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     if let Some(ed) = this.editor.as_mut() {
                         ed.color = color.clone();
@@ -222,14 +223,14 @@ impl ProjectSettings {
                 .rounded_md()
                 .text_xs()
                 .cursor_pointer()
-                .when(on, |d| d.bg(n900()).text_color(white()))
-                .when(!on, |d| d.border_1().border_color(n200()).text_color(n700()))
+                .when(on, |d| d.bg(p.text).text_color(p.bg))
+                .when(!on, |d| d.border_1().border_color(p.border).text_color(p.text))
                 .child(label)
         };
         let mut body = div().flex().flex_col().gap_3().p_4().child(div().text_sm().font_weight(FontWeight::SEMIBOLD).child(title));
         if ed.kind == EditKind::Project {
             let current = ed.client_id.clone();
-            body = body.child(form_line(
+            body = body.child(form_line(p, 
                 "クライアント",
                 div().flex().flex_wrap().gap_2().children(
                     self.clients.iter().filter(|c| !c.archived || c.id == current).map(|c| {
@@ -244,12 +245,12 @@ impl ProjectSettings {
                 ),
             ));
         }
-        body = body.child(form_line("名前", div().w(px(320.)).child(Input::new(&ed.name))));
+        body = body.child(form_line(p, "名前", div().w(px(320.)).child(Input::new(&ed.name))));
         if ed.kind != EditKind::Client {
-            body = body.child(form_line("カラー", colors));
+            body = body.child(form_line(p, "カラー", colors));
         }
         if ed.kind == EditKind::Project && !self.tags.is_empty() {
-            body = body.child(form_line(
+            body = body.child(form_line(p, 
                 "タグ",
                 div().flex().flex_wrap().gap_2().children(self.tags.iter().map(|t| {
                     let tid = t.id.clone();
@@ -273,33 +274,33 @@ impl ProjectSettings {
                 .items_center()
                 .justify_end()
                 .gap_2()
-                .when_some(ed.error.clone(), |d, e| d.child(div().debug_selector(|| "editor-error".into()).mr_auto().text_xs().text_color(red700()).child(e)))
-                .child(form::button("editor-cancel", "キャンセル", false, true).on_click(cx.listener(|this, _, _, cx| {
+                .when_some(ed.error.clone(), |d, e| d.child(div().debug_selector(|| "editor-error".into()).mr_auto().text_xs().text_color(p.danger).child(e)))
+                .child(form::button(p, "editor-cancel", "キャンセル", false, true).on_click(cx.listener(|this, _, _, cx| {
                     this.editor = None;
                     cx.notify();
                 })))
                 .child(
-                    form::button("editor-save", if ed.id.is_some() { "更新" } else { "作成" }, true, can_save)
+                    form::button(p, "editor-save", if ed.id.is_some() { "更新" } else { "作成" }, true, can_save)
                         .on_click(cx.listener(|this, _, _, cx| this.save_editor(cx))),
                 ),
         );
-        Some(div().mb_5().rounded_lg().border_1().border_color(n300()).bg(n50()).child(body).into_any_element())
+        Some(div().mb_5().rounded_lg().border_1().border_color(p.border).bg(p.surface).child(body).into_any_element())
     }
 }
 
-fn form_line(label: &str, control: impl IntoElement) -> Div {
-    div().flex().items_center().gap_4().child(div().w(px(90.)).flex_shrink_0().text_xs().text_color(n600()).child(label.to_string())).child(control)
+fn form_line(p: Palette, label: &str, control: impl IntoElement) -> Div {
+    div().flex().items_center().gap_4().child(div().w(px(90.)).flex_shrink_0().text_xs().text_color(p.text_muted).child(label.to_string())).child(control)
 }
 
-fn icon_button(id: String, icon: IconName, title: &'static str, enabled: bool) -> gpui::Stateful<Div> {
+fn icon_button(p: Palette, id: String, icon: IconName, title: &'static str, enabled: bool) -> gpui::Stateful<Div> {
     let sel = id.clone();
     div()
         .id(SharedString::from(id))
         .debug_selector(move || sel.clone())
         .p_1()
         .rounded_md()
-        .text_color(n500())
-        .when(enabled, |d| d.cursor_pointer().hover(|s| s.bg(n100()).text_color(n900())))
+        .text_color(p.text_muted)
+        .when(enabled, |d| d.cursor_pointer().hover(|s| s.bg(p.hover).text_color(p.text)))
         .when(!enabled, |d| d.opacity(0.4))
         .child(Icon::new(icon).size_4())
         .tooltip(move |window, cx| gpui_component::tooltip::Tooltip::new(title).build(window, cx))
@@ -310,11 +311,11 @@ fn section_header(title: &str, add: gpui::Stateful<Div>) -> Div {
     div().flex().items_center().justify_between().mb_2().child(div().text_base().font_weight(FontWeight::SEMIBOLD).child(title.to_string())).child(add)
 }
 
-fn list() -> Div {
-    div().flex().flex_col().mb_8().rounded_md().border_1().border_color(n200())
+fn list(p: Palette, ) -> Div {
+    div().flex().flex_col().mb_8().rounded_md().border_1().border_color(p.border)
 }
 
-fn list_row(id: String, archived: bool) -> gpui::Stateful<Div> {
+fn list_row(p: Palette, id: String, archived: bool) -> gpui::Stateful<Div> {
     let sel = id.clone();
     div()
         .id(SharedString::from(id))
@@ -325,35 +326,36 @@ fn list_row(id: String, archived: bool) -> gpui::Stateful<Div> {
         .px_4()
         .py_2()
         .border_b_1()
-        .border_color(n100())
+        .border_color(p.hover)
         .text_sm()
-        .when(archived, |d| d.bg(n50()).text_color(n500()))
+        .when(archived, |d| d.bg(p.surface).text_color(p.text_muted))
 }
 
-fn archived_badge(id: String) -> Div {
+fn archived_badge(p: Palette, id: String) -> Div {
     let sel = id.clone();
-    div().debug_selector(move || sel.clone()).px_2().rounded_md().bg(n200()).text_xs().text_color(n600()).child("アーカイブ済み")
+    div().debug_selector(move || sel.clone()).px_2().rounded_md().bg(p.border).text_xs().text_color(p.text_muted).child("アーカイブ済み")
 }
 
 impl Render for ProjectSettings {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
         let active_client = self.clients.iter().find(|c| !c.archived).map(|c| c.id.clone());
         let mut root = div().children(self.render_editor(cx));
         if let Some(e) = self.error.clone() {
-            root = root.child(div().mb_4().text_xs().text_color(red700()).child(e));
+            root = root.child(div().mb_4().text_xs().text_color(p.danger).child(e));
         }
 
         // Clients
-        let clients = list().children(self.clients.iter().map(|c| {
+        let clients = list(p).children(self.clients.iter().map(|c| {
             let (edit_c, arch_c) = (c.clone(), c.clone());
-            list_row(format!("client-row-{}", c.id), c.archived)
+            list_row(p, format!("client-row-{}", c.id), c.archived)
                 .child(div().flex_1().child(c.name.clone()))
-                .when(c.archived, |d| d.child(archived_badge(format!("client-archived-{}", c.id))))
-                .child(icon_button(format!("client-edit-{}", c.id), IconName::Settings, "編集", true).on_click(cx.listener(move |this, _, w, cx| {
+                .when(c.archived, |d| d.child(archived_badge(p, format!("client-archived-{}", c.id))))
+                .child(icon_button(p, format!("client-edit-{}", c.id), IconName::Settings, "編集", true).on_click(cx.listener(move |this, _, w, cx| {
                     this.open_editor(Draft { id: Some(edit_c.id.clone()), name: edit_c.name.clone(), ..Draft::new(EditKind::Client) }, w, cx)
                 })))
                 .child(
-                    icon_button(format!("client-archive-{}", c.id), if c.archived { IconName::Undo } else { IconName::Inbox }, if c.archived { "復元" } else { "アーカイブ" }, true)
+                    icon_button(p, format!("client-archive-{}", c.id), if c.archived { IconName::Undo } else { IconName::Inbox }, if c.archived { "復元" } else { "アーカイブ" }, true)
                         .on_click(cx.listener(move |this, _, _, cx| {
                             let api = api(&this.state, cx);
                             this.write(api.update_client(arch_c.id.clone(), ClientPatch { archived: Some(!arch_c.archived), ..Default::default() }), false, cx)
@@ -363,31 +365,31 @@ impl Render for ProjectSettings {
         root = root
             .child(section_header(
                 "クライアント",
-                form::button("client-add", "＋ 追加", true, true).on_click(cx.listener(|this, _, w, cx| {
+                form::button(p, "client-add", "＋ 追加", true, true).on_click(cx.listener(|this, _, w, cx| {
                     this.open_editor(Draft::new(EditKind::Client), w, cx)
                 })),
             ))
-            .child(if self.clients.is_empty() { div().mb_8().text_sm().text_color(n400()).child("クライアントがありません") } else { clients });
+            .child(if self.clients.is_empty() { div().mb_8().text_sm().text_color(p.text_faint).child("クライアントがありません") } else { clients });
 
         // Projects
-        let projects = list().children(self.projects.iter().map(|p| {
-            let client_archived = self.clients.iter().any(|c| c.id == p.client_id && c.archived);
-            let can_toggle = !(p.archived && client_archived);
-            let (edit_p, arch_p) = (p.clone(), p.clone());
-            list_row(format!("project-row-{}", p.id), p.archived)
-                .child(div().size(px(10.)).rounded_full().bg(hex(&p.color)))
-                .child(div().flex_1().min_w_0().truncate().child(p.name.clone()))
-                .child(div().text_xs().text_color(n500()).child(p.client.name.clone()))
-                .when(p.archived, |d| d.child(archived_badge(format!("project-archived-{}", p.id))))
-                .child(icon_button(format!("project-edit-{}", p.id), IconName::Settings, "編集", true).on_click(cx.listener(move |this, _, w, cx| {
+        let projects = list(p).children(self.projects.iter().map(|pj| {
+            let client_archived = self.clients.iter().any(|c| c.id == pj.client_id && c.archived);
+            let can_toggle = !(pj.archived && client_archived);
+            let (edit_p, arch_p) = (pj.clone(), pj.clone());
+            list_row(p, format!("project-row-{}", pj.id), pj.archived)
+                .child(div().size(px(10.)).rounded_full().bg(hex(&pj.color)))
+                .child(div().flex_1().min_w_0().truncate().child(pj.name.clone()))
+                .child(div().text_xs().text_color(p.text_muted).child(pj.client.name.clone()))
+                .when(pj.archived, |d| d.child(archived_badge(p, format!("project-archived-{}", pj.id))))
+                .child(icon_button(p, format!("project-edit-{}", pj.id), IconName::Settings, "編集", true).on_click(cx.listener(move |this, _, w, cx| {
                     let p = &edit_p;
                     this.open_editor(Draft { kind: EditKind::Project, id: Some(p.id.clone()), name: p.name.clone(), client_id: p.client_id.clone(), color: p.color.clone(), tag_ids: p.tags.iter().map(|t| t.tag_id.clone()).collect() }, w, cx)
                 })))
                 .child(
-                    icon_button(
-                        format!("project-archive-{}", p.id),
-                        if p.archived { IconName::Undo } else { IconName::Inbox },
-                        if !can_toggle { "クライアントを先に復元してください" } else if p.archived { "復元" } else { "アーカイブ" },
+                    icon_button(p, 
+                        format!("project-archive-{}", pj.id),
+                        if pj.archived { IconName::Undo } else { IconName::Inbox },
+                        if !can_toggle { "クライアントを先に復元してください" } else if pj.archived { "復元" } else { "アーカイブ" },
                         can_toggle,
                     )
                     .when(can_toggle, |d| {
@@ -401,22 +403,22 @@ impl Render for ProjectSettings {
         root = root
             .child(section_header(
                 "プロジェクト",
-                form::button("project-add", "＋ 追加", true, active_client.is_some()).when_some(active_client, |d, first| {
+                form::button(p, "project-add", "＋ 追加", true, active_client.is_some()).when_some(active_client, |d, first| {
                     d.on_click(cx.listener(move |this, _, w, cx| this.open_editor(Draft { client_id: first.clone(), color: random_color(), ..Draft::new(EditKind::Project) }, w, cx)))
                 }),
             ))
-            .child(if self.projects.is_empty() { div().mb_8().text_sm().text_color(n400()).child("プロジェクトがありません") } else { projects });
+            .child(if self.projects.is_empty() { div().mb_8().text_sm().text_color(p.text_faint).child("プロジェクトがありません") } else { projects });
 
         // Tags
-        let tags = list().children(self.tags.iter().map(|t| {
+        let tags = list(p).children(self.tags.iter().map(|t| {
             let (edit_t, del_t) = (t.clone(), t.clone());
-            list_row(format!("tag-row-{}", t.id), false)
+            list_row(p, format!("tag-row-{}", t.id), false)
                 .child(div().size(px(10.)).rounded_full().bg(hex(&t.color)))
                 .child(div().flex_1().child(t.name.clone()))
-                .child(icon_button(format!("tag-edit-{}", t.id), IconName::Settings, "編集", true).on_click(cx.listener(move |this, _, w, cx| {
+                .child(icon_button(p, format!("tag-edit-{}", t.id), IconName::Settings, "編集", true).on_click(cx.listener(move |this, _, w, cx| {
                     this.open_editor(Draft { id: Some(edit_t.id.clone()), name: edit_t.name.clone(), color: edit_t.color.clone(), ..Draft::new(EditKind::Tag) }, w, cx)
                 })))
-                .child(icon_button(format!("tag-delete-{}", t.id), IconName::Delete, "削除", true).on_click(cx.listener(move |this, _, _, cx| {
+                .child(icon_button(p, format!("tag-delete-{}", t.id), IconName::Delete, "削除", true).on_click(cx.listener(move |this, _, _, cx| {
                     this.deleting_tag = Some(del_t.clone());
                     cx.notify();
                 })))
@@ -424,11 +426,11 @@ impl Render for ProjectSettings {
         root = root
             .child(section_header(
                 "タグ",
-                form::button("tag-add", "＋ 追加", true, true).on_click(cx.listener(|this, _, w, cx| {
+                form::button(p, "tag-add", "＋ 追加", true, true).on_click(cx.listener(|this, _, w, cx| {
                     this.open_editor(Draft { color: random_color(), ..Draft::new(EditKind::Tag) }, w, cx)
                 })),
             ))
-            .child(if self.tags.is_empty() { div().mb_8().text_sm().text_color(n400()).child("タグがありません") } else { tags });
+            .child(if self.tags.is_empty() { div().mb_8().text_sm().text_color(p.text_faint).child("タグがありません") } else { tags });
 
         if let Some(t) = self.deleting_tag.clone() {
             root = root.child(
@@ -438,22 +440,22 @@ impl Render for ProjectSettings {
                     .rounded_lg()
                     .border_1()
                     .border_color(gpui::rgb(0xfecaca))
-                    .bg(red50())
+                    .bg(p.danger_bg)
                     .flex()
                     .flex_col()
                     .gap_3()
                     .child(div().text_sm().font_weight(FontWeight::SEMIBOLD).child("タグを削除しますか？"))
-                    .child(div().text_xs().text_color(n700()).child(format!("「{}」を削除します。記録した時間は残りますが、エントリーとプロジェクトからこのタグが外れます。", t.name)))
+                    .child(div().text_xs().text_color(p.text).child(format!("「{}」を削除します。記録した時間は残りますが、エントリーとプロジェクトからこのタグが外れます。", t.name)))
                     .child(
                         div()
                             .flex()
                             .justify_end()
                             .gap_2()
-                            .child(form::button("tag-delete-cancel", "キャンセル", false, true).on_click(cx.listener(|this, _, _, cx| {
+                            .child(form::button(p, "tag-delete-cancel", "キャンセル", false, true).on_click(cx.listener(|this, _, _, cx| {
                                 this.deleting_tag = None;
                                 cx.notify();
                             })))
-                            .child(form::button("tag-delete-confirm", "タグを削除", true, true).on_click(cx.listener(move |this, _, _, cx| {
+                            .child(form::button(p, "tag-delete-confirm", "タグを削除", true, true).on_click(cx.listener(move |this, _, _, cx| {
                                 this.deleting_tag = None;
                                 let api = api(&this.state, cx);
                                 this.write(api.delete_tag(t.id.clone()), false, cx)

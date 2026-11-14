@@ -90,6 +90,7 @@ impl CalendarSettings {
     }
 
     fn stepper(&self, prefix: &'static str, value: i64, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
         let arrow = |id: String, label: &'static str, delta: i64, cx: &mut Context<Self>| {
             let sel = id.clone();
             div()
@@ -99,8 +100,8 @@ impl CalendarSettings {
                 .py_1()
                 .rounded_md()
                 .cursor_pointer()
-                .text_color(n600())
-                .hover(|s| s.bg(n100()))
+                .text_color(p.text_muted)
+                .hover(|s| s.bg(p.hover))
                 .child(label)
                 .on_click(cx.listener(move |this, _, _, cx| {
                     let slot = if prefix == "work-start" { &mut this.work_start } else { &mut this.work_end };
@@ -115,15 +116,16 @@ impl CalendarSettings {
             .gap_1()
             .rounded_md()
             .border_1()
-            .border_color(n200())
+            .border_color(p.border)
             .child(arrow(format!("{prefix}-dec"), "−", -STEP, cx))
-            .child(div().w(px(52.)).text_center().text_sm().font_weight(FontWeight::MEDIUM).child(form::minutes_label(value)))
+            .child(div().w(px(52.)).text_center().text_sm().font_family(MONO).child(form::minutes_label(value)))
             .child(arrow(format!("{prefix}-inc"), "+", STEP, cx))
     }
 }
 
 impl Render for CalendarSettings {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
         let dirty = self.dirty_in(cx);
         let error = self.validation().map(str::to_string).or(self.save_error.clone());
         let can_save = dirty && self.validation().is_none() && !self.saving;
@@ -141,8 +143,8 @@ impl Render for CalendarSettings {
                 .rounded_full()
                 .text_sm()
                 .cursor_pointer()
-                .when(on, |d| d.bg(n900()).text_color(white()))
-                .when(!on, |d| d.border_1().border_color(n200()).text_color(n600()))
+                .when(on, |d| d.bg(p.text).text_color(p.bg))
+                .when(!on, |d| d.border_1().border_color(p.border).text_color(p.text_muted))
                 .child(*label)
                 .on_click(cx.listener(move |this, _, _, cx| {
                     let d = i as u32;
@@ -158,25 +160,25 @@ impl Render for CalendarSettings {
         }));
         div()
             .child(
-                form::card("勤務スケジュール", "")
-                    .child(form::row(
+                form::card(p, "勤務スケジュール", "")
+                    .child(form::row(p, 
                         "勤務時間",
                         "1日の標準的な開始・終了時刻です。",
                         div()
                             .flex()
                             .items_center()
                             .gap_3()
-                            .child(div().text_xs().text_color(n500()).child("勤務開始"))
+                            .child(div().text_xs().text_color(p.text_muted).child("勤務開始"))
                             .child(self.stepper("work-start", self.work_start, cx))
-                            .child(div().text_xs().text_color(n500()).child("勤務終了"))
+                            .child(div().text_xs().text_color(p.text_muted).child("勤務終了"))
                             .child(self.stepper("work-end", self.work_end, cx)),
                     ))
-                    .child(form::row("勤務日", "勤務状況の判定対象にする曜日です。", days)),
+                    .child(form::row(p, "勤務日", "勤務状況の判定対象にする曜日です。", days)),
             )
-            .child(form::actions(
+            .child(form::actions(p, 
                 Actions { prefix: "work", dirty, saving: self.saving, error: error.as_deref() },
-                form::button("work-discard", "変更を破棄", false, !self.saving).on_click(cx.listener(|this, _, _, cx| this.reset(cx))),
-                form::button("work-save", if self.saving { "保存中…" } else { "変更を保存" }, true, can_save).on_click(cx.listener(|this, _, _, cx| this.save(cx))),
+                form::button(p, "work-discard", "変更を破棄", false, !self.saving).on_click(cx.listener(|this, _, _, cx| this.reset(cx))),
+                form::button(p, "work-save", if self.saving { "保存中…" } else { "変更を保存" }, true, can_save).on_click(cx.listener(|this, _, _, cx| this.save(cx))),
             ))
     }
 }

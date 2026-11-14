@@ -196,6 +196,7 @@ impl BackupSettings {
 
 impl Render for BackupSettings {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
         let dirty = self.dirty(cx);
         let validation = self.validation(cx);
         let error = validation.map(str::to_string).or(self.save_error.clone());
@@ -204,7 +205,7 @@ impl Render for BackupSettings {
         // The dev build hides iCloud Drive: the real app's backups live there.
         let suggestions = export_dir_suggestions(&home, crate::ui::integrations_dialog::DEV_NAMES);
         let default_dir = Config::defaults(&self.state.read(cx).api.data_dir).export_dir;
-        let number = |input: &Entity<InputState>, unit: &'static str| div().flex().items_center().gap_2().child(div().w(px(90.)).child(Input::new(input))).child(div().text_sm().text_color(n600()).child(unit));
+        let number = |input: &Entity<InputState>, unit: &'static str| div().flex().items_center().gap_2().child(div().w(px(90.)).child(Input::new(input))).child(div().text_sm().text_color(p.text_muted).child(unit));
         let rows = self.snapshots.iter().enumerate().map(|(i, s)| {
             let id = format!("backup-row-{i}");
             let sel = id.clone();
@@ -218,21 +219,21 @@ impl Render for BackupSettings {
                 .px_5()
                 .py_3()
                 .border_b_1()
-                .border_color(n100())
+                .border_color(p.hover)
                 .child(div().text_sm().font_weight(FontWeight::MEDIUM).child(s.created_at.with_timezone(&Local).format("%Y/%-m/%-d %-H:%M:%S").to_string()))
                 .when(i == 0, |d| d.child(div().debug_selector(|| "backup-latest".into()).px_2().rounded_md().bg(gpui::rgb(0xecfdf5)).text_xs().text_color(gpui::rgb(0x065f46)).child("最新")))
-                .child(div().text_xs().text_color(n500()).child(if s.auto { "自動バックアップ" } else { "手動バックアップ" }))
+                .child(div().text_xs().text_color(p.text_muted).child(if s.auto { "自動バックアップ" } else { "手動バックアップ" }))
                 .child(div().flex_1())
-                .child(div().text_xs().text_color(n500()).child(format!("{} KB", s.bytes / 1024)))
-                .child(form::button(format!("backup-restore-{i}"), "復元", false, !self.busy).on_click(cx.listener(move |this, _, _, cx| {
+                .child(div().text_xs().text_color(p.text_muted).child(format!("{} KB", s.bytes / 1024)))
+                .child(form::button(p, format!("backup-restore-{i}"), "復元", false, !self.busy).on_click(cx.listener(move |this, _, _, cx| {
                     this.restoring = Some(snap.clone());
                     cx.notify();
                 })))
         });
         div()
             .child(
-                form::card("保存の設定", "iCloud Driveなど、普段同期されるフォルダも保存先にできます。")
-                    .child(form::row(
+                form::card(p, "保存の設定", "iCloud Driveなど、普段同期されるフォルダも保存先にできます。")
+                    .child(form::row(p, 
                         "保存先フォルダ",
                         "Track本体ではなく、作成されるバックアップだけを同期してください。",
                         div()
@@ -244,7 +245,7 @@ impl Render for BackupSettings {
                                     .flex()
                                     .gap_2()
                                     .child(div().flex_1().child(Input::new(&self.export_dir)))
-                                    .child(form::button("backup-pick", "選択", false, true).on_click(cx.listener(|this, _, w, cx| this.pick_folder(w, cx)))),
+                                    .child(form::button(p, "backup-pick", "選択", false, true).on_click(cx.listener(|this, _, w, cx| this.pick_folder(w, cx)))),
                             )
                             .child(
                                 div()
@@ -252,22 +253,22 @@ impl Render for BackupSettings {
                                     .flex_wrap()
                                     .gap_2()
                                     .children(suggestions.into_iter().map(|(label, path)| {
-                                        form::button(SharedString::from(format!("backup-suggest-{label}")), &format!("{label}を使う"), false, true).on_click(cx.listener(move |this, _, w, cx| {
+                                        form::button(p, SharedString::from(format!("backup-suggest-{label}")), &format!("{label}を使う"), false, true).on_click(cx.listener(move |this, _, w, cx| {
                                             this.export_dir.update(cx, |i, cx| i.set_value(path.to_string_lossy().into_owned(), w, cx));
                                         }))
                                     }))
-                                    .child(form::button("backup-default", "既定に戻す", false, true).on_click(cx.listener(move |this, _, w, cx| {
+                                    .child(form::button(p, "backup-default", "既定に戻す", false, true).on_click(cx.listener(move |this, _, w, cx| {
                                         this.export_dir.update(cx, |i, cx| i.set_value(default_dir.to_string_lossy().into_owned(), w, cx));
                                     }))),
                             ),
                     ))
-                    .child(form::row("実行間隔", "0時間にすると自動バックアップを停止します。", number(&self.interval, "時間")))
-                    .child(form::row("保存数", "手動で作成したバックアップは削除されません。", number(&self.keep, "件"))),
+                    .child(form::row(p, "実行間隔", "0時間にすると自動バックアップを停止します。", number(&self.interval, "時間")))
+                    .child(form::row(p, "保存数", "手動で作成したバックアップは削除されません。", number(&self.keep, "件"))),
             )
-            .child(form::actions(
+            .child(form::actions(p, 
                 Actions { prefix: "backup", dirty, saving: self.saving, error: error.as_deref() },
-                form::button("backup-discard", "変更を破棄", false, !self.saving).on_click(cx.listener(|this, _, w, cx| this.reset(w, cx))),
-                form::button("backup-save", if self.saving { "保存中…" } else { "変更を保存" }, true, can_save).on_click(cx.listener(|this, _, _, cx| this.save(cx))),
+                form::button(p, "backup-discard", "変更を破棄", false, !self.saving).on_click(cx.listener(|this, _, w, cx| this.reset(w, cx))),
+                form::button(p, "backup-save", if self.saving { "保存中…" } else { "変更を保存" }, true, can_save).on_click(cx.listener(|this, _, _, cx| this.save(cx))),
             ))
             .when_some(self.restoring.clone(), |d, snap| {
                 d.child(
@@ -282,7 +283,7 @@ impl Render for BackupSettings {
                         .flex_col()
                         .gap_3()
                         .child(div().text_sm().font_weight(FontWeight::SEMIBOLD).child("この時点へ復元しますか？"))
-                        .child(div().text_xs().text_color(n700()).child(format!(
+                        .child(div().text_xs().text_color(p.text).child(format!(
                             "{} の状態に戻します。現在のデータをこの時点の内容で置き換えます。実行直前の状態も自動でバックアップされます。",
                             snap.created_at.with_timezone(&Local).format("%Y/%-m/%-d %-H:%M:%S")
                         )))
@@ -291,16 +292,16 @@ impl Render for BackupSettings {
                                 .flex()
                                 .justify_end()
                                 .gap_2()
-                                .child(form::button("backup-restore-cancel", "キャンセル", false, true).on_click(cx.listener(|this, _, _, cx| {
+                                .child(form::button(p, "backup-restore-cancel", "キャンセル", false, true).on_click(cx.listener(|this, _, _, cx| {
                                     this.restoring = None;
                                     cx.notify();
                                 })))
-                                .child(form::button("backup-restore-confirm", "この時点へ復元", true, true).on_click(cx.listener(move |this, _, _, cx| this.restore(snap.clone(), cx)))),
+                                .child(form::button(p, "backup-restore-confirm", "この時点へ復元", true, true).on_click(cx.listener(move |this, _, _, cx| this.restore(snap.clone(), cx)))),
                         ),
                 )
             })
             .child(
-                form::card("復元ポイント", "過去の状態を選ぶと、現在の状態を退避してから復元します。")
+                form::card(p, "復元ポイント", "過去の状態を選ぶと、現在の状態を退避してから復元します。")
                     .child(
                         div()
                             .flex()
@@ -309,17 +310,17 @@ impl Render for BackupSettings {
                             .px_5()
                             .py_3()
                             .border_b_1()
-                            .border_color(n100())
-                            .child(form::button("backup-now", if self.busy { "処理中…" } else { "今すぐバックアップ" }, true, !self.busy).on_click(cx.listener(|this, _, _, cx| this.backup_now(cx))))
-                            .when_some(self.notice.clone(), |d, n| d.child(div().text_xs().text_color(n600()).child(n))),
+                            .border_color(p.hover)
+                            .child(form::button(p, "backup-now", if self.busy { "処理中…" } else { "今すぐバックアップ" }, true, !self.busy).on_click(cx.listener(|this, _, _, cx| this.backup_now(cx))))
+                            .when_some(self.notice.clone(), |d, n| d.child(div().text_xs().text_color(p.text_muted).child(n))),
                     )
                     .when(self.snapshots.is_empty(), |d| {
                         d.child(
                             div()
                                 .px_5()
                                 .py_4()
-                                .child(div().text_sm().text_color(n600()).child("バックアップはまだありません"))
-                                .child(div().text_xs().text_color(n500()).child("「今すぐバックアップ」から最初の復元ポイントを作成できます。")),
+                                .child(div().text_sm().text_color(p.text_muted).child("バックアップはまだありません"))
+                                .child(div().text_xs().text_color(p.text_muted).child("「今すぐバックアップ」から最初の復元ポイントを作成できます。")),
                         )
                     })
                     .children(rows),
