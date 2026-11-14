@@ -1,13 +1,14 @@
 //! 「タグ」: one row per tag, edited in place. Double-click a row to rename it (Enter saves; Esc,
-//! leaving the field or clicking elsewhere cancels), press its colour dot for the colours, and the
-//! trash icon (shown on hover) deletes it after a confirmation. Each row says how many projects and
-//! entries use the tag. Everything saves at once; there is no form.
-use super::form;
+//! leaving the field or clicking elsewhere cancels), press its colour dot for a popover of colours,
+//! and the trash icon (shown on hover) deletes it after a confirmation popover. Each row says how
+//! many projects and entries use the tag (or why a save failed). Everything saves at once; nothing
+//! opens under a row.
+use super::popover::{self, Confirm, Trigger};
 use crate::app::AppState;
 use crate::data::{DataClient, DataResult};
 use crate::ui::theme::*;
 use gpui::{
-    AppContext, Context, Div, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
+    AppContext, Context, Div, Entity, InteractiveElement, IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
     Window, div, prelude::FluentBuilder, px,
 };
 use gpui_component::color_picker::{ColorPickerEvent, ColorPickerState};
@@ -199,28 +200,16 @@ impl TagSettings {
         }
     }
 
-    /// Opens (or closes) the colours under a tag's row, with an eyedropper set to its colour.
-    fn toggle_colors(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+    /// Opens the colour popover for a tag, with sliders set to its colour.
+    fn open_colors(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
         self.save_pending_color(cx);
-        if self.colors_for.as_deref() == Some(id.as_str()) {
-            (self.colors_for, self.picker) = (None, None);
-            cx.notify();
-            return;
-        }
         let Some(color) = self.tags.iter().find(|t| t.id == id).map(|t| t.color.clone()) else { return };
         let picker = cx.new(|cx| ColorPickerState::new(window, cx).default_value(hex(&color)));
         let tid = id.clone();
+        // Slider steps are kept and saved once, when the popover closes.
         cx.subscribe(&picker, move |this, _, ev: &ColorPickerEvent, _| {
             if let ColorPickerEvent::Change(Some(c)) = ev {
                 this.pending_color = Some((tid.clone(), *c));
-            }
-        })
-        .detach();
-        // The eyedropper saves when its popover closes, not on every slider step.
-        cx.observe(&picker, |this, picker, cx| {
-            if !picker.read(cx).is_open() && this.pending_color.is_some() {
-                this.save_pending_color(cx);
-                (this.colors_for, this.picker) = (None, None);
             }
         })
         .detach();
@@ -229,9 +218,15 @@ impl TagSettings {
         cx.notify();
     }
 
-    fn render_row(&self, t: &Tag, p: Palette, cx: &mut Context<Self>) -> Div {
+    fn close_colors(&mut self, cx: &mut Context<Self>) {
+        self.save_pending_color(cx);
+        (self.colors_for, self.picker) = (None, None);
+        cx.notify();
+    }
+
+    fn render_row(&self, t: &Tag, p: Palette, cx: &mut Context<Self>) -> gpui::Stateful<Div> {
         let group = SharedString::from(format!("tag-row-group-{}", t.id));
-        let (id, dot_id, del_id) = (t.id.clone(), t.id.clone(), t.id.clone());
+        let id = t.id.clone();
         let editing = self.editing.as_ref().filter(|(e, _)| *e == t.id).map(|(_, i)| i.clone());
         let name = match editing {
             Some(input) => div()
@@ -245,13 +240,9 @@ impl TagSettings {
         };
         let row_sel = format!("tag-row-{}", t.id);
         let row_sel2 = row_sel.clone();
-        let dot_sel = format!("tag-color-{}", t.id);
-        let dot_sel2 = dot_sel.clone();
         let usage_sel = format!("tag-usage-{}", t.id);
-        let del_sel = format!("tag-delete-{}", t.id);
-        let del_sel2 = del_sel.clone();
         let confirming = self.deleting.as_deref() == Some(t.id.as_str());
-        let row = div()
+        div()
             .id(SharedString::from(row_sel))
             .debug_selector(move || row_sel2.clone())
             .group(group.clone())
@@ -263,125 +254,121 @@ impl TagSettings {
             .rounded(px(6.))
             .text_sm()
             .hover(move |s| s.bg(p.hover))
-            .child(
-                div()
-                    .id(SharedString::from(dot_sel))
-                    .debug_selector(move || dot_sel2.clone())
-                    .size(px(14.))
-                    .flex_none()
-                    .rounded_full()
-                    .cursor_pointer()
-                    .bg(hex(&t.color))
-                    .when(self.colors_for.as_deref() == Some(t.id.as_str()), |d| d.border_2().border_color(p.text))
-                    .tooltip(|window, cx| gpui_component::tooltip::Tooltip::new("色を変える").build(window, cx))
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        cx.stop_propagation();
-                        this.toggle_colors(dot_id.clone(), window, cx)
-                    })),
-            )
+            .child(self.render_dot(t, p, cx))
             .child(name)
-            .child(div().debug_selector(move || usage_sel.clone()).flex_none().text_xs().text_color(p.text_faint).child(self.usage_label(&t.id)))
-            .child(
-                div()
-                    .id(SharedString::from(del_sel))
-                    .debug_selector(move || del_sel2.clone())
-                    .p_1()
-                    .rounded(px(4.))
-                    .cursor_pointer()
-                    .text_color(p.text_muted)
-                    .hover(move |s| s.bg(p.hover).text_color(p.text))
-                    // Shown while the row is hovered (or its delete is being confirmed).
-                    .opacity(if confirming { 1. } else { 0. })
-                    .group_hover(group, |s| s.opacity(1.))
-                    .child(crate::ui::icons::trash().size_4())
-                    .tooltip(|window, cx| gpui_component::tooltip::Tooltip::new("削除する").build(window, cx))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        cx.stop_propagation();
-                        this.cancel_rename(cx);
-                        this.deleting = Some(del_id.clone());
-                        cx.notify();
-                    })),
-            )
+            .child(match self.row_error.as_ref().filter(|(e, _)| *e == t.id) {
+                // A failed save shows in the row, where the usage is.
+                Some((_, msg)) => {
+                    let sel = format!("tag-error-{}", t.id);
+                    div().debug_selector(move || sel.clone()).flex_none().text_xs().text_color(p.danger).child(msg.clone())
+                }
+                None => div().debug_selector(move || usage_sel.clone()).flex_none().text_xs().text_color(p.text_faint).child(self.usage_label(&t.id)),
+            })
+            .child(self.render_delete(t, confirming, group, p, cx))
             // Double-click renames the tag in place.
             .on_click(cx.listener(move |this, ev: &gpui::ClickEvent, window, cx| {
                 if ev.click_count() >= 2 {
                     this.start_rename(id.clone(), window, cx);
                 }
-            }));
-        div()
-            .flex()
-            .flex_col()
-            .child(row)
-            .when(self.colors_for.as_deref() == Some(t.id.as_str()), |d| d.child(self.render_colors(t, p, cx)))
-            .when(confirming, |d| d.child(self.render_delete_confirm(t, p, cx)))
-            .children(self.row_error.as_ref().filter(|(e, _)| *e == t.id).map(|(_, msg)| {
-                let sel = format!("tag-error-{}", t.id);
-                div().debug_selector(move || sel.clone()).px_3().pb_2().pl(px(38.)).text_xs().text_color(p.danger).child(msg.clone())
             }))
     }
 
-    /// The colours under a tag's row: a click saves and closes; the eyedropper saves when closed.
-    fn render_colors(&self, t: &Tag, p: Palette, cx: &mut Context<Self>) -> Div {
-        let custom = !COLORS.iter().any(|c| c.eq_ignore_ascii_case(&t.color));
-        let sel = format!("tag-colors-{}", t.id);
-        div()
-            .debug_selector(move || sel.clone())
-            .flex()
-            .flex_wrap()
-            .items_center()
-            .gap_2()
-            .pl(px(38.))
-            .pr_3()
-            .pt_1()
-            .pb_3()
-            .children(COLORS.iter().enumerate().map(|(i, c)| {
-                let (sid, color, tid) = (format!("tag-colors-{}-{i}", t.id), c.to_string(), t.id.clone());
-                let sid2 = sid.clone();
-                div()
-                    .id(SharedString::from(sid))
-                    .debug_selector(move || sid2.clone())
-                    .size(px(22.))
-                    .rounded_full()
-                    .cursor_pointer()
-                    .bg(hex(c))
-                    .when(t.color.eq_ignore_ascii_case(c), |d| d.border_2().border_color(p.text))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        (this.colors_for, this.picker) = (None, None);
-                        this.save_color(tid.clone(), color.clone(), cx);
-                    }))
-            }))
-            .when_some(self.picker.clone(), |d, picker| d.child(super::color_field::eyedropper(format!("tag-colors-{}-picker", t.id), &picker, custom.then(|| gpui::Hsla::from(hex(&t.color))), p, cx)))
-    }
-
-    fn render_delete_confirm(&self, t: &Tag, p: Palette, cx: &mut Context<Self>) -> Div {
+    /// The colour dot, opening a popover of the preset colours (a click saves) and sliders (saved
+    /// when the popover closes).
+    fn render_dot(&self, t: &Tag, p: Palette, cx: &mut Context<Self>) -> impl IntoElement {
+        let open = self.colors_for.as_deref() == Some(t.id.as_str());
+        let dot_sel = format!("tag-color-{}", t.id);
+        let dot = div()
+            .debug_selector(move || dot_sel.clone())
+            .size(px(14.))
+            .flex_none()
+            .rounded_full()
+            .cursor_pointer()
+            .bg(hex(&t.color))
+            .when(open, |d| d.border_2().border_color(p.text));
+        let this = cx.entity().downgrade();
         let id = t.id.clone();
-        div()
-            .mx_1()
-            .mb_2()
-            .p_4()
-            .rounded_lg()
-            .border_1()
-            .border_color(p.danger_border)
-            .bg(p.danger_bg)
-            .flex()
-            .flex_col()
-            .gap_3()
-            .child(div().text_xs().text_color(p.text).child(format!("「{}」を削除しますか？記録した時間は残りますが、エントリーとプロジェクトからこのタグが外れます。", t.name)))
-            .child(
-                div()
-                    .flex()
-                    .justify_end()
-                    .gap_2()
-                    .child(form::button(p, "tag-delete-cancel", "キャンセル", false, true).on_click(cx.listener(|this, _, _, cx| {
-                        this.deleting = None;
-                        cx.notify();
-                    })))
-                    .child(form::button(p, "tag-delete-confirm", "タグを削除", true, true).on_click(cx.listener(move |this, _, _, cx| {
-                        this.deleting = None;
-                        let fut = api(&this.state, cx).delete_tag(id.clone());
-                        this.write(id.clone(), fut, cx);
-                    }))),
-            )
+        gpui_component::popover::Popover::new(SharedString::from(format!("tag-color-pop-{}", t.id)))
+            .open(open)
+            .on_open_change(move |open: &bool, window, cx| {
+                let (open, id) = (*open, id.clone());
+                let _ = this.update(cx, |this, cx| if open { this.open_colors(id, window, cx) } else { this.close_colors(cx) });
+            })
+            .trigger(Trigger::new(dot))
+            .when(open, |pop| {
+                let sel = format!("tag-colors-{}", t.id);
+                pop.w(px(264.)).child(
+                    div()
+                        .debug_selector(move || sel.clone())
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .p_1()
+                        .child(div().flex().flex_wrap().gap_2().children(COLORS.iter().enumerate().map(|(i, c)| {
+                            let (sid, color, tid) = (format!("tag-colors-{}-{i}", t.id), c.to_string(), t.id.clone());
+                            let sid2 = sid.clone();
+                            div()
+                                .id(SharedString::from(sid))
+                                .debug_selector(move || sid2.clone())
+                                .size(px(22.))
+                                .rounded_full()
+                                .cursor_pointer()
+                                .bg(hex(c))
+                                .when(t.color.eq_ignore_ascii_case(c), |d| d.border_2().border_color(p.text))
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    (this.colors_for, this.picker, this.pending_color) = (None, None, None);
+                                    this.save_color(tid.clone(), color.clone(), cx);
+                                }))
+                        })))
+                        .children(self.picker.as_ref().map(|picker| super::color_field::picker_controls(picker, p, cx))),
+                )
+            })
+    }
+
+    /// The trash icon (shown while the row is hovered), confirming in a popover.
+    fn render_delete(&self, t: &Tag, confirming: bool, group: SharedString, p: Palette, cx: &mut Context<Self>) -> impl IntoElement {
+        let sel = format!("tag-delete-{}", t.id);
+        let icon = div()
+            .debug_selector(move || sel.clone())
+            .p_1()
+            .rounded(px(4.))
+            .cursor_pointer()
+            .text_color(p.text_muted)
+            .hover(move |s| s.bg(p.hover).text_color(p.text))
+            .opacity(if confirming { 1. } else { 0. })
+            .group_hover(group, |s| s.opacity(1.))
+            .child(crate::ui::icons::trash().size_4());
+        let (this, this2, id, id2) = (cx.entity().downgrade(), cx.entity().downgrade(), t.id.clone(), t.id.clone());
+        popover::confirm(
+            SharedString::from(format!("tag-delete-pop-{}", t.id)),
+            icon,
+            confirming,
+            move |open, _, cx| {
+                let id = id.clone();
+                let _ = this.update(cx, |this, cx| {
+                    if open {
+                        this.cancel_rename(cx);
+                    }
+                    this.deleting = open.then_some(id);
+                    cx.notify();
+                });
+            },
+            Confirm {
+                message: format!("「{}」を削除しますか？記録した時間は残りますが、エントリーとプロジェクトからこのタグが外れます。", t.name),
+                cancel_id: "tag-delete-cancel",
+                confirm_id: "tag-delete-confirm",
+                confirm_label: "タグを削除",
+            },
+            move |_, cx| {
+                let id = id2.clone();
+                let _ = this2.update(cx, |this, cx| {
+                    this.deleting = None;
+                    let fut = api(&this.state, cx).delete_tag(id.clone());
+                    this.write(id, fut, cx);
+                });
+            },
+            p,
+        )
     }
 }
 
@@ -422,6 +409,5 @@ impl Render for TagSettings {
                     .child("タグ")
                     .on_click(cx.listener(|this, _, _, cx| this.add_tag(cx))),
             )
-            .child(div().mt_4().px_3().text_xs().font_weight(FontWeight::NORMAL).text_color(p.text_faint).child("名前はダブルクリックで変更、色は丸を押して選びます。"))
     }
 }

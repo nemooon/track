@@ -471,34 +471,6 @@ impl ProjectSettings {
         self.write(api.update_client(id.to_string(), ClientPatch { archived: Some(!archived), ..Default::default() }), cx);
     }
 
-    /// 「削除しますか？」 under a client heading in the list.
-    fn render_client_delete_confirm(&self, c: &Client, p: Palette, cx: &mut Context<Self>) -> Div {
-        let id = c.id.clone();
-        div()
-            .mx_1()
-            .my_1()
-            .p_3()
-            .rounded_md()
-            .border_1()
-            .border_color(p.danger_border)
-            .bg(p.danger_bg)
-            .flex()
-            .flex_col()
-            .gap_2()
-            .child(div().text_xs().text_color(p.text).child(format!("「{}」を削除しますか？工数のないプロジェクトも一緒に削除されます。元に戻せません。", c.name)))
-            .child(
-                div()
-                    .flex()
-                    .justify_end()
-                    .gap_2()
-                    .child(super::form::button(p, "tree-client-delete-cancel", "キャンセル", false, true).on_click(cx.listener(|this, _, _, cx| {
-                        this.client_delete = None;
-                        cx.notify();
-                    })))
-                    .child(super::form::button(p, "tree-client-delete-confirm", "削除", true, true).on_click(cx.listener(move |this, _, _, cx| this.delete_client(id.clone(), cx)))),
-            )
-    }
-
     fn render_tree(&self, p: Palette, cx: &mut Context<Self>) -> Div {
         let row = |id: String, selected: bool| {
             let sel_id = id.clone();
@@ -564,23 +536,51 @@ impl ProjectSettings {
                         .mt_2()
                         .cursor_default()
                         .child(name)
+                        // A refused delete says why, in the heading.
+                        .children(self.client_error.as_ref().filter(|(e, _)| *e == c.id).map(|(_, msg)| {
+                            let sel = format!("tree-client-error-{}", c.id);
+                            div().debug_selector(move || sel.clone()).flex_shrink(1.).min_w_0().truncate().text_xs().text_color(p.danger).child(msg.clone())
+                        }))
                         .child({
                             // Deletable only when none of its projects has entries.
                             let deletable = !self.projects.iter().any(|pj| pj.client_id == c.id && self.with_entries.contains(&pj.id));
                             let tip = if deletable { "削除する" } else { "工数のあるプロジェクトがあるため削除できません" };
                             let shown = if deletable { 1. } else { 0.35 };
-                            icon_button(format!("tree-client-delete-{}", c.id), crate::ui::icons::trash(), tip)
+                            let icon = icon_button(format!("tree-client-delete-{}", c.id), crate::ui::icons::trash(), tip)
                                 .text_color(p.text_muted)
                                 .opacity(if confirming { shown } else { 0. })
-                                .group_hover(group.clone(), move |st| st.opacity(shown))
-                                .when(deletable, |d| {
-                                    d.on_click(cx.listener(move |this, _, _, cx| {
-                                        cx.stop_propagation();
-                                        this.client_error = None;
-                                        this.client_delete = Some(del_id.clone());
-                                        cx.notify();
-                                    }))
-                                })
+                                .group_hover(group.clone(), move |st| st.opacity(shown));
+                            if deletable {
+                                // Confirms in a popover from the icon.
+                                let (this, this2, did, did2) = (cx.entity().downgrade(), cx.entity().downgrade(), del_id.clone(), del_id.clone());
+                                super::popover::confirm(
+                                    SharedString::from(format!("tree-client-delete-pop-{}", c.id)),
+                                    icon,
+                                    confirming,
+                                    move |open, _, cx| {
+                                        let id = did.clone();
+                                        let _ = this.update(cx, |this, cx| {
+                                            this.client_error = None;
+                                            this.client_delete = open.then_some(id);
+                                            cx.notify();
+                                        });
+                                    },
+                                    super::popover::Confirm {
+                                        message: format!("「{}」を削除しますか？工数のないプロジェクトも一緒に削除されます。元に戻せません。", c.name),
+                                        cancel_id: "tree-client-delete-cancel",
+                                        confirm_id: "tree-client-delete-confirm",
+                                        confirm_label: "削除",
+                                    },
+                                    move |_, cx| {
+                                        let id = did2.clone();
+                                        let _ = this2.update(cx, |this, cx| this.delete_client(id, cx));
+                                    },
+                                    p,
+                                )
+                                .into_any_element()
+                            } else {
+                                icon.into_any_element()
+                            }
                         })
                         .child(
                             icon_button(format!("tree-client-archive-{}", c.id), archive_icon, archive_tip)
@@ -611,11 +611,6 @@ impl ProjectSettings {
                             }
                         })),
                 )
-                .children((self.client_delete.as_deref() == Some(c.id.as_str())).then(|| self.render_client_delete_confirm(c, p, cx)))
-                .children(self.client_error.as_ref().filter(|(e, _)| *e == c.id).map(|(_, msg)| {
-                    let sel = format!("tree-client-error-{}", c.id);
-                    div().debug_selector(move || sel.clone()).px_3().py_1().text_xs().text_color(p.danger).child(msg.clone())
-                }))
                 .children(projects.into_iter().map(|pj| project_row(pj, cx)))
         };
         let active: Vec<&Client> = self.clients.iter().filter(|c| !c.archived).collect();
@@ -737,20 +732,46 @@ impl ProjectSettings {
                             .child(archive_button(pj.archived, !(pj.archived && client_archived), (pj.archived && client_archived).then_some("クライアントのアーカイブを先に戻してください"), cx))
                             .child({
                                 let deletable = !self.with_entries.contains(&pj.id);
-                                super::form::button_with_icon(p, "detail-delete", crate::ui::icons::trash(), "削除", false, deletable)
-                                    .text_color(p.danger)
-                                    .when(deletable, |d| {
-                                        d.on_click(cx.listener(move |this, _, _, cx| {
-                                            this.confirm_delete = Some(id.clone());
-                                            cx.notify();
-                                        }))
-                                    })
+                                let button = super::form::button_with_icon(p, "detail-delete", crate::ui::icons::trash(), "削除", false, deletable).text_color(p.danger);
+                                if deletable {
+                                    // Confirms in a popover from the button.
+                                    let (this, this2, did, did2) = (cx.entity().downgrade(), cx.entity().downgrade(), id.clone(), id.clone());
+                                    super::popover::confirm(
+                                        "detail-delete-pop",
+                                        button,
+                                        self.confirm_delete.as_deref() == Some(pj.id.as_str()),
+                                        move |open, _, cx| {
+                                            let id = did.clone();
+                                            let _ = this.update(cx, |this, cx| {
+                                                this.confirm_delete = open.then_some(id);
+                                                cx.notify();
+                                            });
+                                        },
+                                        super::popover::Confirm {
+                                            message: format!("「{}」を削除します。元に戻せません。", pj.name),
+                                            cancel_id: "detail-delete-cancel",
+                                            confirm_id: "detail-delete-confirm",
+                                            confirm_label: "プロジェクトを削除",
+                                        },
+                                        move |_, cx| {
+                                            let id = did2.clone();
+                                            let _ = this2.update(cx, |this, cx| {
+                                                this.confirm_delete = None;
+                                                let api = api(&this.state, cx);
+                                                this.write(api.delete_project(id), cx)
+                                            });
+                                        },
+                                        p,
+                                    )
+                                    .into_any_element()
+                                } else {
+                                    button.into_any_element()
+                                }
                             })
                             .when(self.with_entries.contains(&pj.id), |d| {
                                 d.child(div().debug_selector(|| "detail-delete-disabled".into()).text_xs().text_color(p.text_faint).child("工数があるため削除できません"))
                             }),
                     )
-                    .children(self.confirm_delete.as_ref().filter(|d| **d == pj.id).map(|_| self.render_delete_confirm(&pj, p, cx)))
                     .children(error)
                     .into_any_element()
             }
@@ -796,39 +817,6 @@ impl ProjectSettings {
                     .on_click(cx.listener(move |this, _, _, cx| this.toggle_tag(&pid, &tid, cx)))
             }))
             .into_any_element()
-    }
-
-    /// 「プロジェクトを削除しますか？」 under the buttons. Projects with entries are refused by the
-    /// core, and the error says to archive instead.
-    fn render_delete_confirm(&self, pj: &Project, p: Palette, cx: &mut Context<Self>) -> Div {
-        let id = pj.id.clone();
-        div()
-            .mt_3()
-            .p_4()
-            .rounded_lg()
-            .border_1()
-            .border_color(p.danger_border)
-            .bg(p.danger_bg)
-            .flex()
-            .flex_col()
-            .gap_3()
-            .child(div().text_sm().font_weight(FontWeight::SEMIBOLD).child("プロジェクトを削除しますか？"))
-            .child(div().text_xs().text_color(p.text).child(format!("「{}」を削除します。元に戻せません。", pj.name)))
-            .child(
-                div()
-                    .flex()
-                    .justify_end()
-                    .gap_2()
-                    .child(super::form::button(p, "detail-delete-cancel", "キャンセル", false, true).on_click(cx.listener(|this, _, _, cx| {
-                        this.confirm_delete = None;
-                        cx.notify();
-                    })))
-                    .child(super::form::button(p, "detail-delete-confirm", "プロジェクトを削除", true, true).on_click(cx.listener(move |this, _, _, cx| {
-                        this.confirm_delete = None;
-                        let api = api(&this.state, cx);
-                        this.write(api.delete_project(id.clone()), cx)
-                    }))),
-            )
     }
 
     fn toggle_archive(&mut self, cx: &mut Context<Self>) {

@@ -118,15 +118,38 @@ pub fn eyedropper(id: impl Into<ElementId>, picker: &Entity<ColorPickerState>, f
             });
         })
         .trigger(EyedropperSwatch { fill, palette: p, selected: false })
-        .when(open, |pop| {
-            pop.w(px(260.)).child(
-                v_flex()
-                    .gap_2()
-                    .p_1()
-                    .child(slider_row("picker-hue", "色相", hue, hue_stops, p))
-                    .child(slider_row("picker-saturation", "彩度", saturation, sat_stops, p))
-                    .child(slider_row("picker-lightness", "明度", lightness, light_stops, p))
-                    .child(div().debug_selector(|| "picker-hex".into()).child(Input::new(&hex))),
-            )
-        })
+        .when(open, |pop| pop.w(px(260.)).child(controls(hue, saturation, lightness, hex, (hue_stops, sat_stops, light_stops), p)))
+}
+
+type Stops = (Vec<Hsla>, Vec<Hsla>, Vec<Hsla>);
+
+fn controls(
+    hue: Entity<gpui_component::slider::SliderState>,
+    saturation: Entity<gpui_component::slider::SliderState>,
+    lightness: Entity<gpui_component::slider::SliderState>,
+    hex: Entity<gpui_component::input::InputState>,
+    stops: Stops,
+    p: Palette,
+) -> impl IntoElement {
+    v_flex()
+        .gap_2()
+        .p_1()
+        .child(slider_row("picker-hue", "色相", hue, stops.0, p))
+        .child(slider_row("picker-saturation", "彩度", saturation, stops.1, p))
+        .child(slider_row("picker-lightness", "明度", lightness, stops.2, p))
+        .child(div().debug_selector(|| "picker-hex".into()).child(Input::new(&hex)))
+}
+
+/// The hue / saturation / lightness sliders and hex field on their own, for a popover that has
+/// the preset colours above them (no eyedropper circle).
+pub fn picker_controls(picker: &Entity<ColorPickerState>, p: Palette, cx: &App) -> impl IntoElement {
+    let state = picker.read(cx);
+    let sliders = state.sliders();
+    let c = state.displayed_color().unwrap_or(hsla(0., 0., 0.5, 1.));
+    let stops = (
+        (0..=6).map(|i| hsla(i as f32 / 6., 0.85, 0.55, 1.)).collect(),
+        vec![hsla(c.h, 0., c.l, 1.), hsla(c.h, 1., c.l, 1.)],
+        vec![hsla(c.h, c.s, 0., 1.), hsla(c.h, c.s, 0.5, 1.), hsla(c.h, c.s, 1., 1.)],
+    );
+    controls(sliders.hue().clone(), sliders.saturation().clone(), sliders.lightness().clone(), state.hex_input().clone(), stops, p)
 }

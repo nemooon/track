@@ -16,6 +16,7 @@ pub mod calendar;
 pub mod color_field;
 pub mod form;
 pub mod format_editor;
+pub mod popover;
 pub mod projects;
 pub mod reports;
 pub mod tags;

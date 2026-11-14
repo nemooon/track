@@ -272,6 +272,20 @@ fn a_tag_row_shows_how_much_it_is_used(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn tag_colours_and_delete_open_over_the_list_not_below_the_row(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = open_app_db(cx, |_| {});
+    let (mut scx, _t) = tags_section(cx);
+    let add = scx.debug_bounds("tag-add").expect("add row").origin;
+    click(&mut scx, "tag-color-t1");
+    assert!(scx.debug_bounds("tag-colors-t1").is_some());
+    assert_eq!(scx.debug_bounds("tag-add").unwrap().origin, add, "the colours do not push the rows down");
+    click(&mut scx, "tag-color-t1");
+    click(&mut scx, "tag-delete-t1");
+    assert!(scx.debug_bounds("tag-delete-confirm").is_some());
+    assert_eq!(scx.debug_bounds("tag-add").unwrap().origin, add, "the confirmation does not push the rows down");
+}
+
+#[gpui::test]
 fn deleting_a_tag_asks_first(cx: &mut TestAppContext) {
     let (_app, cx, f) = open_app_db(cx, |_| {});
     let (mut scx, _t) = tags_section(cx);
@@ -866,6 +880,18 @@ fn deleting_a_client_removes_its_projects_without_entries(cx: &mut TestAppContex
     wait_io(&mut scx);
     assert!(f.db().client("c1").is_err() && f.db().project("p1").is_err() && f.db().project("p2").is_err());
     assert_eq!(selected(&mut scx, &p), None, "the deleted project is no longer selected");
+}
+
+#[gpui::test]
+fn delete_confirmations_open_over_the_page(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = open_app_db(cx, |_| {});
+    let (mut scx, _p) = projects_section(cx);
+    let row = scx.debug_bounds("tree-project-p1").expect("project row").origin;
+    click(&mut scx, "tree-client-delete-c1");
+    assert!(scx.debug_bounds("tree-client-delete-confirm").is_some());
+    assert_eq!(scx.debug_bounds("tree-project-p1").unwrap().origin, row, "the client confirmation does not push the list down");
+    click(&mut scx, "tree-client-delete-cancel");
+    assert!(scx.debug_bounds("tree-client-delete-confirm").is_none());
 }
 
 #[gpui::test]
