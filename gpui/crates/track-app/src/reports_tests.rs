@@ -345,3 +345,25 @@ fn the_period_is_strong_and_the_hovered_range_in_between() {
     let (hover, faded) = (cell_opacity(false, true), cell_opacity(false, false));
     assert!(faded < hover && hover < 1.0, "hover {hover} sits between faded {faded} and the period");
 }
+
+#[gpui::test]
+fn moving_the_period_keeps_the_table_until_the_new_one_is_ready(cx: &mut TestAppContext) {
+    let (app, cx, _f) = setup(cx);
+    click(cx, "row-p1");
+    wait_io(cx);
+    app.update(cx, |a, cx| {
+        a.reports.update(cx, |r, cx| {
+            r.anchor -= chrono::Duration::days(7);
+            r.ensure_loaded(cx);
+            assert!(r.data.is_some(), "the old table stays while the new one loads");
+            assert!(matches!(r.children.get("project:p1"), Some(Children::Loaded(_))), "and so do the open row's entries");
+        })
+    });
+    wait_io(cx);
+    let (rows, child) = app.read_with(cx, |a, cx| {
+        let r = a.reports.read(cx);
+        (r.data.as_ref().map(|d| d.rows.len()), r.children.get("project:p1").cloned())
+    });
+    assert_eq!(rows, Some(0), "last week has no entries");
+    assert!(child.is_none() || matches!(child, Some(Children::Loaded(_))), "never left loading: {child:?}");
+}

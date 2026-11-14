@@ -126,7 +126,8 @@ impl ReportsView {
         }
     }
 
-    /// Re-fetch `/reports` and drop loaded children (they are fetched again when shown).
+    /// Re-fetch `/reports` and the open rows' entries, then swap them in together, so the table
+    /// never shows a blank or 「読み込み中…」 in between.
     pub fn reload(&mut self, cx: &mut Context<Self>) {
         let q = self.current_query();
         self.requested = Some(q.clone());
@@ -134,9 +135,24 @@ impl ReportsView {
         let api = self.state.read(cx).api.clone();
         let fut = api.report(&q);
         let heat = api.heatmap(&q);
+        let (group_by, expanded, expand_all) = (self.group_by, self.expanded.clone(), self.expand_all);
         self.load_task = Some(cx.spawn(async move |this, cx| {
             let result = fut.await;
             let heat = heat.await;
+            // The entries of the rows that will be open, fetched before anything changes on screen.
+            let mut children = HashMap::new();
+            if let Ok(data) = &result {
+                for r in &data.rows {
+                    let path = row_path(group_by, &r.key);
+                    if expand_all || expanded.contains(&path) {
+                        let entries = api.report_entries(&child_query(&q, group_by, &r.key)).await;
+                        children.insert(path, match entries {
+                            Ok(e) => Children::Loaded(e.entries),
+                            Err(e) => Children::Failed(e.message),
+                        });
+                    }
+                }
+            }
             let _ = this.update(cx, |this, cx| {
                 if this.requested.as_ref() != Some(&q) {
                     return;
@@ -165,7 +181,7 @@ impl ReportsView {
                     }
                     Err(e) => this.error = Some(e.message),
                 }
-                this.children.clear();
+                this.children = children;
                 this.load_visible_children(cx);
                 cx.notify();
             });
@@ -179,12 +195,12 @@ impl ReportsView {
         }
     }
 
-    fn ensure_loaded(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn ensure_loaded(&mut self, cx: &mut Context<Self>) {
         if self.state.read(cx).data.is_none() {
             return;
         }
+        // The table on screen stays until the new one (with its open rows) is ready.
         if self.requested.as_ref() != Some(&self.current_query()) {
-            self.data = None;
             self.reload(cx);
         }
     }
