@@ -227,3 +227,12 @@ fn single_row_bar_is_full(cx: &mut TestAppContext) {
     assert_eq!(keys.len(), 1);
     assert!((share(cx, &keys[0]) - 1.0).abs() < 0.01);
 }
+
+#[gpui::test]
+fn reports_status_bar_shows_row_count_not_a_second_total(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = setup(cx);
+    let bar = cx.debug_bounds("status-bar").expect("status bar");
+    let rows = cx.debug_bounds("status-rows").expect("row count");
+    assert!(bar.contains(&rows.center()));
+    assert!(cx.debug_bounds("status-total").is_none(), "the table's 合計 row already shows the total");
+}

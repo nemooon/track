@@ -224,6 +224,7 @@ impl ReportsView {
     }
 
     /// A duration as the report shows it ("1.5h" or "1h 30m").
+    #[cfg(test)]
     pub fn duration(&self, minutes: i64, cx: &gpui::App) -> String {
         format_duration(minutes, self.style(cx))
     }

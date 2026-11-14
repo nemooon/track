@@ -74,6 +74,11 @@ track-cli undo --id <操作ID>                                    # 取り消し
 AI 生成（週報・カスタム出力）は `config.json` の `aiProvider` に従い、Codex CLI・カスタムコマンド・
 Apple Intelligence ヘルパー（`/Applications/Track.app` 同梱）をアプリから直接起動する。
 
+## 見た目
+
+色は `crates/track-app/src/ui/theme.rs` の `Palette` を意味の名前で引く（`palette(cx)`）。生の色は書かない。いまは明るい配色だけで、
+暗い配色は `Palette` に値の組を足して切り替える。数字は等幅（`MONO`）。
+
 ## 開発用
 
 - `scripts/winshot.sh out.png` — アプリのウインドウだけをスクリーンショットする
