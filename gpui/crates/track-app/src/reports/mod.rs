@@ -1,4 +1,5 @@
 pub mod custom_output;
+pub mod heatmap;
 pub mod weekly_report;
 
 use track_core::model::{GroupBy, ReportEntry, ReportQuery, ReportRange, ReportResponse};
@@ -45,6 +46,8 @@ pub struct ReportsView {
     pub tag_ids: Vec<String>,
     nav: DateNav,
     pub data: Option<ReportResponse>,
+    /// Minutes per day for the activity heatmap (around the period, same filters).
+    pub heatmap: Option<Vec<(NaiveDate, i64)>>,
     pub loading: bool,
     pub error: Option<String>,
     requested: Option<ReportQuery>,
@@ -77,6 +80,7 @@ impl ReportsView {
             tag_ids: vec![],
             nav: DateNav::default(),
             data: None,
+            heatmap: None,
             loading: false,
             error: None,
             requested: None,
@@ -112,13 +116,19 @@ impl ReportsView {
         self.loading = self.data.is_none();
         let api = self.state.read(cx).api.clone();
         let fut = api.report(&q);
+        let heat = api.heatmap(&q);
         self.load_task = Some(cx.spawn(async move |this, cx| {
             let result = fut.await;
+            let heat = heat.await;
             let _ = this.update(cx, |this, cx| {
                 if this.requested.as_ref() != Some(&q) {
                     return;
                 }
                 this.loading = false;
+                // The heatmap is extra: keep the last one if it fails.
+                if let Ok(days) = heat {
+                    this.heatmap = Some(days);
+                }
                 match result {
                     Ok(data) => {
                         if this.expand_all {
@@ -862,7 +872,18 @@ impl Render for ReportsView {
             .flex_col()
             .overflow_hidden()
             .child(self.render_toolbar(cx))
-            .child(div().flex_1().min_h_0().flex().flex_col().bg(p.bg).child(self.render_filter_bar(cx)).children(error_banner).child(body))
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    .bg(p.bg)
+                    .child(self.render_filter_bar(cx))
+                    .children(error_banner)
+                    .children(self.render_heatmap(cx))
+                    .child(body),
+            )
     }
 }
 

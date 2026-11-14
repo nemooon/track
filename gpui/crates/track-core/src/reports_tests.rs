@@ -174,3 +174,38 @@ fn weekly_copy_follows_filters() {
     query.project_ids = vec![p];
     assert_eq!(db.weekly_copy(&query).unwrap(), "Alpha\t1");
 }
+
+fn day(y: i32, m: u32, d: u32) -> NaiveDate {
+    NaiveDate::from_ymd_opt(y, m, d).unwrap()
+}
+
+#[test]
+fn heatmap_range_is_five_weeks_centred_on_the_week() {
+    // 11/11 is a Wednesday; its week starts on Sunday 11/8.
+    assert_eq!(crate::reports::heatmap_range(&q(ReportRange::Week, GroupBy::Project, 11)), (day(2026, 10, 25), day(2026, 11, 29)));
+}
+
+#[test]
+fn heatmap_range_covers_the_months_weeks() {
+    // November 2026 starts on a Sunday and ends on a Monday: five weeks.
+    assert_eq!(crate::reports::heatmap_range(&q(ReportRange::Month, GroupBy::Project, 11)), (day(2026, 11, 1), day(2026, 12, 6)));
+    // August 2026 starts on a Saturday and ends on a Monday: six weeks.
+    let aug = ReportQuery { anchor: Local.from_local_datetime(&day(2026, 8, 10).and_hms_opt(0, 0, 0).unwrap()).unwrap().to_utc(), ..q(ReportRange::Month, GroupBy::Project, 1) };
+    assert_eq!(crate::reports::heatmap_range(&aug), (day(2026, 7, 26), day(2026, 9, 6)));
+}
+
+#[test]
+fn heatmap_sums_each_day_with_the_filters() {
+    let (_d, mut db) = db();
+    let (p, _, _) = seed(&mut db);
+    add(&mut db, (10, 9, 0), (10, 11, 0), Some(&p), &[], 0);
+    add(&mut db, (10, 13, 0), (10, 14, 0), None, &[], 0); // filtered out
+    add(&mut db, (20, 10, 0), (20, 10, 30), Some(&p), &[], 0);
+    let query = ReportQuery { project_ids: vec![p.clone()], ..q(ReportRange::Week, GroupBy::Project, 11) };
+    let days = db.heatmap(&query).unwrap();
+    assert_eq!(days.len(), 35, "one cell per day of the five weeks");
+    let get = |d: NaiveDate| days.iter().find(|(x, _)| *x == d).map(|(_, m)| *m);
+    assert_eq!(get(day(2026, 11, 10)), Some(120));
+    assert_eq!(get(day(2026, 11, 20)), Some(30), "days outside the report's week count too");
+    assert_eq!(get(day(2026, 11, 11)), Some(0));
+}

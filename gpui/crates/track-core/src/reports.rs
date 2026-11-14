@@ -18,6 +18,21 @@ pub fn query_range(q: &ReportQuery) -> (DateTime<Utc>, DateTime<Utc>) {
     (local_midnight(f), local_midnight(t))
 }
 
+/// The days the activity heatmap shows, `[from, to)`, whole Sunday-start weeks: five weeks with
+/// the query's week in the middle, or the weeks the query's month touches.
+pub fn heatmap_range(q: &ReportQuery) -> (chrono::NaiveDate, chrono::NaiveDate) {
+    use crate::dates::week_start;
+    use chrono::Duration;
+    let day = q.anchor.with_timezone(&Local).date_naive();
+    if q.range == ReportRange::Week {
+        let ws = week_start(day);
+        (ws - Duration::days(14), ws + Duration::days(21))
+    } else {
+        let (f, t) = month_range(day);
+        (week_start(f), week_start(t - Duration::days(1)) + Duration::days(7))
+    }
+}
+
 fn split_none(ids: &[String]) -> (Vec<&String>, bool) {
     let real: Vec<&String> = ids.iter().filter(|i| *i != NONE).collect();
     let has_none = real.len() != ids.len();
@@ -124,6 +139,26 @@ impl Db {
         let mut out: Vec<ReportRow> = order.into_iter().filter_map(|k| rows.remove(&k)).collect();
         out.sort_by_key(|r| std::cmp::Reverse(r.total_minutes));
         Ok(ReportResponse { rows: out, total_minutes: total, range: DateSpan { from, to } })
+    }
+
+    /// Minutes per local day over `heatmap_range`, with the query's filters (every day listed,
+    /// in order; days without entries are 0).
+    pub fn heatmap(&self, q: &ReportQuery) -> Result<Vec<(chrono::NaiveDate, i64)>> {
+        use chrono::Duration;
+        let (from, to) = heatmap_range(q);
+        let mut days: Vec<(chrono::NaiveDate, i64)> = from.iter_days().take_while(|d| *d < to).map(|d| (d, 0)).collect();
+        for e in self.entries(local_midnight(from), local_midnight(to))?.into_iter().filter(|e| matches(e, q)) {
+            let mut d = e.start.with_timezone(&Local).date_naive().max(from);
+            let last = e.end.with_timezone(&Local).date_naive();
+            while d <= last && d < to {
+                let mins = visible_minutes(&e, local_midnight(d), local_midnight(d + Duration::days(1)));
+                if let Some(slot) = days.get_mut((d - from).num_days() as usize) {
+                    slot.1 += mins;
+                }
+                d += Duration::days(1);
+            }
+        }
+        Ok(days)
     }
 
     /// Project totals for the query's range and filters, whatever the screen groups by.

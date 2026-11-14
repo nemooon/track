@@ -248,3 +248,35 @@ fn status_bar_hides_row_count_while_loading(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(cx.debug_bounds("status-rows").is_none(), "no stale count from the previous period");
 }
+
+fn leak(s: String) -> &'static str {
+    Box::leak(s.into_boxed_str())
+}
+
+#[gpui::test]
+fn heatmap_shows_five_weeks_between_the_filters_and_the_table(cx: &mut TestAppContext) {
+    let (app, cx, _f) = setup(cx);
+    let days = app.read_with(cx, |a, cx| a.reports.read(cx).heatmap.clone()).expect("heatmap loaded");
+    assert_eq!(days.len(), 35, "five weeks for the week view");
+    let today = Local::now().date_naive();
+    assert_eq!(days.iter().find(|(d, _)| *d == today).map(|(_, m)| *m), Some(120), "today's 2h");
+    assert!(cx.debug_bounds(leak(format!("heat-{today}"))).is_some());
+    let heat = cx.debug_bounds("report-heatmap").expect("heatmap");
+    assert!(heat.bottom() <= cx.debug_bounds("row-p1").expect("table row").top(), "above the table");
+    assert!(heat.size.width > gpui::px(600.), "full width");
+}
+
+#[gpui::test]
+fn clicking_a_heatmap_day_moves_to_its_period(cx: &mut TestAppContext) {
+    let (app, cx, _f) = setup(cx);
+    let first = app.read_with(cx, |a, cx| a.reports.read(cx).heatmap.clone()).unwrap()[0].0;
+    click(cx, leak(format!("heat-{first}")));
+    wait_io(cx);
+    assert_eq!(app.read_with(cx, |a, cx| a.reports.read(cx).anchor), first);
+}
+
+#[test]
+fn heatmap_levels_by_hours() {
+    use crate::reports::heatmap::level;
+    assert_eq!([level(0), level(1), level(119), level(120), level(239), level(240), level(359), level(360), level(600)], [0, 1, 1, 2, 2, 3, 3, 4, 4]);
+}

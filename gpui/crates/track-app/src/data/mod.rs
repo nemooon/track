@@ -305,6 +305,12 @@ impl DataClient {
         track_core::config::load_config(&self.data_dir).app_config()
     }
 
+    /// Minutes per day around the query's period (`track_core::reports::heatmap_range`).
+    pub fn heatmap(&self, q: &ReportQuery) -> impl Future<Output = DataResult<Vec<(chrono::NaiveDate, i64)>>> + Send + 'static {
+        let q = q.clone();
+        self.call("heatmap", move |db| db.heatmap(&q))
+    }
+
     pub fn report(&self, q: &ReportQuery) -> impl Future<Output = DataResult<ReportResponse>> + Send + 'static {
         let q = q.clone();
         self.call("report", move |db| db.report(&q))
