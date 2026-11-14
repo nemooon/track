@@ -235,6 +235,11 @@ impl DataClient {
         self.call("update_project", move |db| db.update_project(&id, patch))
     }
 
+    /// Refused (`project_has_entries`) while any entry uses the project.
+    pub fn delete_project(&self, id: String) -> impl Future<Output = DataResult<()>> + Send + 'static {
+        self.call("delete_project", move |db| db.delete_project(&id))
+    }
+
     pub fn create_tag(&self, name: String, color: String) -> impl Future<Output = DataResult<String>> + Send + 'static {
         self.call("create_tag", move |db| db.create_tag(&name, &color))
     }

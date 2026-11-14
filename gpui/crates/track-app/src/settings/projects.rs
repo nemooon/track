@@ -1,7 +1,8 @@
 //! 「プロジェクト」: clients with their projects in one list (left) and the selected project's form
 //! (right). Changes save at once: colour, client and archive on click, the name on Enter or when
 //! the field loses focus. A client is renamed in the list (double-click) and archived with the icon
-//! beside its ＋. Clients and projects are archived, never deleted (like the Tauri screen).
+//! beside its ＋. A project without entries can be deleted (after a confirmation); one with entries
+//! is archived instead. Clients are only archived.
 use crate::app::AppState;
 use crate::data::{DataClient, DataResult};
 use crate::ui::theme::*;
@@ -78,6 +79,8 @@ pub struct ProjectSettings {
     pub client_edit: Option<(String, Entity<InputState>)>,
     /// A client just added: rename it once it has been read.
     rename_next: Option<String>,
+    /// The project waiting for 「プロジェクトを削除」 to be confirmed.
+    confirm_delete: Option<String>,
 }
 
 fn api(state: &Entity<AppState>, cx: &gpui::App) -> DataClient {
@@ -110,6 +113,7 @@ impl ProjectSettings {
             reloads: 0,
             client_edit: None,
             rename_next: None,
+            confirm_delete: None,
         };
         s.reload(cx);
         s
@@ -188,6 +192,7 @@ impl ProjectSettings {
         self.commit_name(window, cx);
         self.cancel_client_edit(cx);
         self.save_pending_color(cx);
+        self.confirm_delete = None;
         self.selected = Some(s);
         self.error = None;
         cx.notify();
@@ -637,7 +642,23 @@ impl ProjectSettings {
                     .child(line("クライアント", client))
                     .child(line("色", swatches.into_any_element()))
                     .child(line("タグ", self.render_tag_chips(&pj, p, cx)))
-                    .child(div().mt_4().child(archive_button(pj.archived, !(pj.archived && client_archived), (pj.archived && client_archived).then_some("クライアントのアーカイブを先に戻してください"), cx)))
+                    .child(
+                        div()
+                            .mt_4()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(archive_button(pj.archived, !(pj.archived && client_archived), (pj.archived && client_archived).then_some("クライアントのアーカイブを先に戻してください"), cx))
+                            .child(
+                                super::form::button_with_icon(p, "detail-delete", Icon::new(IconName::Delete), "削除", false, true)
+                                    .text_color(p.danger)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.confirm_delete = Some(id.clone());
+                                        cx.notify();
+                                    })),
+                            ),
+                    )
+                    .children(self.confirm_delete.as_ref().filter(|d| **d == pj.id).map(|_| self.render_delete_confirm(&pj, p, cx)))
                     .children(error)
                     .into_any_element()
             }
@@ -682,6 +703,39 @@ impl ProjectSettings {
                     .on_click(cx.listener(move |this, _, _, cx| this.toggle_tag(&pid, &tid, cx)))
             }))
             .into_any_element()
+    }
+
+    /// 「プロジェクトを削除しますか？」 under the buttons. Projects with entries are refused by the
+    /// core, and the error says to archive instead.
+    fn render_delete_confirm(&self, pj: &Project, p: Palette, cx: &mut Context<Self>) -> Div {
+        let id = pj.id.clone();
+        div()
+            .mt_3()
+            .p_4()
+            .rounded_lg()
+            .border_1()
+            .border_color(p.danger_border)
+            .bg(p.danger_bg)
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child(div().text_sm().font_weight(FontWeight::SEMIBOLD).child("プロジェクトを削除しますか？"))
+            .child(div().text_xs().text_color(p.text).child(format!("「{}」を削除します。元に戻せません。工数が登録されているプロジェクトは削除できないので、アーカイブしてください。", pj.name)))
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(super::form::button(p, "detail-delete-cancel", "キャンセル", false, true).on_click(cx.listener(|this, _, _, cx| {
+                        this.confirm_delete = None;
+                        cx.notify();
+                    })))
+                    .child(super::form::button(p, "detail-delete-confirm", "プロジェクトを削除", true, true).on_click(cx.listener(move |this, _, _, cx| {
+                        this.confirm_delete = None;
+                        let api = api(&this.state, cx);
+                        this.write(api.delete_project(id.clone()), cx)
+                    }))),
+            )
     }
 
     fn toggle_archive(&mut self, cx: &mut Context<Self>) {

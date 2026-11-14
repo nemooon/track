@@ -736,6 +736,35 @@ fn tags_toggle_on_the_project_and_save(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn deleting_a_project_asks_first(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, _p) = projects_section(cx);
+    click(&mut scx, "tree-project-p2");
+    click(&mut scx, "detail-delete");
+    assert!(f.db().project("p2").is_ok(), "nothing is deleted before confirming");
+    click(&mut scx, "detail-delete-cancel");
+    assert!(scx.debug_bounds("detail-delete-confirm").is_none());
+    click(&mut scx, "detail-delete");
+    click(&mut scx, "detail-delete-confirm");
+    wait_io(&mut scx);
+    assert!(f.db().project("p2").is_err());
+    assert!(scx.debug_bounds("tree-project-p2").is_none(), "gone from the list");
+}
+
+#[gpui::test]
+fn a_project_with_entries_is_not_deleted(cx: &mut TestAppContext) {
+    use crate::testing::{insert_entry, local, visible_weekday};
+    let day = visible_weekday();
+    let (_app, cx, f) = open_app_db(cx, move |db| insert_entry(db, "e1", local(day, 9, 0), local(day, 10, 0), Some("p1"), "作業"));
+    let (mut scx, _p) = projects_section(cx);
+    click(&mut scx, "detail-delete");
+    click(&mut scx, "detail-delete-confirm");
+    wait_io(&mut scx);
+    assert!(f.db().project("p1").is_ok());
+    assert!(scx.debug_bounds("detail-error").is_some(), "says to archive instead");
+}
+
+#[gpui::test]
 fn empty_name_is_not_saved(cx: &mut TestAppContext) {
     let (_app, cx, f) = open_app_db(cx, |_| {});
     let (mut scx, p) = projects_section(cx);
