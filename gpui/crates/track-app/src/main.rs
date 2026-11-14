@@ -18,7 +18,7 @@ mod reports_tests;
 #[cfg(test)]
 mod settings_tests;
 
-use gpui::{App, AppContext, Bounds, Point, TitlebarOptions, WindowBounds, WindowOptions, px, size};
+use gpui::{App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions, px, size};
 use gpui_component::Root;
 
 fn main() {
@@ -40,7 +40,7 @@ fn main() {
                 titlebar: Some(TitlebarOptions {
                     title: Some("Track (GPUI)".into()),
                     appears_transparent: true,
-                    traffic_light_position: Some(Point::new(px(14.), px(14.))),
+                    traffic_light_position: Some(crate::ui::theme::traffic_light_position()),
                 }),
                 window_min_size: Some(size(px(360.), px(480.))),
                 ..Default::default()

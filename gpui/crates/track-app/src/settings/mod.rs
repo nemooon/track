@@ -202,7 +202,7 @@ pub fn open_settings(state: Entity<AppState>, cx: &mut App) {
     let opened = cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
-            titlebar: Some(TitlebarOptions { title: Some("設定".into()), appears_transparent: true, traffic_light_position: Some(gpui::Point::new(px(14.), px(14.))) }),
+            titlebar: Some(TitlebarOptions { title: Some("設定".into()), appears_transparent: true, traffic_light_position: Some(crate::ui::theme::traffic_light_position()) }),
             window_min_size: Some(size(px(640.), px(420.))),
             ..Default::default()
         },

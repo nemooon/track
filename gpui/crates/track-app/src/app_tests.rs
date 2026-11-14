@@ -349,3 +349,10 @@ fn failed_undo_keeps_the_summary_next_to_the_reason(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("ai-op-error").is_some(), "the reason is shown");
     assert!(cx.debug_bounds("ai-op-summary").is_some(), "and which change it was");
 }
+
+/// Zed's (and gpui-component's) title bar: 34px, traffic lights at (9, 9).
+#[gpui::test]
+fn header_is_as_tall_as_zeds_title_bar(cx: &mut TestAppContext) {
+    let (_app, cx) = open_app(cx);
+    assert_eq!(cx.debug_bounds("app-header").expect("header").size.height, gpui::px(34.));
+}

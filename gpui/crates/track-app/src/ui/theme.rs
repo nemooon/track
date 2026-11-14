@@ -24,6 +24,13 @@ pub fn with_alpha(c: impl Into<Rgba>, a: f32) -> Hsla {
 
 pub const NO_PROJECT: &str = "#9ca3af";
 
+/// Zed's title bar (also gpui-component's `TITLE_BAR_HEIGHT`).
+pub const TITLE_BAR_HEIGHT: gpui::Pixels = gpui::px(34.);
+/// Where macOS draws the traffic lights so they sit centred in that bar, as in Zed.
+pub fn traffic_light_position() -> gpui::Point<gpui::Pixels> {
+    gpui::point(gpui::px(9.), gpui::px(9.))
+}
+
 /// Numbers (durations, shares, clock times) use a fixed-width face, like Zed.
 pub const MONO: &str = "Menlo";
 
