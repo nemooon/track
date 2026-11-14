@@ -3,15 +3,13 @@ use crate::dates::{month_range, week_range};
 use crate::error::Result;
 use crate::model::*;
 use crate::Db;
-use chrono::{DateTime, Local, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Local, Utc};
 use std::collections::HashMap;
 
 const NONE: &str = "__none__";
 const NONE_COLOR: &str = "#9ca3af";
 
-fn local_midnight(d: NaiveDate) -> DateTime<Utc> {
-    Local.from_local_datetime(&d.and_hms_opt(0, 0, 0).unwrap()).earliest().unwrap().to_utc()
-}
+use crate::dates::local_midnight;
 
 /// [from, to) for the query's week (Sunday start) or month, in local time.
 pub fn query_range(q: &ReportQuery) -> (DateTime<Utc>, DateTime<Utc>) {
@@ -62,7 +60,7 @@ fn matches(e: &TimeEntry, q: &ReportQuery) -> bool {
 }
 
 /// Minutes inside [from, to) minus the prorated break.
-fn visible_minutes(e: &TimeEntry, from: DateTime<Utc>, to: DateTime<Utc>) -> i64 {
+pub(crate) fn visible_minutes(e: &TimeEntry, from: DateTime<Utc>, to: DateTime<Utc>) -> i64 {
     let s = e.start.max(from);
     let en = e.end.min(to);
     let vis_ms = (en - s).num_milliseconds() as f64;

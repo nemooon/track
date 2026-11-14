@@ -4,7 +4,7 @@
 use crate::app::AppState;
 use crate::data::{DataClient, DataResult};
 use crate::ui::theme::*;
-use chrono::{Datelike, Local, NaiveDate, TimeZone};
+use chrono::{Datelike, Local, NaiveDate};
 use gpui::{
     AnyElement, AppContext, Context, Div, Entity, Focusable, FontWeight, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px,
@@ -48,6 +48,8 @@ pub struct ProjectSettings {
     revert_name: bool,
     show_archived: bool,
     loaded: bool,
+    /// Finished re-reads (tests check that a save reads once).
+    pub reloads: usize,
 }
 
 fn api(state: &Entity<AppState>, cx: &gpui::App) -> DataClient {
@@ -59,8 +61,7 @@ fn month_bounds() -> (chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Ut
     let today = Local::now().date_naive();
     let first = NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap();
     let next = if today.month() == 12 { NaiveDate::from_ymd_opt(today.year() + 1, 1, 1) } else { NaiveDate::from_ymd_opt(today.year(), today.month() + 1, 1) }.unwrap();
-    let at = |d: NaiveDate| Local.from_local_datetime(&d.and_hms_opt(0, 0, 0).unwrap()).earliest().unwrap().to_utc();
-    (at(first), at(next))
+    (track_core::dates::local_midnight(first), track_core::dates::local_midnight(next))
 }
 
 fn hours(minutes: i64) -> String {
@@ -92,6 +93,7 @@ impl ProjectSettings {
             revert_name: false,
             show_archived: false,
             loaded: false,
+            reloads: 0,
         };
         s.reload(cx);
         s
@@ -133,6 +135,7 @@ impl ProjectSettings {
                     }
                     Err(e) => this.error = Some(e.message),
                 }
+                this.reloads += 1;
                 cx.notify();
             });
         })
@@ -142,23 +145,30 @@ impl ProjectSettings {
     /// Runs a write. Success clears the error and refreshes the main window; failure shows the
     /// message. Either way the lists are re-read, so the details show what is saved.
     fn write<T: Send + 'static>(&mut self, fut: impl Future<Output = DataResult<T>> + Send + 'static, cx: &mut Context<Self>) {
+        self.write_with(fut, false, cx)
+    }
+
+    /// `name_save`: a failed save puts the saved name back in the field (other failures leave
+    /// what is being typed alone).
+    fn write_with<T: Send + 'static>(&mut self, fut: impl Future<Output = DataResult<T>> + Send + 'static, name_save: bool, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             let result = fut.await;
             let _ = this.update(cx, |this, cx| {
                 match result {
+                    // The refresh re-reads this page too (StateEvent).
                     Ok(_) => {
                         this.error = None;
                         this.state.update(cx, |s, cx| s.refresh_all(cx));
                     }
                     Err(e) => {
-                        this.revert_name = true;
+                        this.revert_name = name_save;
+                        this.reload(cx);
                         this.error = Some(match e.code.as_str() {
                             "invalid_input" => "名前は100文字以内で入力してください".to_string(),
                             _ => e.message,
                         })
                     }
                 }
-                this.reload(cx);
                 cx.notify();
             });
         })
@@ -223,9 +233,12 @@ impl ProjectSettings {
                         this.error = None;
                         this.state.update(cx, |s, cx| s.refresh_all(cx));
                     }
-                    Err(e) => this.error = Some(e.message),
+                    // On success the refresh re-reads this page (StateEvent).
+                    Err(e) => {
+                        this.error = Some(e.message);
+                        this.reload(cx);
+                    }
                 }
-                this.reload(cx);
                 cx.notify();
             });
         })
@@ -252,8 +265,8 @@ impl ProjectSettings {
         }
         let api = api(&self.state, cx);
         match sel {
-            Selection::Project(id) => self.write(api.update_project(id, ProjectPatch { name: Some(value), ..Default::default() }), cx),
-            Selection::Client(id) => self.write(api.update_client(id, ClientPatch { name: Some(value), ..Default::default() }), cx),
+            Selection::Project(id) => self.write_with(api.update_project(id, ProjectPatch { name: Some(value), ..Default::default() }), true, cx),
+            Selection::Client(id) => self.write_with(api.update_client(id, ClientPatch { name: Some(value), ..Default::default() }), true, cx),
         }
     }
 
@@ -270,7 +283,11 @@ impl ProjectSettings {
             (self.name, self.name_for, self.picker, self.picker_for) = (None, None, None, None);
             return;
         };
-        let saved = self.saved_name().unwrap_or_default();
+        // Just added and not read yet: no field until there is a saved name to show.
+        let Some(saved) = self.saved_name() else {
+            (self.name, self.name_for) = (None, None);
+            return;
+        };
         if self.name_for.as_ref() != Some(&sel) || self.name.is_none() {
             let input = cx.new(|cx| InputState::new(window, cx).placeholder("名前").default_value(saved.clone()));
             cx.subscribe_in(&input, window, |this, _, ev: &InputEvent, window, cx| {
@@ -318,6 +335,13 @@ impl ProjectSettings {
                     })
                     .detach();
                     (self.picker, self.picker_for) = (Some(picker), Some(id.clone()));
+                } else if let (Some(picker), Some(pj)) = (self.picker.clone(), self.project(id)) {
+                    // Follow a preset click or an outside change, but not while picking.
+                    let (open, shown) = picker.read_with(cx, |s, _| (s.is_open(), s.value().map(to_hex)));
+                    let color = pj.color.to_lowercase();
+                    if !open && self.pending_color.is_none() && shown.as_deref() != Some(color.as_str()) {
+                        picker.update(cx, |s, cx| s.set_value(hex(&color), window, cx));
+                    }
                 }
             }
             Selection::Client(_) => (self.picker, self.picker_for) = (None, None),
@@ -353,6 +377,7 @@ impl ProjectSettings {
             let on = self.selected == Some(Selection::Client(id.clone()));
             let add_sel = format!("tree-client-add-{}", c.id);
             let add_sel2 = add_sel.clone();
+            let archived = c.archived;
             div()
                 .flex()
                 .flex_col()
@@ -360,7 +385,8 @@ impl ProjectSettings {
                     row(format!("tree-client-{}", c.id), on)
                         .mt_2()
                         .child(div().flex_1().min_w_0().truncate().text_xs().font_weight(FontWeight::SEMIBOLD).text_color(p.text_muted).child(c.name.clone()))
-                        .child(
+                        // An archived client takes no new projects.
+                        .when(!archived, |d| d.child(
                             div()
                                 .id(SharedString::from(add_sel))
                                 .debug_selector(move || add_sel2.clone())
@@ -373,7 +399,7 @@ impl ProjectSettings {
                                     cx.stop_propagation();
                                     this.add_project(add_id.clone(), cx)
                                 })),
-                        )
+                        ))
                         .on_click(cx.listener(move |this, _, window, cx| this.select(Selection::Client(id.clone()), window, cx))),
                 )
                 .children(projects.into_iter().map(|pj| project_row(pj, cx)))

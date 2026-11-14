@@ -1,5 +1,5 @@
 use super::time::{DAY_MINUTES, SNAP_MIN};
-use chrono::{DateTime, Local, NaiveDate, TimeZone};
+use chrono::{DateTime, Local, NaiveDate};
 
 /// Hatched buffer above 0:00 and below 24:00.
 pub const BUFFER_PX: f32 = 32.;
@@ -28,7 +28,7 @@ pub fn minutes_of_day(t: DateTime<Local>, day: NaiveDate) -> i64 {
 }
 
 pub fn at_minutes(day: NaiveDate, minutes: i64) -> DateTime<Local> {
-    let midnight = Local.from_local_datetime(&day.and_hms_opt(0, 0, 0).unwrap()).earliest().unwrap();
+    let midnight = track_core::dates::local_at(day.and_hms_opt(0, 0, 0).unwrap());
     midnight + chrono::Duration::minutes(minutes)
 }
 

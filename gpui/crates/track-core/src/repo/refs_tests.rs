@@ -134,3 +134,23 @@ fn project_activity_sums_the_range_and_finds_the_last_entry() {
     assert_eq!((get(&p1).minutes, get(&p1).last_start), (45, Some(local(12, 10, 0))));
     assert_eq!((get(&p2).minutes, get(&p2).last_start), (0, None), "projects without entries are listed too");
 }
+
+#[test]
+fn project_activity_clips_entries_at_the_month_edge_like_reports() {
+    use chrono::{Local, TimeZone};
+    let (_d, mut db) = db();
+    let (p1, _, _) = seed(&mut db);
+    let start = Local.with_ymd_and_hms(2026, 10, 31, 23, 0, 0).unwrap().to_utc();
+    let end = Local.with_ymd_and_hms(2026, 11, 1, 2, 0, 0).unwrap().to_utc();
+    // The app keeps entries within one day; older or imported data may not.
+    let now = crate::time::now_db();
+    db.conn().execute(
+        r#"INSERT INTO "TimeEntry"(id, projectId, start, "end", title, breakMinutes, createdAt, updatedAt) VALUES ('edge', ?1, ?2, ?3, 'x', 30, ?4, ?4)"#,
+        rusqlite::params![p1, crate::time::to_db(start), crate::time::to_db(end), now],
+    ).unwrap();
+    let nov = Local.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap().to_utc();
+    let dec = Local.with_ymd_and_hms(2026, 12, 1, 0, 0, 0).unwrap().to_utc();
+    let a = db.project_activity(nov, dec).unwrap().into_iter().find(|a| a.project_id == p1).unwrap();
+    // 2h inside November, minus 2/3 of the 30-minute break.
+    assert_eq!(a.minutes, 100);
+}

@@ -764,6 +764,69 @@ fn picker_saves_when_closed_not_while_dragging(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn name_field_waits_for_the_selected_item(cx: &mut TestAppContext) {
+    use crate::settings::projects::Selection;
+    let (_app, cx, _f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    // Just added: selected before the re-read that brings it in.
+    p.update(&mut scx, |p, cx| {
+        p.selected = Some(Selection::Project("not-yet-read".into()));
+        cx.notify();
+    });
+    scx.run_until_parked();
+    assert!(p.read_with(&scx, |p, _| p.name.is_none()), "no empty field before the item is read");
+}
+
+#[gpui::test]
+fn failed_colour_save_keeps_the_typed_name(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    let input = p.read_with(&scx, |p, _| p.name.clone().expect("name field"));
+    scx.update(|w, cx| input.update(cx, |i, cx| {
+        i.focus(w, cx);
+        i.set_value("入力途中".to_string(), w, cx)
+    }));
+    f.data.fail_ops(&["update_project"]);
+    click(&mut scx, "detail-color-3");
+    wait_io(&mut scx);
+    assert!(scx.debug_bounds("detail-error").is_some());
+    assert_eq!(name_value(&mut scx, &p), "入力途中");
+}
+
+#[gpui::test]
+fn archived_client_has_no_add_button(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = open_app_db(cx, |db| {
+        db.conn().execute(r#"INSERT INTO "Client"(id, name, archived, createdAt) VALUES ('c2', 'Old', 1, '2026-11-01T00:00:00.000+00:00')"#, []).unwrap();
+        db.conn().execute(r##"INSERT INTO "Project"(id, clientId, name, color, archived, createdAt) VALUES ('p3', 'c2', 'Gone', '#3b82f6', 1, '2026-11-01T00:00:00.000+00:00')"##, []).unwrap();
+    });
+    let (mut scx, _p) = projects_section(cx);
+    click(&mut scx, "tree-archived");
+    assert!(scx.debug_bounds("tree-client-c2").is_some(), "the archived client is listed");
+    assert!(scx.debug_bounds("tree-client-add-c2").is_none());
+}
+
+#[gpui::test]
+fn picker_follows_a_preset_colour(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    click(&mut scx, "detail-color-3");
+    wait_io(&mut scx);
+    let picker = p.read_with(&scx, |s, _| s.picker.clone()).expect("picker state");
+    let v = picker.read_with(&scx, |s, _| s.value()).expect("a colour");
+    assert_eq!(crate::ui::theme::to_hex(v), track_core::edit::PROJECT_COLORS[3]);
+}
+
+#[gpui::test]
+fn a_save_reads_once(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    let before = p.read_with(&scx, |p, _| p.reloads);
+    click(&mut scx, "detail-color-3");
+    wait_io(&mut scx);
+    assert_eq!(p.read_with(&scx, |p, _| p.reloads) - before, 1);
+}
+
+#[gpui::test]
 fn activity_shows_month_and_last_entry(cx: &mut TestAppContext) {
     use crate::testing::{insert_entry, local, visible_weekday};
     let day = visible_weekday();

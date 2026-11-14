@@ -3,7 +3,7 @@ use super::picker::{project_list, tag_chip};
 use track_core::model::{EntryPatch, Project, Tag, TimeEntry};
 use crate::core::picking::{locked_tag_ids, merged_tag_ids};
 use crate::ui::theme::*;
-use chrono::{DateTime, Local, NaiveTime, TimeZone, Timelike, Utc};
+use chrono::{DateTime, Local, NaiveTime, Timelike, Utc};
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
     ParentElement, Render, StatefulInteractiveElement, Styled, Subscription, Window, anchored, deferred, div, prelude::FluentBuilder, px,
@@ -45,7 +45,7 @@ pub fn edited_span(entry_start: DateTime<Utc>, start: NaiveTime, end: NaiveTime)
     let day = entry_start.with_timezone(&Local).date_naive();
     let local = |d: chrono::NaiveDate, t: NaiveTime| {
         let t = NaiveTime::from_hms_opt(t.hour(), t.minute(), 0).unwrap();
-        Local.from_local_datetime(&d.and_time(t)).earliest().unwrap().to_utc()
+        track_core::dates::local_at(d.and_time(t)).to_utc()
     };
     let end_day = if end.hour() == 0 && end.minute() == 0 { day.succ_opt().unwrap_or(day) } else { day };
     (local(day, start), local(end_day, end))
@@ -303,6 +303,7 @@ impl Render for EditForm {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
 
     fn at(d: u32, h: u32, m: u32) -> DateTime<Utc> {
         Local.with_ymd_and_hms(2026, 11, d, h, m, 0).unwrap().to_utc()
