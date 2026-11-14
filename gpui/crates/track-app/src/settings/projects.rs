@@ -15,7 +15,7 @@ use gpui_component::searchable_list::SearchableListItem;
 use gpui_component::select::{Select, SelectEvent, SelectState};
 use gpui_component::{Icon, IconName, IndexPath, Sizable};
 use std::future::Future;
-use track_core::model::{Client, ClientPatch, Project, ProjectPatch};
+use track_core::model::{Client, ClientPatch, Project, ProjectPatch, Tag};
 
 /// The project colours (shared with track-cli).
 pub use track_core::edit::PROJECT_COLORS as COLORS;
@@ -50,6 +50,7 @@ pub struct ProjectSettings {
     state: Entity<AppState>,
     pub clients: Vec<Client>,
     pub projects: Vec<Project>,
+    pub tags: Vec<Tag>,
     pub selected: Option<Selection>,
     /// The name field of the selected item, and which item it was made for.
     pub name: Option<Entity<InputState>>,
@@ -91,6 +92,7 @@ impl ProjectSettings {
             state,
             clients: vec![],
             projects: vec![],
+            tags: vec![],
             selected: None,
             name: None,
             name_for: None,
@@ -113,16 +115,16 @@ impl ProjectSettings {
         s
     }
 
-    /// Re-reads clients and projects (archived included), keeping the selection by id.
+    /// Re-reads clients, projects (archived included) and tags, keeping the selection by id.
     pub fn reload(&mut self, cx: &mut Context<Self>) {
         let api = api(&self.state, cx);
-        let (c, p) = (api.clients(), api.projects_all());
+        let (c, p, t) = (api.clients(), api.projects_all(), api.tags());
         cx.spawn(async move |this, cx| {
-            let result = async { Ok::<_, crate::data::DataError>((c.await?, p.await?)) }.await;
+            let result = async { Ok::<_, crate::data::DataError>((c.await?, p.await?, t.await?)) }.await;
             let _ = this.update(cx, |this, cx| {
                 match result {
-                    Ok((c, p)) => {
-                        (this.clients, this.projects) = (c, p);
+                    Ok((c, p, t)) => {
+                        (this.clients, this.projects, this.tags) = (c, p, t);
                         if !this.loaded {
                             this.loaded = true;
                             if this.selected.is_none() {
@@ -416,6 +418,20 @@ impl ProjectSettings {
         }
     }
 
+    /// Adds or removes a tag on the project; saves at once.
+    fn toggle_tag(&mut self, project_id: &str, tag_id: &str, cx: &mut Context<Self>) {
+        let Some(pj) = self.project(project_id) else { return };
+        let mut ids: Vec<String> = pj.tags.iter().map(|t| t.tag_id.clone()).collect();
+        match ids.iter().position(|x| x == tag_id) {
+            Some(i) => {
+                ids.remove(i);
+            }
+            None => ids.push(tag_id.to_string()),
+        }
+        let api = api(&self.state, cx);
+        self.write(api.update_project(project_id.to_string(), ProjectPatch { tag_ids: Some(ids), ..Default::default() }), cx);
+    }
+
     fn toggle_client_archive(&mut self, id: &str, cx: &mut Context<Self>) {
         let Some(archived) = self.client(id).map(|c| c.archived) else { return };
         let api = api(&self.state, cx);
@@ -620,6 +636,7 @@ impl ProjectSettings {
                     .child(line("名前", name_field))
                     .child(line("クライアント", client))
                     .child(line("色", swatches.into_any_element()))
+                    .child(line("タグ", self.render_tag_chips(&pj, p, cx)))
                     .child(div().mt_4().child(archive_button(pj.archived, !(pj.archived && client_archived), (pj.archived && client_archived).then_some("クライアントのアーカイブを先に戻してください"), cx)))
                     .children(error)
                     .into_any_element()
@@ -631,6 +648,40 @@ impl ProjectSettings {
                 .child("左からプロジェクトを選ぶか、クライアントの ＋ で追加してください。")
                 .into_any_element(),
         }
+    }
+
+    /// The project's tags as chips (on = filled with the tag colour); a click toggles and saves.
+    fn render_tag_chips(&self, pj: &Project, p: Palette, cx: &mut Context<Self>) -> AnyElement {
+        if self.tags.is_empty() {
+            return div().text_sm().text_color(p.text_faint).child("タグがありません（設定の「タグ」で追加できます）").into_any_element();
+        }
+        div()
+            .flex()
+            .flex_wrap()
+            .gap_2()
+            .children(self.tags.iter().map(|t| {
+                let on = pj.tags.iter().any(|x| x.tag_id == t.id);
+                let (sid, pid, tid) = (format!("detail-tag-{}", t.id), pj.id.clone(), t.id.clone());
+                let sid2 = sid.clone();
+                let c = hex(&t.color);
+                div()
+                    .id(SharedString::from(sid))
+                    .debug_selector(move || sid2.clone())
+                    .flex()
+                    .items_center()
+                    .gap_1p5()
+                    .px_2()
+                    .py_1()
+                    .rounded(px(5.))
+                    .text_sm()
+                    .cursor_pointer()
+                    .border_1()
+                    .map(|d| if on { d.bg(c).border_color(c).text_color(p.on_color) } else { d.border_color(p.border).hover(move |s| s.bg(p.hover)) })
+                    .when(!on, |d| d.child(div().size(px(8.)).rounded_full().bg(c)))
+                    .child(t.name.clone())
+                    .on_click(cx.listener(move |this, _, _, cx| this.toggle_tag(&pid, &tid, cx)))
+            }))
+            .into_any_element()
     }
 
     fn toggle_archive(&mut self, cx: &mut Context<Self>) {

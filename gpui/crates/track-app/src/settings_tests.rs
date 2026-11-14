@@ -722,6 +722,20 @@ fn colour_and_client_save_immediately(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn tags_toggle_on_the_project_and_save(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, _p) = projects_section(cx);
+    let tags = |f: &crate::testing::Fixture| f.db().project("p1").unwrap().tags.iter().map(|t| t.tag_id.clone()).collect::<Vec<_>>();
+    assert_eq!(tags(&f), vec!["t1".to_string()], "the seed tags p1 with t1");
+    click(&mut scx, "detail-tag-t1");
+    wait_io(&mut scx);
+    assert!(tags(&f).is_empty(), "a click removes it");
+    click(&mut scx, "detail-tag-t1");
+    wait_io(&mut scx);
+    assert_eq!(tags(&f), vec!["t1".to_string()], "a second click adds it back");
+}
+
+#[gpui::test]
 fn empty_name_is_not_saved(cx: &mut TestAppContext) {
     let (_app, cx, f) = open_app_db(cx, |_| {});
     let (mut scx, p) = projects_section(cx);
