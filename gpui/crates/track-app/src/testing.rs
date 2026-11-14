@@ -153,7 +153,7 @@ pub fn fake_ai(dir: &Path, text: &str) {
     std::fs::write(&script, "#!/bin/sh\nd=$(dirname \"$0\")\ncat > \"$d/ai-input.txt\"\ncat \"$d/ai-answer.txt\"\n").unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     let config = serde_json::json!({ "aiProvider": "custom-command", "aiCommandExecutable": script });
-    std::fs::write(dir.join("config.json"), config.to_string()).unwrap();
+    std::fs::write(dir.join(track_core::config::FILE), config.to_string()).unwrap();
 }
 
 /// A day the default calendar (稼働日) shows this week: Monday of the current Sunday-start week.

@@ -238,7 +238,7 @@ impl DataClient {
         self.call("update_settings", move |db| db.update_settings(patch))
     }
 
-    /// Saves `config.json` (off the UI thread; the DB is not involved).
+    /// Saves `gpui-config.json` (off the UI thread; the DB is not involved).
     pub fn save_config(&self, patch: track_core::config::ConfigPatch) -> impl Future<Output = DataResult<track_core::config::Config>> + Send + 'static {
         let (dir, root) = (self.data_dir.clone(), self.dev_root.clone());
         self.call("save_config", move |_| track_core::config::save_config_in(&dir, patch, &root))

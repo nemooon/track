@@ -10,6 +10,8 @@ if [ -f "$DST/track.db" ] && [ "${1:-}" != "--force" ]; then
 fi
 mkdir -p "$DST"
 rm -f "$DST/track.db" "$DST/track.db-wal" "$DST/track.db-shm"
+# The GPUI app seeds gpui-config.json from config.json on its next start.
+rm -f "$DST/gpui-config.json"
 # .backup gives a consistent snapshot including WAL contents
 sqlite3 "$SRC/track.db" ".backup '$DST/track.db'"
 if [ -f "$SRC/config.json" ]; then

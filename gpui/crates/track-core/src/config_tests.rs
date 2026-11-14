@@ -2,11 +2,75 @@ use crate::config::*;
 use std::path::Path;
 
 fn write(dir: &Path, v: serde_json::Value) {
-    std::fs::write(dir.join("config.json"), v.to_string()).unwrap();
+    std::fs::write(dir.join(FILE), v.to_string()).unwrap();
 }
 
 fn read(dir: &Path) -> serde_json::Value {
-    serde_json::from_str(&std::fs::read_to_string(dir.join("config.json")).unwrap()).unwrap()
+    serde_json::from_str(&std::fs::read_to_string(dir.join(FILE)).unwrap()).unwrap()
+}
+
+fn write_legacy(dir: &Path, v: serde_json::Value) {
+    std::fs::write(dir.join(LEGACY_FILE), v.to_string()).unwrap();
+}
+
+#[test]
+fn first_load_copies_config_json_into_gpui_config() {
+    let d = tempfile::tempdir().unwrap();
+    let x = d.path().join("x");
+    write_legacy(d.path(), serde_json::json!({"aiProvider": "codex", "backupKeep": 7, "exportDir": x}));
+    let before = std::fs::read_to_string(d.path().join(LEGACY_FILE)).unwrap();
+    migrate_in(d.path(), d.path()).unwrap();
+    let c = load_config(d.path());
+    assert_eq!((c.ai_provider.as_str(), c.backup_keep, c.export_dir.clone()), ("codex", 7, x));
+    assert!(d.path().join(FILE).exists());
+    assert_eq!(std::fs::read_to_string(d.path().join(LEGACY_FILE)).unwrap(), before, "config.json is left alone");
+}
+
+#[test]
+fn migration_drops_export_dir_outside_dev_root() {
+    let d = tempfile::tempdir().unwrap();
+    write_legacy(d.path(), serde_json::json!({"exportDir": "/Users/someone/Library/Mobile Documents/com~apple~CloudDocs/Track"}));
+    migrate_in(d.path(), d.path()).unwrap();
+    assert_eq!(load_config(d.path()).export_dir, d.path().join("exports"));
+}
+
+#[test]
+fn no_files_gives_defaults_and_creates_gpui_config() {
+    let d = tempfile::tempdir().unwrap();
+    migrate_in(d.path(), d.path()).unwrap();
+    assert!(d.path().join(FILE).exists());
+    assert_eq!(load_config(d.path()), Config::defaults(d.path()));
+}
+
+#[test]
+fn broken_gpui_config_is_not_overwritten_by_legacy() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(d.path().join(FILE), "{").unwrap();
+    write_legacy(d.path(), serde_json::json!({"aiProvider": "codex"}));
+    migrate_in(d.path(), d.path()).unwrap();
+    assert_eq!(load_config(d.path()).ai_provider, "apple-intelligence");
+    assert_eq!(std::fs::read_to_string(d.path().join(FILE)).unwrap(), "{");
+}
+
+#[test]
+fn save_writes_only_gpui_config() {
+    let d = tempfile::tempdir().unwrap();
+    write_legacy(d.path(), serde_json::json!({"aiProvider": "custom-command"}));
+    let before = std::fs::read_to_string(d.path().join(LEGACY_FILE)).unwrap();
+    migrate_in(d.path(), d.path()).unwrap();
+    save_config_in(d.path(), ConfigPatch { ai_provider: Some("codex".into()), ..Default::default() }, d.path()).unwrap();
+    assert_eq!(read(d.path())["aiProvider"], "codex");
+    assert_eq!(std::fs::read_to_string(d.path().join(LEGACY_FILE)).unwrap(), before);
+}
+
+#[test]
+fn appearance_round_trips() {
+    let d = tempfile::tempdir().unwrap();
+    save_config_in(d.path(), ConfigPatch { appearance: Some(Appearance::Dark), ..Default::default() }, d.path()).unwrap();
+    assert_eq!(read(d.path())["appearance"], "dark");
+    assert_eq!(load_config(d.path()).appearance, Appearance::Dark);
+    write(d.path(), serde_json::json!({"appearance": "blue"}));
+    assert_eq!(load_config(d.path()).appearance, Appearance::System);
 }
 
 #[test]
@@ -46,7 +110,7 @@ fn save_config_keeps_unknown_keys() {
     for k in ["exportDir", "backupIntervalHours", "aiCodexExecutable", "aiCodexModel", "aiCommandExecutable", "aiCommandArgs"] {
         assert!(v.get(k).is_some(), "{k}");
     }
-    assert!(std::fs::read_to_string(d.path().join("config.json")).unwrap().ends_with("}\n"));
+    assert!(std::fs::read_to_string(d.path().join(FILE)).unwrap().ends_with("}\n"));
 }
 
 #[test]
@@ -54,10 +118,10 @@ fn dev_export_dir_outside_root_is_rejected() {
     let root = tempfile::tempdir().unwrap();
     let outside = tempfile::tempdir().unwrap();
     write(root.path(), serde_json::json!({"backupKeep": 3}));
-    let before = std::fs::read_to_string(root.path().join("config.json")).unwrap();
+    let before = std::fs::read_to_string(root.path().join(FILE)).unwrap();
     let err = save_config_in(root.path(), ConfigPatch { export_dir: Some(outside.path().join("b").to_string_lossy().into()), ..Default::default() }, root.path()).unwrap_err();
     assert_eq!(err.code(), "dev_guard");
-    assert_eq!(std::fs::read_to_string(root.path().join("config.json")).unwrap(), before);
+    assert_eq!(std::fs::read_to_string(root.path().join(FILE)).unwrap(), before);
     assert!(!outside.path().join("b").exists());
     let inside = root.path().join("exports2");
     let c = save_config_in(root.path(), ConfigPatch { export_dir: Some(format!(" {} ", inside.display())), ..Default::default() }, root.path()).unwrap();

@@ -1,11 +1,45 @@
-//! `config.json` in the data directory: backups and AI settings (src/server/config.ts and
-//! src/server/routes/config.ts). The Tauri app reads the same file, so unknown keys are kept.
+//! GPUI-only settings (`gpui-config.json` in the data directory): backups, AI and appearance.
+//! The values and rules are those of the Tauri app's `config.json` (src/server/config.ts), which
+//! is read once to seed this file and never written.
 use crate::error::{CoreError, Result};
 use crate::model::AppConfig;
 use serde_json::{Map, Value};
 use std::path::{Component, Path, PathBuf};
 
 pub const PROVIDERS: [&str; 3] = ["apple-intelligence", "codex", "custom-command"];
+
+/// This app's own settings file.
+pub const FILE: &str = "gpui-config.json";
+/// The Tauri app's file, read only to seed `FILE`.
+pub const LEGACY_FILE: &str = "config.json";
+
+/// Light / dark choice; `System` follows macOS.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Appearance {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl Appearance {
+    pub fn key(self) -> &'static str {
+        match self {
+            Appearance::System => "system",
+            Appearance::Light => "light",
+            Appearance::Dark => "dark",
+        }
+    }
+
+    pub fn from_key(s: &str) -> Option<Self> {
+        match s {
+            "system" => Some(Appearance::System),
+            "light" => Some(Appearance::Light),
+            "dark" => Some(Appearance::Dark),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
@@ -20,6 +54,7 @@ pub struct Config {
     pub ai_codex_model: String,
     pub ai_command_executable: String,
     pub ai_command_args: Vec<String>,
+    pub appearance: Appearance,
 }
 
 impl Config {
@@ -33,6 +68,7 @@ impl Config {
             ai_codex_model: String::new(),
             ai_command_executable: String::new(),
             ai_command_args: vec![],
+            appearance: Appearance::System,
         }
     }
 
@@ -58,21 +94,55 @@ impl Config {
         set("aiCodexModel", Value::String(self.ai_codex_model.clone()));
         set("aiCommandExecutable", Value::String(self.ai_command_executable.clone()));
         set("aiCommandArgs", self.ai_command_args.clone().into());
+        set("appearance", Value::String(self.appearance.key().into()));
     }
 }
 
 fn path_of(data_dir: &Path) -> PathBuf {
-    data_dir.join("config.json")
+    data_dir.join(FILE)
+}
+
+fn read_object_at(path: &Path) -> Map<String, Value> {
+    std::fs::read_to_string(path).ok().and_then(|s| serde_json::from_str::<Value>(&s).ok()).and_then(|v| v.as_object().cloned()).unwrap_or_default()
 }
 
 fn read_object(data_dir: &Path) -> Map<String, Value> {
-    std::fs::read_to_string(path_of(data_dir)).ok().and_then(|s| serde_json::from_str::<Value>(&s).ok()).and_then(|v| v.as_object().cloned()).unwrap_or_default()
+    read_object_at(&path_of(data_dir))
+}
+
+fn write_object(data_dir: &Path, obj: Map<String, Value>) -> Result<()> {
+    std::fs::create_dir_all(data_dir)?;
+    let tmp = data_dir.join(format!(".{FILE}.{}.tmp", std::process::id()));
+    std::fs::write(&tmp, serde_json::to_string_pretty(&Value::Object(obj)).unwrap() + "\n")?;
+    std::fs::rename(&tmp, path_of(data_dir))?;
+    Ok(())
+}
+
+/// Seeds `gpui-config.json` from the Tauri app's `config.json` the first time (or with the
+/// defaults when there is none). Once the file exists — even unreadable — it is left alone.
+/// A backup folder outside `dev_root` is not carried over (the real backups live there).
+pub(crate) fn migrate_in(data_dir: &Path, dev_root: &Path) -> Result<()> {
+    if path_of(data_dir).exists() {
+        return Ok(());
+    }
+    let mut c = normalize(data_dir, read_object_at(&data_dir.join(LEGACY_FILE)));
+    if !within(&c.export_dir, dev_root) {
+        c.export_dir = Config::defaults(data_dir).export_dir;
+    }
+    let mut obj = Map::new();
+    c.write_into(&mut obj);
+    write_object(data_dir, obj)
+}
+
+/// Reads `gpui-config.json` (seeding it on first use), normalised like `loadConfig`.
+pub fn load_config(data_dir: &Path) -> Config {
+    let _ = migrate_in(data_dir, &crate::guard::allowed_root());
+    normalize(data_dir, read_object(data_dir))
 }
 
 /// Same normalisation as `loadConfig` (without the `TRACK_EXPORT_DIR` override).
-pub fn load_config(data_dir: &Path) -> Config {
+fn normalize(data_dir: &Path, v: Map<String, Value>) -> Config {
     let base = Config::defaults(data_dir);
-    let v = read_object(data_dir);
     let s = |k: &str| v.get(k).and_then(Value::as_str).map(|s| s.trim().to_string());
     let n = |k: &str| v.get(k).and_then(Value::as_f64);
     Config {
@@ -88,6 +158,7 @@ pub fn load_config(data_dir: &Path) -> Config {
             .and_then(Value::as_array)
             .map(|a| a.iter().filter_map(Value::as_str).map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect())
             .unwrap_or_default(),
+        appearance: v.get("appearance").and_then(Value::as_str).and_then(Appearance::from_key).unwrap_or_default(),
     }
 }
 
@@ -102,6 +173,7 @@ pub struct ConfigPatch {
     pub ai_codex_model: Option<String>,
     pub ai_command_executable: Option<String>,
     pub ai_command_args: Option<Vec<String>>,
+    pub appearance: Option<Appearance>,
 }
 
 fn invalid(message: &str) -> CoreError {
@@ -137,7 +209,11 @@ pub fn save_config(data_dir: &Path, patch: ConfigPatch) -> Result<Config> {
 /// Validates like `updateSchema`, checks the backup folder is writable, then merges into the
 /// existing JSON so keys this version does not know survive.
 pub fn save_config_in(data_dir: &Path, patch: ConfigPatch, dev_root: &Path) -> Result<Config> {
-    let mut next = load_config(data_dir);
+    let _ = migrate_in(data_dir, dev_root);
+    let mut next = normalize(data_dir, read_object(data_dir));
+    if let Some(a) = patch.appearance {
+        next.appearance = a;
+    }
     if let Some(h) = patch.backup_interval_hours {
         if !(0..=24 * 30).contains(&h) {
             return Err(invalid("実行間隔は0〜720時間です。"));
@@ -200,10 +276,7 @@ pub fn save_config_in(data_dir: &Path, patch: ConfigPatch, dev_root: &Path) -> R
     }
     let mut obj = read_object(data_dir);
     next.write_into(&mut obj);
-    std::fs::create_dir_all(data_dir)?;
-    let tmp = data_dir.join(format!(".config.json.{}.tmp", std::process::id()));
-    std::fs::write(&tmp, serde_json::to_string_pretty(&Value::Object(obj)).unwrap() + "\n")?;
-    std::fs::rename(&tmp, path_of(data_dir))?;
+    write_object(data_dir, obj)?;
     Ok(next)
 }
 

@@ -360,13 +360,13 @@ fn ai_section(cx: &mut VisualTestContext) -> (VisualTestContext, Entity<crate::s
 }
 
 fn config_json(f: &crate::testing::Fixture) -> serde_json::Value {
-    serde_json::from_str(&std::fs::read_to_string(f.dir.join("config.json")).unwrap()).unwrap()
+    serde_json::from_str(&std::fs::read_to_string(f.dir.join(track_core::config::FILE)).unwrap()).unwrap()
 }
 
 #[gpui::test]
 fn switch_provider_and_save_config(cx: &mut TestAppContext) {
     let (app, cx, f) = open_app_db(cx, |_| {});
-    std::fs::write(f.dir.join("config.json"), r#"{"futureKey":1}"#).unwrap();
+    std::fs::write(f.dir.join(track_core::config::FILE), r#"{"futureKey":1}"#).unwrap();
     let (mut scx, a) = ai_section(cx);
     click(&mut scx, "ai-provider-custom-command");
     let (exe, args) = a.read_with(&scx, |a, _| (a.command_executable.clone(), a.command_args.clone()));
@@ -392,13 +392,13 @@ fn custom_command_requires_executable(cx: &mut TestAppContext) {
     assert!(scx.debug_bounds("ai-error").is_some(), "実行するコマンドを指定してください");
     click(&mut scx, "ai-save");
     wait_io(&mut scx);
-    assert!(!f.dir.join("config.json").exists() || config_json(&f)["aiProvider"] != "custom-command");
+    assert!(!f.dir.join(track_core::config::FILE).exists() || config_json(&f)["aiProvider"] != "custom-command");
 }
 
 #[gpui::test]
 fn status_reflects_saved_config(cx: &mut TestAppContext) {
     let (_app, cx, f) = open_app_db(cx, |_| {});
-    std::fs::write(f.dir.join("config.json"), r#"{"aiProvider":"custom-command","aiCommandExecutable":"/bin/cat"}"#).unwrap();
+    std::fs::write(f.dir.join(track_core::config::FILE), r#"{"aiProvider":"custom-command","aiCommandExecutable":"/bin/cat"}"#).unwrap();
     let (mut scx, a) = ai_section(cx);
     wait_io(&mut scx);
     let status = a.read_with(&scx, |a, _| a.status.clone()).expect("status loaded");
@@ -418,7 +418,7 @@ fn codex_model_candidates_fill_the_model(cx: &mut TestAppContext) {
     )
     .unwrap();
     std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
-    std::fs::write(f.dir.join("config.json"), serde_json::json!({"aiProvider": "codex", "aiCodexExecutable": exe}).to_string()).unwrap();
+    std::fs::write(f.dir.join(track_core::config::FILE), serde_json::json!({"aiProvider": "codex", "aiCodexExecutable": exe}).to_string()).unwrap();
     let (mut scx, a) = ai_section(cx);
     for _ in 0..5 {
         wait_io(&mut scx);
@@ -487,7 +487,7 @@ fn export_dir_outside_dev_root_shows_error(cx: &mut TestAppContext) {
     wait_io(&mut scx);
     assert!(scx.debug_bounds("backup-error").is_some());
     assert!(!outside.path().join("bk").exists());
-    assert!(!f.dir.join("config.json").exists() || !std::fs::read_to_string(f.dir.join("config.json")).unwrap().contains("bk"));
+    assert!(!f.dir.join(track_core::config::FILE).exists() || !std::fs::read_to_string(f.dir.join(track_core::config::FILE)).unwrap().contains("bk"));
 }
 
 #[gpui::test]
