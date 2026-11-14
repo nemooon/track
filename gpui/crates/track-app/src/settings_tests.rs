@@ -611,16 +611,52 @@ fn add_project_under_a_client_selects_it_and_saves_a_name_on_enter(cx: &mut Test
 }
 
 #[gpui::test]
-fn add_client_selects_it(cx: &mut TestAppContext) {
-    use crate::settings::projects::Selection;
+fn add_client_starts_editing_its_name(cx: &mut TestAppContext) {
     let (_app, cx, f) = open_app_db(cx, |_| {});
     let (mut scx, p) = projects_section(cx);
     click(&mut scx, "tree-add-client");
     wait_io(&mut scx);
-    let Some(Selection::Client(id)) = selected(&mut scx, &p) else { panic!("the new client is selected") };
-    enter_name(&mut scx, &p, "新クライアント");
+    let id = p.read_with(&scx, |p, _| p.client_edit.as_ref().map(|(id, _)| id.clone())).expect("the new client is being renamed");
+    enter_client_name(&mut scx, &p, "新クライアント");
     assert_eq!(f.db().client(&id).unwrap().name, "新クライアント");
-    assert!(scx.debug_bounds("detail-project-count").is_some());
+}
+
+fn enter_client_name(scx: &mut VisualTestContext, p: &Entity<crate::settings::projects::ProjectSettings>, text: &str) {
+    let input = p.read_with(scx, |p, _| p.client_edit.as_ref().map(|(_, i)| i.clone()).expect("client name field"));
+    scx.update(|w, cx| input.update(cx, |i, cx| {
+        i.focus(w, cx);
+        i.set_value(text.to_string(), w, cx)
+    }));
+    scx.update(|_, cx| input.update(cx, |_, cx| cx.emit(gpui_component::input::InputEvent::PressEnter { secondary: false, shift: false })));
+    wait_io(scx);
+}
+
+fn double_click(scx: &mut VisualTestContext, selector: &'static str) {
+    use gpui::{MouseButton, MouseDownEvent, MouseUpEvent};
+    let c = scx.debug_bounds(selector).unwrap_or_else(|| panic!("{selector} not rendered")).center();
+    scx.simulate_event(MouseDownEvent { button: MouseButton::Left, position: c, modifiers: Modifiers::none(), click_count: 2, first_mouse: false });
+    scx.simulate_event(MouseUpEvent { button: MouseButton::Left, position: c, modifiers: Modifiers::none(), click_count: 2 });
+}
+
+#[gpui::test]
+fn double_click_renames_a_client(cx: &mut TestAppContext) {
+    let (_app, cx, f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    double_click(&mut scx, "tree-client-c1");
+    enter_client_name(&mut scx, &p, "改名した");
+    assert_eq!(f.db().client("c1").unwrap().name, "改名した");
+    assert!(p.read_with(&scx, |p, _| p.client_edit.is_none()), "the field closes after saving");
+}
+
+#[gpui::test]
+fn single_click_on_a_client_keeps_the_project(cx: &mut TestAppContext) {
+    use crate::settings::projects::Selection;
+    let (_app, cx, _f) = open_app_db(cx, |_| {});
+    let (mut scx, p) = projects_section(cx);
+    click(&mut scx, "tree-client-c1");
+    assert!(p.read_with(&scx, |p, _| p.client_edit.is_none()));
+    assert_eq!(selected(&mut scx, &p), Some(Selection::Project("p1".into())));
+    assert!(scx.debug_bounds("detail-heading").is_some(), "the project form stays");
 }
 
 #[gpui::test]
@@ -679,13 +715,16 @@ fn outside_change_keeps_the_selection(cx: &mut TestAppContext) {
 fn archiving_a_client_moves_its_projects_to_the_archive(cx: &mut TestAppContext) {
     let (_app, cx, f) = open_app_db(cx, |_| {});
     let (mut scx, _p) = projects_section(cx);
-    click(&mut scx, "tree-client-c1");
-    click(&mut scx, "detail-archive");
+    click(&mut scx, "tree-client-archive-c1");
     wait_io(&mut scx);
     assert!(f.db().client("c1").unwrap().archived && f.db().project("p1").unwrap().archived);
     assert!(scx.debug_bounds("tree-archived").is_some());
-    // The selected client was archived, so the archive section opens on its own.
+    // The selected project was archived with it, so the archive section opens on its own.
     assert!(scx.debug_bounds("tree-project-p1").is_some(), "shown in the open archive");
+    // The same icon restores the client.
+    click(&mut scx, "tree-client-archive-c1");
+    wait_io(&mut scx);
+    assert!(!f.db().client("c1").unwrap().archived);
 }
 
 #[gpui::test]

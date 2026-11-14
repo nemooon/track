@@ -1,6 +1,7 @@
-//! 「プロジェクト」: clients with their projects in one list (left) and the selected item's details
+//! 「プロジェクト」: clients with their projects in one list (left) and the selected project's form
 //! (right). Changes save at once: colour, client and archive on click, the name on Enter or when
-//! the field loses focus. Clients and projects are archived, never deleted (like the Tauri screen).
+//! the field loses focus. A client is renamed in the list (double-click) and archived with the icon
+//! beside its ＋. Clients and projects are archived, never deleted (like the Tauri screen).
 use crate::app::AppState;
 use crate::data::{DataClient, DataResult};
 use crate::ui::theme::*;
@@ -12,7 +13,7 @@ use gpui_component::color_picker::{ColorPickerEvent, ColorPickerState};
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::searchable_list::SearchableListItem;
 use gpui_component::select::{Select, SelectEvent, SelectState};
-use gpui_component::{Icon, IconName, IndexPath};
+use gpui_component::{Icon, IconName, IndexPath, Sizable};
 use std::future::Future;
 use track_core::model::{Client, ClientPatch, Project, ProjectPatch};
 
@@ -43,7 +44,6 @@ type ClientSelect = SelectState<Vec<ClientItem>>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Selection {
     Project(String),
-    Client(String),
 }
 
 pub struct ProjectSettings {
@@ -73,6 +73,10 @@ pub struct ProjectSettings {
     loaded: bool,
     /// Finished re-reads (tests check that a save reads once).
     pub reloads: usize,
+    /// The client being renamed in the list, with its field.
+    pub client_edit: Option<(String, Entity<InputState>)>,
+    /// A client just added: rename it once it has been read.
+    rename_next: Option<String>,
 }
 
 fn api(state: &Entity<AppState>, cx: &gpui::App) -> DataClient {
@@ -102,6 +106,8 @@ impl ProjectSettings {
             show_archived: false,
             loaded: false,
             reloads: 0,
+            client_edit: None,
+            rename_next: None,
         };
         s.reload(cx);
         s
@@ -128,11 +134,6 @@ impl ProjectSettings {
                             Some(Selection::Project(id)) => match this.projects.iter().find(|p| p.id == id) {
                                 None => this.selected = None,
                                 Some(p) if p.archived => this.show_archived = true,
-                                _ => {}
-                            },
-                            Some(Selection::Client(id)) => match this.clients.iter().find(|c| c.id == id) {
-                                None => this.selected = None,
-                                Some(c) if c.archived => this.show_archived = true,
                                 _ => {}
                             },
                             None => {}
@@ -183,6 +184,7 @@ impl ProjectSettings {
     fn select(&mut self, s: Selection, window: &mut Window, cx: &mut Context<Self>) {
         // Clicking another row does not blur the field, so save what was typed first.
         self.commit_name(window, cx);
+        self.commit_client_edit(window, cx);
         self.save_pending_color(cx);
         self.selected = Some(s);
         self.error = None;
@@ -201,30 +203,32 @@ impl ProjectSettings {
     fn saved_name(&self) -> Option<String> {
         match self.selected.as_ref()? {
             Selection::Project(id) => self.project(id).map(|p| p.name.clone()),
-            Selection::Client(id) => self.client(id).map(|c| c.name.clone()),
         }
     }
 
     fn add_project(&mut self, client_id: String, cx: &mut Context<Self>) {
         let color = track_core::edit::next_project_color(self.projects.len()).to_string();
         let fut = api(&self.state, cx).create_project(client_id, "新しいプロジェクト".into(), color, vec![]);
-        self.after_create(fut, Selection::Project, cx);
+        self.after_create(fut, |this, id| {
+            this.selected = Some(Selection::Project(id));
+            this.focus_name = true;
+        }, cx);
     }
 
+    /// Adds a client and starts renaming it in the list.
     fn add_client(&mut self, cx: &mut Context<Self>) {
         let fut = api(&self.state, cx).create_client("新しいクライアント".into());
-        self.after_create(fut, Selection::Client, cx);
+        self.after_create(fut, |this, id| this.rename_next = Some(id), cx);
     }
 
-    /// Creates, then selects the new item with its name field focused.
-    fn after_create(&mut self, fut: impl Future<Output = DataResult<String>> + Send + 'static, select: fn(String) -> Selection, cx: &mut Context<Self>) {
+    /// Creates, then hands the new id to `then` (select it, rename it...).
+    fn after_create(&mut self, fut: impl Future<Output = DataResult<String>> + Send + 'static, then: fn(&mut Self, String), cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             let result = fut.await;
             let _ = this.update(cx, |this, cx| {
                 match result {
                     Ok(id) => {
-                        this.selected = Some(select(id));
-                        this.focus_name = true;
+                        then(this, id);
                         this.error = None;
                         this.state.update(cx, |s, cx| s.refresh_all(cx));
                     }
@@ -261,7 +265,6 @@ impl ProjectSettings {
         let api = api(&self.state, cx);
         match sel {
             Selection::Project(id) => self.write_with(api.update_project(id, ProjectPatch { name: Some(value), ..Default::default() }), true, cx),
-            Selection::Client(id) => self.write_with(api.update_client(id, ClientPatch { name: Some(value), ..Default::default() }), true, cx),
         }
     }
 
@@ -339,7 +342,6 @@ impl ProjectSettings {
                     }
                 }
             }
-            Selection::Client(_) => (self.picker, self.picker_for) = (None, None),
         }
         self.sync_client_select(&sel, window, cx);
     }
@@ -347,10 +349,7 @@ impl ProjectSettings {
     /// The selected project's client select: archived clients are offered only when the project
     /// already belongs to one. Picking another client saves at once.
     fn sync_client_select(&mut self, sel: &Selection, window: &mut Window, cx: &mut Context<Self>) {
-        let Selection::Project(id) = sel else {
-            (self.client_select, self.client_select_for) = (None, None);
-            return;
-        };
+        let Selection::Project(id) = sel;
         let Some(current) = self.project(id).map(|p| p.client_id.clone()) else { return };
         let choices: Vec<(String, String)> = self.clients.iter().filter(|c| !c.archived || c.id == current).map(|c| (c.id.clone(), c.name.clone())).collect();
         let key = (id.clone(), choices.clone());
@@ -374,6 +373,43 @@ impl ProjectSettings {
             // A failed save or an outside change: show the saved client.
             select.update(cx, |s, cx| s.set_selected_value(&current, window, cx));
         }
+    }
+
+    /// Opens the client's name field in the list (saving any other one first).
+    fn start_client_edit(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        if self.client_edit.as_ref().is_some_and(|(e, _)| *e == id) {
+            return;
+        }
+        self.commit_client_edit(window, cx);
+        let Some(name) = self.client(&id).map(|c| c.name.clone()) else { return };
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder("クライアント名").default_value(name));
+        cx.subscribe_in(&input, window, |this, _, ev: &InputEvent, window, cx| {
+            if matches!(ev, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+                this.commit_client_edit(window, cx);
+            }
+        })
+        .detach();
+        input.update(cx, |i, cx| i.focus(window, cx));
+        self.client_edit = Some((id, input));
+        cx.notify();
+    }
+
+    /// Saves the client name being edited and closes the field; an empty or unchanged name saves
+    /// nothing.
+    fn commit_client_edit(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let Some((id, input)) = self.client_edit.take() else { return };
+        let value = input.read(cx).value().trim().to_string();
+        if !value.is_empty() && self.client(&id).is_some_and(|c| c.name != value) {
+            let api = api(&self.state, cx);
+            self.write(api.update_client(id, ClientPatch { name: Some(value), ..Default::default() }), cx);
+        }
+        cx.notify();
+    }
+
+    fn toggle_client_archive(&mut self, id: &str, cx: &mut Context<Self>) {
+        let Some(archived) = self.client(id).map(|c| c.archived) else { return };
+        let api = api(&self.state, cx);
+        self.write(api.update_client(id.to_string(), ClientPatch { archived: Some(!archived), ..Default::default() }), cx);
     }
 
     fn render_tree(&self, p: Palette, cx: &mut Context<Self>) -> Div {
@@ -400,35 +436,60 @@ impl ProjectSettings {
                 .child(div().min_w_0().truncate().text_sm().child(pj.name.clone()))
                 .on_click(cx.listener(move |this, _, window, cx| this.select(Selection::Project(id.clone()), window, cx)))
         };
+        let icon_button = |id: String, icon: Icon, tip: &'static str| {
+            let sel = id.clone();
+            div()
+                .id(SharedString::from(id))
+                .debug_selector(move || sel.clone())
+                .px_1()
+                .rounded(px(4.))
+                .hover(move |s| s.bg(p.hover))
+                .child(icon.size_3p5())
+                .tooltip(move |window, cx| gpui_component::tooltip::Tooltip::new(tip).build(window, cx))
+        };
         let client_block = |c: &Client, projects: Vec<&Project>, cx: &mut Context<Self>| {
-            let (id, add_id) = (c.id.clone(), c.id.clone());
-            let on = self.selected == Some(Selection::Client(id.clone()));
-            let add_sel = format!("tree-client-add-{}", c.id);
-            let add_sel2 = add_sel.clone();
+            let (id, add_id, arch_id) = (c.id.clone(), c.id.clone(), c.id.clone());
             let archived = c.archived;
+            let editing = self.client_edit.as_ref().filter(|(e, _)| *e == c.id).map(|(_, i)| i.clone());
+            let name = match editing {
+                Some(input) => div().flex_1().min_w_0().debug_selector(|| "tree-client-name".into()).child(Input::new(&input).small()).into_any_element(),
+                None => div().flex_1().min_w_0().truncate().text_xs().font_weight(FontWeight::SEMIBOLD).text_color(p.text_muted).child(c.name.clone()).into_any_element(),
+            };
+            let archive_icon = if archived { crate::ui::icons::archive_restore() } else { crate::ui::icons::archive() };
+            let archive_tip = if archived { "アーカイブを戻す" } else { "アーカイブする（配下のプロジェクトも）" };
             div()
                 .flex()
                 .flex_col()
                 .child(
-                    row(format!("tree-client-{}", c.id), on)
+                    row(format!("tree-client-{}", c.id), false)
                         .mt_2()
-                        .child(div().flex_1().min_w_0().truncate().text_xs().font_weight(FontWeight::SEMIBOLD).text_color(p.text_muted).child(c.name.clone()))
-                        // An archived client takes no new projects.
-                        .when(!archived, |d| d.child(
-                            div()
-                                .id(SharedString::from(add_sel))
-                                .debug_selector(move || add_sel2.clone())
-                                .px_1()
-                                .rounded(px(4.))
-                                .text_color(p.accent)
-                                .hover(move |s| s.bg(p.hover))
-                                .child(Icon::new(IconName::Plus).size_3p5())
+                        .cursor_default()
+                        .child(name)
+                        .child(
+                            icon_button(format!("tree-client-archive-{}", c.id), archive_icon, archive_tip)
+                                .text_color(p.text_muted)
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     cx.stop_propagation();
-                                    this.add_project(add_id.clone(), cx)
+                                    this.toggle_client_archive(&arch_id, cx)
                                 })),
-                        ))
-                        .on_click(cx.listener(move |this, _, window, cx| this.select(Selection::Client(id.clone()), window, cx))),
+                        )
+                        // An archived client takes no new projects.
+                        .when(!archived, |d| {
+                            d.child(
+                                icon_button(format!("tree-client-add-{}", c.id), Icon::new(IconName::Plus), "プロジェクトを追加")
+                                    .text_color(p.accent)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        cx.stop_propagation();
+                                        this.add_project(add_id.clone(), cx)
+                                    })),
+                            )
+                        })
+                        // Double-click renames the client in place.
+                        .on_click(cx.listener(move |this, ev: &gpui::ClickEvent, window, cx| {
+                            if ev.click_count() >= 2 {
+                                this.start_client_edit(id.clone(), window, cx);
+                            }
+                        })),
                 )
                 .children(projects.into_iter().map(|pj| project_row(pj, cx)))
         };
@@ -537,24 +598,11 @@ impl ProjectSettings {
                 div()
                     .flex()
                     .flex_col()
-                    .child(div().text_lg().font_weight(FontWeight::SEMIBOLD).mb_2().child(pj.name.clone()))
+                    .child(div().debug_selector(|| "detail-heading".into()).text_lg().font_weight(FontWeight::SEMIBOLD).mb_2().child("プロジェクトを編集"))
                     .child(line("名前", name_field))
                     .child(line("クライアント", client))
                     .child(line("色", swatches.into_any_element()))
                     .child(div().mt_4().child(archive_button(pj.archived, !(pj.archived && client_archived), (pj.archived && client_archived).then_some("クライアントのアーカイブを先に戻してください"), cx)))
-                    .children(error)
-                    .into_any_element()
-            }
-            Some(Selection::Client(id)) => {
-                let Some(c) = self.client(&id).cloned() else { return div().into_any_element() };
-                let count = self.projects.iter().filter(|p| p.client_id == id).count();
-                div()
-                    .flex()
-                    .flex_col()
-                    .child(div().text_lg().font_weight(FontWeight::SEMIBOLD).mb_2().child(c.name.clone()))
-                    .child(line("名前", name_field))
-                    .child(line("プロジェクト", div().debug_selector(|| "detail-project-count".into()).text_sm().text_color(p.text_muted).child(format!("{count} 件")).into_any_element()))
-                    .child(div().mt_4().child(archive_button(c.archived, true, (!c.archived).then_some("配下のプロジェクトもアーカイブされます"), cx)))
                     .children(error)
                     .into_any_element()
             }
@@ -574,10 +622,6 @@ impl ProjectSettings {
                 let Some(archived) = self.project(&id).map(|p| p.archived) else { return };
                 self.write(api.update_project(id, ProjectPatch { archived: Some(!archived), ..Default::default() }), cx)
             }
-            Some(Selection::Client(id)) => {
-                let Some(archived) = self.client(&id).map(|c| c.archived) else { return };
-                self.write(api.update_client(id, ClientPatch { archived: Some(!archived), ..Default::default() }), cx)
-            }
             None => {}
         }
     }
@@ -587,6 +631,12 @@ impl Render for ProjectSettings {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = palette(cx);
         self.sync_fields(window, cx);
+        if let Some(id) = self.rename_next.clone()
+            && self.client(&id).is_some()
+        {
+            self.rename_next = None;
+            self.start_client_edit(id, window, cx);
+        }
         div()
             .flex()
             .items_start()
