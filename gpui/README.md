@@ -64,8 +64,9 @@ track-cli undo --id <操作ID>                                    # 取り消し
 
 `⌘,`、メニュー「Track → 設定…」、ヘッダー右の歯車で別ウインドウの設定を開く。項目は Tauri 版と同じ
 （カレンダー／レポート（出力フォーマット・週報テンプレート）／プロジェクト／AI／バックアップと復元。メモは無し）。
-勤務設定・出力フォーマットは DB の `Settings`、AI とバックアップは `config.json` に、Tauri 版と同じ形式で保存する
-（`config.json` の知らない項目は消さない）。
+勤務設定・出力フォーマットは DB の `Settings`、AI・バックアップ・外観は GPUI 版専用の `gpui-config.json`（データフォルダ）に保存する。
+`gpui-config.json` が無いときは、初回だけ Tauri 版の `config.json` から AI とバックアップの値を写す（以後 `config.json` は読み書きしない）。
+開発中は写すバックアップ先が `~/.track-gpui` の外なら既定の `exports` にする。`prepare-db.sh --force` は `gpui-config.json` も消して移行をやり直す。
 
 自動バックアップはアプリが起動時と 1 時間ごとに確認し、`backupIntervalHours` 経っていれば `VACUUM INTO` で
 `track-auto-*.db` を保存先へ書く。開発版では保存先・復元元を `~/.track-gpui` の中に限り、iCloud Drive の候補も出さない
@@ -76,12 +77,13 @@ Apple Intelligence ヘルパー（`/Applications/Track.app` 同梱）をアプ�
 
 ## 見た目
 
-色は `crates/track-app/src/ui/theme.rs` の `Palette` を意味の名前で引く（`palette(cx)`）。生の色は書かない。いまは明るい配色だけで、
-暗い配色は `Palette` に値の組を足して切り替える。数字は等幅（`MONO`）。
+色は `crates/track-app/src/ui/theme.rs` の `Palette` を意味の名前で引く（`palette(cx)`）。生の色は書かない（テストで確かめている）。
+明るい配色（`Palette::light`）と暗い配色（`Palette::dark`）があり、設定の「外観」（自動／明るい／暗い）で選ぶ。自動は macOS の外観に従い、起動中の切り替えにも追従する。数字は等幅（`MONO`）。
 
 ## 開発用
 
 - `scripts/winshot.sh out.png` — アプリのウインドウだけをスクリーンショットする
 - `TRACK_GPUI_PAGE=reports cargo run` — レポート画面から起動する
 - `TRACK_GPUI_WINDOW=1440x900` — 起動時のウインドウサイズ
-- `TRACK_GPUI_SETTINGS=<calendar|reports|projects|ai|backup>` — 起動時に設定ウインドウをその項目で開く（`winshot.sh` はどちらかのウインドウを撮るので、設定だけ撮るときはウインドウ ID を指定する）
+- `TRACK_GPUI_APPEARANCE=light|dark` — 外観の設定と macOS の外観より優先して明暗を決める（撮影用）
+- `TRACK_GPUI_SETTINGS=<appearance|calendar|reports|projects|ai|backup>` — 起動時に設定ウインドウをその項目で開く（`winshot.sh` はどちらかのウインドウを撮るので、設定だけ撮るときはウインドウ ID を指定する）
