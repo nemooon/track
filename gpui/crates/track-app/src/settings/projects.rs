@@ -864,12 +864,11 @@ impl Render for ProjectSettings {
                     .h_full()
                     .overflow_y_scroll()
                     .px_3()
-                    .pt_2()
                     .pb_6()
                     .border_r_1()
                     .border_color(p.border_subtle)
                     .child(self.render_tree(p, cx)),
             )
-            .child(div().id("projects-detail").flex_1().min_w_0().h_full().overflow_y_scroll().px_8().pt_6().pb_8().child(self.render_detail(p, cx)))
+            .child(div().id("projects-detail").flex_1().min_w_0().h_full().overflow_y_scroll().px_8().pt_2().pb_8().child(self.render_detail(p, cx)))
     }
 }

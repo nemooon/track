@@ -190,29 +190,20 @@ impl Render for SettingsWindow {
                     .h_full()
                     .flex()
                     .flex_col()
-                    // The page title sits in a bar like the main window's header (and drags the window).
+                    // No page title: an empty strip level with the traffic lights drags the window.
                     .child(
                         div()
-                            .id("settings-header")
-                            .debug_selector(|| "settings-title".into())
-                            .flex()
+                            .id("settings-drag")
+                            .debug_selector(|| "settings-drag".into())
                             .flex_shrink_0()
-                            .items_center()
                             .h(TITLE_BAR_HEIGHT)
-                            .px_4()
-                            .bg(p.surface)
-                            .border_b_1()
-                            .border_color(p.border)
-                            .text_sm()
-                            .font_weight(FontWeight::SEMIBOLD)
                             .on_mouse_down(gpui::MouseButton::Left, |ev, window, _| {
                                 if ev.click_count == 2 {
                                     window.titlebar_double_click();
                                 } else {
                                     window.start_window_move();
                                 }
-                            })
-                            .child(self.section.label()),
+                            }),
                     )
                     .child(if self.section == SettingsSection::Projects {
                         // The projects page fills the height and scrolls its two panes itself.
@@ -225,7 +216,7 @@ impl Render for SettingsWindow {
                             .min_h_0()
                             .overflow_y_scroll()
                             .px_8()
-                            .pt_6()
+                            .pt_2()
                             .pb_8()
                             .children(content)
                             .into_any_element()
