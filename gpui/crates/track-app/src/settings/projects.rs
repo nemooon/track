@@ -550,6 +550,9 @@ impl ProjectSettings {
                     .into_any_element(),
                 None => div().flex_1().min_w_0().truncate().text_xs().font_weight(FontWeight::SEMIBOLD).text_color(p.text_muted).child(c.name.clone()).into_any_element(),
             };
+            // Delete and archive appear while the heading is hovered (or its delete is being confirmed).
+            let group = SharedString::from(format!("client-head-{}", c.id));
+            let confirming = self.client_delete.as_deref() == Some(c.id.as_str());
             let archive_icon = if archived { crate::ui::icons::archive_restore() } else { crate::ui::icons::archive() };
             let archive_tip = if archived { "アーカイブを戻す" } else { "アーカイブする（配下のプロジェクトも）" };
             div()
@@ -557,6 +560,7 @@ impl ProjectSettings {
                 .flex_col()
                 .child(
                     row(format!("tree-client-{}", c.id), false)
+                        .group(group.clone())
                         .mt_2()
                         .cursor_default()
                         .child(name)
@@ -564,9 +568,11 @@ impl ProjectSettings {
                             // Deletable only when none of its projects has entries.
                             let deletable = !self.projects.iter().any(|pj| pj.client_id == c.id && self.with_entries.contains(&pj.id));
                             let tip = if deletable { "削除する" } else { "工数のあるプロジェクトがあるため削除できません" };
+                            let shown = if deletable { 1. } else { 0.35 };
                             icon_button(format!("tree-client-delete-{}", c.id), crate::ui::icons::trash(), tip)
                                 .text_color(p.text_muted)
-                                .when(!deletable, |d| d.opacity(0.35))
+                                .opacity(if confirming { shown } else { 0. })
+                                .group_hover(group.clone(), move |st| st.opacity(shown))
                                 .when(deletable, |d| {
                                     d.on_click(cx.listener(move |this, _, _, cx| {
                                         cx.stop_propagation();
@@ -579,6 +585,9 @@ impl ProjectSettings {
                         .child(
                             icon_button(format!("tree-client-archive-{}", c.id), archive_icon, archive_tip)
                                 .text_color(p.text_muted)
+                                // Shown while the heading is hovered (like the delete icon).
+                                .opacity(if confirming { 1. } else { 0. })
+                                .group_hover(group.clone(), |st| st.opacity(1.))
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     cx.stop_propagation();
                                     this.toggle_client_archive(&arch_id, cx)
