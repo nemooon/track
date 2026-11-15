@@ -10,6 +10,11 @@ fn line_color(cx: &App) -> gpui::Hsla {
 pub fn paint_hatch(bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
     let p = palette(cx);
     window.paint_quad(fill(bounds, p.off_hours));
+    paint_stripes(bounds, p.border_subtle, window);
+}
+
+/// 45° stripes, 4px on and 6px off, clipped to `bounds`.
+pub fn paint_stripes(bounds: Bounds<Pixels>, color: gpui::Hsla, window: &mut Window) {
     let period = 10. * std::f32::consts::SQRT_2;
     let stripe = 4. * std::f32::consts::SQRT_2;
     let h = f32::from(bounds.size.height);
@@ -25,7 +30,7 @@ pub fn paint_hatch(bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
             b.line_to(point(px(x0 + x + h), px(y0)));
             b.close();
             if let Ok(path) = b.build() {
-                window.paint_path(path, p.border_subtle);
+                window.paint_path(path, color);
             }
             x += period;
         }

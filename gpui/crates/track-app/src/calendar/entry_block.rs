@@ -56,6 +56,14 @@ pub fn lane_slot(g: &BlockGeometry, hour_px: f32) -> Div {
         .w(gpui::relative(g.span.max(1) as f32 / g.lane_count as f32))
 }
 
+/// The block's duration text: worked time, and the break it includes.
+pub fn block_duration(entry: &TimeEntry, style: DurationStyle) -> String {
+    let gross = (entry.end - entry.start).num_minutes();
+    let worked = format_duration((gross - entry.break_minutes).max(0), style);
+    // A direct visit is always one working day; its break needs no mention.
+    if entry.kind == track_core::model::EntryKind::Direct { worked } else { format!("{worked}{}", break_label(entry.break_minutes, style)) }
+}
+
 /// How a block is drawn: the duration style, how far its title is pushed down to stay in view,
 /// and whether the duration fits beside the title.
 pub struct BlockLook {
@@ -76,8 +84,8 @@ pub fn render_block(p: Palette, entry: &TimeEntry, selected: bool, ghost: bool, 
         (mix(accent, 0.3, p.bg), mix(accent, 0.12, p.bg))
     };
     let text = p.text;
-    let gross = (entry.end - entry.start).num_minutes();
-    let dur = format!("{}{}", format_duration((gross - entry.break_minutes).max(0), look.style), break_label(entry.break_minutes, look.style));
+    let dur = block_duration(entry, look.style);
+    let direct = entry.kind == track_core::model::EntryKind::Direct;
     let project_name = entry.project.as_ref().map(|p| p.name.clone()).unwrap_or_else(|| "プロジェクトなし".into());
     let title = entry.title.clone().filter(|t| !t.is_empty());
     let mut shadows = vec![];
@@ -104,7 +112,12 @@ pub fn render_block(p: Palette, entry: &TimeEntry, selected: bool, ghost: bool, 
         .text_xs()
         .shadow(shadows)
         .when(ghost, |d| d.opacity(0.6))
-        .cursor(if ghost { gpui::CursorStyle::ClosedHand } else { gpui::CursorStyle::OpenHand })
+        .cursor(if direct { gpui::CursorStyle::PointingHand } else if ghost { gpui::CursorStyle::ClosedHand } else { gpui::CursorStyle::OpenHand })
+        // A direct visit (a whole day out) is striped in its project colour.
+        .when(direct, |d| {
+            let stripe = with_alpha(accent, 0.12);
+            d.child(gpui::canvas(|_, _, _| (), move |b, _, w, _| super::grid::paint_stripes(b, stripe, w)).absolute().inset_0())
+        })
         .child({
             let id = entry.id.clone();
             let sel = move |part: &'static str| {
@@ -173,6 +186,15 @@ pub fn render_block(p: Palette, entry: &TimeEntry, selected: bool, ghost: bool, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_direct_visit_shows_no_break() {
+        let mut e = crate::testing::entry("d", 13, (10, 0), (18, 30), None);
+        e.break_minutes = 60;
+        assert_eq!(block_duration(&e, DurationStyle::HoursMinutes), "7h 30m（休憩 1h 込み）");
+        e.kind = track_core::model::EntryKind::Direct;
+        assert_eq!(block_duration(&e, DurationStyle::HoursMinutes), "7h 30m");
+    }
 
     #[test]
     fn the_title_follows_the_top_of_the_view() {

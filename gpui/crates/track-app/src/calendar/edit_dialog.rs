@@ -113,14 +113,15 @@ impl EditForm {
         let mut tag_ids = merged_tag_ids(&locked, &self.tag_ids);
         tag_ids.sort_by_key(|id| self.tag_ids.iter().position(|t| t == id).unwrap_or(usize::MAX));
         let span = edited_span(self.entry.start, self.start.read(cx).time(), self.end.read(cx).time());
+        let times = self.entry.kind != track_core::model::EntryKind::Direct;
         let patch = EntryPatch {
             title: Some((!title.is_empty()).then_some(title)),
-            start: Some(span.0),
-            end: Some(span.1),
+            start: times.then_some(span.0),
+            end: times.then_some(span.1),
             project_id: Some(self.project_id.clone()),
             tag_ids: Some(tag_ids),
             note: Some((!note.is_empty()).then_some(note)),
-            break_minutes: Some(parse_break(&self.break_min.read(cx).value())),
+            break_minutes: times.then(|| parse_break(&self.break_min.read(cx).value())),
         };
         cx.emit(EditEvent::Save(self.entry.id.clone(), patch));
     }
@@ -175,14 +176,18 @@ impl Render for EditForm {
                 }
             }))
             .child(field().child(label(p, "タイトル")).child(Input::new(&self.title)))
-            .child(
-                div()
-                    .flex()
-                    .gap_3()
-                    .child(field().flex_1().child(label(p, "開始")).child(TimeField::new(&self.start)))
-                    .child(field().flex_1().child(label(p, "終了")).child(TimeField::new(&self.end)))
-                    .child(field().w(px(96.)).child(label(p, "休憩 (分)")).child(Input::new(&self.break_min))),
-            )
+            // A direct visit keeps the work hours it was made with.
+            .when(self.entry.kind != track_core::model::EntryKind::Direct, |d| {
+                d.child(
+                    div()
+                        .debug_selector(|| "edit-times".into())
+                        .flex()
+                        .gap_3()
+                        .child(field().flex_1().child(label(p, "開始")).child(TimeField::new(&self.start)))
+                        .child(field().flex_1().child(label(p, "終了")).child(TimeField::new(&self.end)))
+                        .child(field().w(px(96.)).child(label(p, "休憩 (分)")).child(Input::new(&self.break_min))),
+                )
+            })
             .child(
                 field().child(label(p, "プロジェクト")).child(
                     div()

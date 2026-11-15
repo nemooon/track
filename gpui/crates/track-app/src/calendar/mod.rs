@@ -26,6 +26,11 @@ use gpui_component::{Icon, IconName, WindowExt, button::Button, notification::No
 use std::cell::RefCell;
 use std::rc::Rc;
 
+/// A 直行直帰 keeps the work hours it was made with: it is never dragged, resized or nudged.
+fn is_direct(e: &TimeEntry) -> bool {
+    e.kind == track_core::model::EntryKind::Direct
+}
+
 /// The work hours lit on a day, in minutes: none on a day off or a day of full leave (a
 /// holiday counts unless 「休暇にしない」), and the half that is worked on a half day.
 pub fn work_band(s: &track_core::model::Settings, day: NaiveDate, leave: Option<track_core::model::LeaveKind>) -> Option<(i64, i64)> {
@@ -437,7 +442,7 @@ impl CalendarView {
                             }
                             cx.notify();
                         }))
-                        .when(!ghost, |d| d.child(handle(Edge::Top, id_top)).child(handle(Edge::Bottom, id_bottom))),
+                        .when(!ghost && !is_direct(e), |d| d.child(handle(Edge::Top, id_top)).child(handle(Edge::Bottom, id_bottom))),
                 )
             }))
             .map(|d| match &self.drag {
@@ -565,6 +570,11 @@ impl CalendarView {
     fn begin_move(&mut self, id: &str, pos: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
         self.focus.focus(window, cx);
         let Some(e) = self.cache.get(id).cloned() else { return };
+        if is_direct(&e) {
+            self.selected = Some(id.to_string());
+            cx.notify();
+            return;
+        }
         let Some(di) = self.day_index_of(&e) else { return };
         let day = self.rendered_days[di];
         let (s, en) = entry_span_minutes(&e, day);
@@ -577,6 +587,9 @@ impl CalendarView {
     fn begin_resize(&mut self, id: &str, edge: Edge, _pos: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
         self.focus.focus(window, cx);
         let Some(e) = self.cache.get(id).cloned() else { return };
+        if is_direct(&e) {
+            return;
+        }
         let Some(di) = self.day_index_of(&e) else { return };
         let (s, en) = entry_span_minutes(&e, self.rendered_days[di]);
         self.selected = Some(id.to_string());
@@ -768,7 +781,7 @@ impl CalendarView {
                 self.selected = None;
                 cx.notify();
             }
-            "up" | "down" => {
+            "up" | "down" if !is_direct(&e) => {
                 let delta = if ev.keystroke.key == "up" { -15 } else { 15 };
                 let day = e.start.with_timezone(&Local).date_naive();
                 let (s, en) = entry_span_minutes(&e, day);

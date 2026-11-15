@@ -442,3 +442,66 @@ fn work_band_leaves_out_leave() {
     assert_eq!(work_band(&s, d(11, 3), None), None, "a holiday is leave");
     assert_eq!(work_band(&s, d(11, 3), Some(LeaveKind::None)), Some((600, 1110)), "「休暇にしない」 on a holiday");
 }
+
+/// A 直行直帰 on the 13th (made through core, like the day menu does), with its block's selector.
+fn direct_block(f: &Fixture, cx: &mut gpui::VisualTestContext) -> (track_core::model::TimeEntry, &'static str) {
+    let e = f.db().set_direct(day(13), "p1").unwrap();
+    cx.update(|_, cx| cx.refresh_windows());
+    wait_io(cx);
+    (e.clone(), Box::leak(format!("entry-{}", e.id).into_boxed_str()))
+}
+
+#[gpui::test]
+fn direct_blocks_never_move(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
+    app.update(cx, |a, cx| a.calendar.update(cx, |c, cx| c.reload(cx)));
+    let (e, sel) = direct_block(&f, cx);
+    app.update(cx, |a, cx| a.calendar.update(cx, |c, cx| c.reload(cx)));
+    wait_io(cx);
+    let b = cx.debug_bounds(sel).expect("direct block");
+    // Drag the middle.
+    cx.simulate_mouse_down(b.center(), MouseButton::Left, Modifiers::none());
+    let to = point(b.center().x, b.center().y + px(HOUR));
+    cx.simulate_mouse_move(to, Some(MouseButton::Left), Modifiers::none());
+    cx.simulate_mouse_up(to, MouseButton::Left, Modifiers::none());
+    wait_io(cx);
+    // Drag the bottom edge.
+    let edge = point(b.center().x, b.origin.y + b.size.height - px(2.));
+    cx.simulate_mouse_down(edge, MouseButton::Left, Modifiers::none());
+    let to = point(edge.x, edge.y + px(HOUR));
+    cx.simulate_mouse_move(to, Some(MouseButton::Left), Modifiers::none());
+    cx.simulate_mouse_up(to, MouseButton::Left, Modifiers::none());
+    wait_io(cx);
+    // The arrow keys.
+    cx.simulate_click(b.center(), Modifiers::none());
+    cx.simulate_keystrokes("down");
+    cx.simulate_keystrokes("shift-down");
+    wait_io(cx);
+    let now = stored(&f, &e.id).unwrap();
+    assert_eq!((now.start, now.end), (e.start, e.end));
+}
+
+#[gpui::test]
+fn direct_edit_dialog_has_no_times(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
+    let (e, sel) = direct_block(&f, cx);
+    app.update(cx, |a, cx| a.calendar.update(cx, |c, cx| c.reload(cx)));
+    wait_io(cx);
+    let b = cx.debug_bounds(sel).expect("direct block");
+    cx.simulate_mouse_move(b.center(), None, Modifiers::none());
+    cx.simulate_event(gpui::MouseDownEvent { button: MouseButton::Left, position: b.center(), modifiers: Modifiers::none(), click_count: 2, first_mouse: false });
+    cx.simulate_event(gpui::MouseUpEvent { button: MouseButton::Left, position: b.center(), modifiers: Modifiers::none(), click_count: 2 });
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).editing.clone()), Some(e.id.clone()));
+    assert!(cx.debug_bounds("edit-times").is_none(), "no start, end or break for a direct visit");
+}
+
+#[gpui::test]
+fn normal_edit_dialog_has_times(cx: &mut TestAppContext) {
+    let (app, cx, _f) = setup(cx);
+    let b = cx.debug_bounds("entry-a").expect("entry block");
+    cx.simulate_mouse_move(b.center(), None, Modifiers::none());
+    cx.simulate_event(gpui::MouseDownEvent { button: MouseButton::Left, position: b.center(), modifiers: Modifiers::none(), click_count: 2, first_mouse: false });
+    cx.simulate_event(gpui::MouseUpEvent { button: MouseButton::Left, position: b.center(), modifiers: Modifiers::none(), click_count: 2 });
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).editing.clone()), Some("a".into()));
+    assert!(cx.debug_bounds("edit-times").is_some());
+}
