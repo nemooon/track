@@ -406,12 +406,22 @@ fn direct_uses_the_shared_project_list(cx: &mut TestAppContext) {
     let (_app, cx, f) = setup(cx);
     click_id(cx, "day-menu-2026-11-12".into());
     assert!(cx.debug_bounds("project-p1").is_some() && cx.debug_bounds("project-p2").is_some());
-    assert!(cx.debug_bounds("project-none").is_none(), "a direct visit needs a project");
     cx.simulate_input("bet");
     assert!(cx.debug_bounds("project-p1").is_none(), "the search narrows the list");
     click_id(cx, "project-p2".into());
     wait_io(cx);
     assert_eq!(f.db().direct_entry(day(12)).unwrap().and_then(|e| e.project_id).as_deref(), Some("p2"));
+}
+
+#[gpui::test]
+fn direct_can_be_made_without_a_project(cx: &mut TestAppContext) {
+    let (_app, cx, f) = setup(cx);
+    click_id(cx, "day-menu-2026-11-12".into());
+    click_id(cx, "project-none".into());
+    wait_io(cx);
+    let e = f.db().direct_entry(day(12)).unwrap().expect("direct entry");
+    assert_eq!(e.project_id, None);
+    assert!(cx.debug_bounds("day-mark-2026-11-12").is_some(), "the header says 直行直帰");
 }
 
 #[gpui::test]
@@ -445,7 +455,7 @@ fn work_band_leaves_out_leave() {
 
 /// A 直行直帰 on the 13th (made through core, like the day menu does), with its block's selector.
 fn direct_block(f: &Fixture, cx: &mut gpui::VisualTestContext) -> (track_core::model::TimeEntry, &'static str) {
-    let e = f.db().set_direct(day(13), "p1").unwrap();
+    let e = f.db().set_direct(day(13), Some("p1")).unwrap();
     cx.update(|_, cx| cx.refresh_windows());
     wait_io(cx);
     (e.clone(), Box::leak(format!("entry-{}", e.id).into_boxed_str()))

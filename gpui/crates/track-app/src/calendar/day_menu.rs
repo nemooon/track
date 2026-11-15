@@ -40,7 +40,8 @@ impl CalendarView {
         if let Some(e) = self.direct_on(d) {
             let (name, color) = e.project.as_ref().map(|p| (p.name.clone(), p.color.clone())).unwrap_or_default();
             let c = hex(if color.is_empty() { NO_PROJECT } else { &color });
-            return Some(badge(format!("直行直帰 {name}"), gpui::Hsla::from(mix(c, 0.18, p.bg)), p.text).into_any_element());
+            let text = if name.is_empty() { "直行直帰".to_string() } else { format!("直行直帰 {name}") };
+            return Some(badge(text, gpui::Hsla::from(mix(c, 0.18, p.bg)), p.text).into_any_element());
         }
         let label = match self.leaves.get(&d) {
             Some(LeaveKind::Full) => "休暇",
@@ -119,11 +120,10 @@ impl CalendarView {
         let query = self.direct_query.clone();
         let q = query.as_ref().map(|q| q.read(cx).value().to_string()).unwrap_or_default();
         let on_pick: PickFn<Self> = Rc::new(move |this, id, _, cx| {
-            let Some(id) = id else { return };
             let fut = this.state.read(cx).api.set_direct(d, id);
             this.save_day(fut, cx);
         });
-        let list = project_list(&projects, &q, false, on_pick, cx);
+        let list = project_list(&projects, &q, on_pick, cx);
         div()
             .flex()
             .flex_col()
@@ -142,7 +142,7 @@ impl CalendarView {
             )
             .child(heading("直行直帰"))
             .when_some(direct, |c, e| {
-                let (name, color) = e.project.as_ref().map(|p| (format!("{} · {}", p.client.name, p.name), p.color.clone())).unwrap_or_default();
+                let (name, color) = e.project.as_ref().map(|p| (format!("{} · {}", p.client.name, p.name), p.color.clone())).unwrap_or_else(|| ("プロジェクトなし".into(), String::new()));
                 c.child(
                     div()
                         .flex()

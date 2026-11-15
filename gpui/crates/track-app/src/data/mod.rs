@@ -157,8 +157,9 @@ impl DataClient {
         self.call("set_leave", move |db| db.set_leave(date, kind))
     }
 
-    pub fn set_direct(&self, date: chrono::NaiveDate, project_id: String) -> impl Future<Output = DataResult<TimeEntry>> + Send + 'static {
-        self.call("set_direct", move |db| db.set_direct(date, &project_id))
+    /// `None` is 「プロジェクトなし」.
+    pub fn set_direct(&self, date: chrono::NaiveDate, project_id: Option<String>) -> impl Future<Output = DataResult<TimeEntry>> + Send + 'static {
+        self.call("set_direct", move |db| db.set_direct(date, project_id.as_deref()))
     }
 
     pub fn remove_direct(&self, date: chrono::NaiveDate) -> impl Future<Output = DataResult<()>> + Send + 'static {

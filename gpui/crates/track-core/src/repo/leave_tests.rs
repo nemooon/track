@@ -97,7 +97,7 @@ fn direct_is_one_day_of_work() {
     schedule(&mut db);
     let (p, _, _) = crate::repo::repo_tests::seed(&mut db);
     let d = day(11, 12);
-    let e = db.set_direct(d, &p).unwrap();
+    let e = db.set_direct(d, Some(&p)).unwrap();
     assert_eq!((e.start, e.end, e.break_minutes, e.kind), (at(d, 600), at(d, 1110), 60, EntryKind::Direct));
     assert_eq!((e.title.as_deref(), e.project_id.as_deref()), (Some("直行直帰"), Some(p.as_str())));
     assert_eq!((e.end - e.start).num_minutes() - e.break_minutes, 450);
@@ -112,8 +112,8 @@ fn direct_replaces_the_days_direct() {
     let c = db.projects(true).unwrap()[0].client_id.clone();
     let q = db.create_project(&c, "Other", "#ef4444").unwrap();
     let d = day(11, 12);
-    db.set_direct(d, &p).unwrap();
-    db.set_direct(d, &q).unwrap();
+    db.set_direct(d, Some(&p)).unwrap();
+    db.set_direct(d, Some(&q)).unwrap();
     let all: Vec<_> = db.entries(at(d, 0), at(d.succ_opt().unwrap(), 0)).unwrap().into_iter().filter(|e| e.kind == EntryKind::Direct).collect();
     assert_eq!(all.len(), 1);
     assert_eq!(all[0].project_id.as_deref(), Some(q.as_str()));
@@ -126,7 +126,7 @@ fn direct_clears_leave() {
     let (p, _, _) = crate::repo::repo_tests::seed(&mut db);
     let d = day(11, 12);
     db.set_leave(d, Some(LeaveKind::Full)).unwrap();
-    db.set_direct(d, &p).unwrap();
+    db.set_direct(d, Some(&p)).unwrap();
     assert!(db.leaves(d, d.succ_opt().unwrap()).unwrap().is_empty());
     assert_eq!(minutes(&db, d), 0);
 }
@@ -137,7 +137,7 @@ fn leave_clears_direct() {
     schedule(&mut db);
     let (p, _, _) = crate::repo::repo_tests::seed(&mut db);
     let d = day(11, 12);
-    db.set_direct(d, &p).unwrap();
+    db.set_direct(d, Some(&p)).unwrap();
     db.set_leave(d, Some(LeaveKind::Am)).unwrap();
     assert!(db.direct_entry(d).unwrap().is_none());
     assert_eq!(minutes(&db, d), 225);
@@ -148,7 +148,7 @@ fn direct_on_a_holiday_cancels_the_auto_leave() {
     let (_d, mut db) = db();
     schedule(&mut db);
     let (p, _, _) = crate::repo::repo_tests::seed(&mut db);
-    db.set_direct(day(11, 3), &p).unwrap();
+    db.set_direct(day(11, 3), Some(&p)).unwrap();
     assert_eq!(minutes(&db, day(11, 3)), 0);
 }
 
@@ -158,7 +158,7 @@ fn remove_direct_deletes_it() {
     schedule(&mut db);
     let (p, _, _) = crate::repo::repo_tests::seed(&mut db);
     let d = day(11, 12);
-    db.set_direct(d, &p).unwrap();
+    db.set_direct(d, Some(&p)).unwrap();
     db.remove_direct(d).unwrap();
     assert!(db.direct_entry(d).unwrap().is_none());
 }
@@ -168,7 +168,17 @@ fn removing_a_holidays_direct_brings_its_leave_back() {
     let (_d, mut db) = db();
     schedule(&mut db);
     let (p, _, _) = crate::repo::repo_tests::seed(&mut db);
-    db.set_direct(day(11, 3), &p).unwrap();
+    db.set_direct(day(11, 3), Some(&p)).unwrap();
     db.remove_direct(day(11, 3)).unwrap();
     assert_eq!(minutes(&db, day(11, 3)), 450, "文化の日 is leave again");
+}
+
+#[test]
+fn a_direct_visit_can_have_no_project() {
+    let (_d, mut db) = db();
+    schedule(&mut db);
+    let d = day(11, 12);
+    let e = db.set_direct(d, None).unwrap();
+    assert_eq!((e.kind, e.project_id), (EntryKind::Direct, None));
+    assert_eq!(db.direct_entry(d).unwrap().map(|e| e.id), Some(e.id));
 }

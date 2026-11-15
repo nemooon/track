@@ -86,17 +86,18 @@ impl Db {
         Ok(self.entries(from, to)?.into_iter().find(|e| e.kind == EntryKind::Direct && e.start >= from && e.start < to))
     }
 
-    /// Makes (or replaces) the day's 直行直帰: one day of scheduled work for `project_id`, from the
+    /// Makes (or replaces) the day's 直行直帰: one day of scheduled work for `project_id` (or no
+    /// project), from the
     /// work start to the work end with the one-hour break. The day's leave goes (a holiday's
     /// automatic leave is cancelled with `none`).
-    pub fn set_direct(&mut self, date: NaiveDate, project_id: &str) -> Result<TimeEntry> {
+    pub fn set_direct(&mut self, date: NaiveDate, project_id: Option<&str>) -> Result<TimeEntry> {
         self.ensure_writable()?;
         let settings = self.settings()?;
         let at = |minutes: i64| crate::dates::local_at(date.and_hms_opt(0, 0, 0).unwrap() + chrono::Duration::minutes(minutes)).to_utc();
         self.in_savepoint(|db| {
             db.remove_direct_inner(date)?;
             let e = db.create_entry(NewEntry {
-                project_id: Some(project_id.to_string()),
+                project_id: project_id.map(str::to_string),
                 start: at(settings.work_start),
                 end: at(settings.work_end),
                 title: Some("直行直帰".into()),
