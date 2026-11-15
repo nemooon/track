@@ -354,8 +354,7 @@ impl CalendarView {
         let band = settings.as_ref().and_then(|s| work_band(s, day, self.leaves.get(&day).copied()));
         let body_h = 24. * hour_px + 1.;
         let bounds_store = self.column_bounds.clone();
-        // A 直行直帰 day shows in the header, not in the time grid.
-        let day_entries: Vec<&TimeEntry> = entries_for_day(rendered, day).into_iter().filter(|e| e.kind != track_core::model::EntryKind::Direct).collect();
+        let day_entries: Vec<&TimeEntry> = entries_for_day(rendered, day);
         let spans: Vec<(i64, i64)> = day_entries.iter().map(|e| {
             let (s, e2) = entry_span_minutes(e, day);
             (s, e2.min(DAY_MINUTES))

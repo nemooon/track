@@ -388,7 +388,7 @@ fn choosing_full_leave_marks_the_day(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn direct_is_not_in_the_time_grid_but_counts(cx: &mut TestAppContext) {
+fn direct_shows_in_the_time_grid_and_counts_once(cx: &mut TestAppContext) {
     let (app, cx, f) = setup(cx);
     let days = visible_days(&app, cx);
     let before = app.read_with(cx, |a, cx| a.calendar.read(cx).visible_total_minutes(&days));
@@ -396,7 +396,7 @@ fn direct_is_not_in_the_time_grid_but_counts(cx: &mut TestAppContext) {
     click_id(cx, "project-p1".into());
     wait_io(cx);
     let direct = f.db().direct_entry(day(12)).unwrap().expect("direct entry");
-    assert!(cx.debug_bounds(Box::leak(format!("entry-{}", direct.id).into_boxed_str())).is_none(), "not in the time grid");
+    assert!(cx.debug_bounds(Box::leak(format!("entry-{}", direct.id).into_boxed_str())).is_some(), "a block in the time grid");
     assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).visible_total_minutes(&days)), before + 450);
     assert!(cx.debug_bounds("day-mark-2026-11-12").is_some(), "the header says 直行直帰");
 }
