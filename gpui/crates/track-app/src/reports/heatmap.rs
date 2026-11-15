@@ -1,5 +1,6 @@
 //! The activity heatmap between the filters and the table: GitHub's contributions graph, one
-//! column per Sunday-start week and one row per weekday, square cells across the full width. It
+//! column per Sunday-start week and one row per weekday, square cells across the full width (up to a
+//! largest size, then centered). It
 //! covers 53 weeks with the period's week in the middle; the report's period is shown strong and
 //! the days around it faded. A day's shade is its hours (with the filters); clicking a day moves the report
 //! to the period that holds it.
@@ -13,6 +14,9 @@ use gpui::{AnyElement, Context, InteractiveElement, IntoElement, ParentElement, 
 
 const WEEKDAYS: [&str; 7] = ["日", "月", "火", "水", "木", "金", "土"];
 const GAP: f32 = 3.;
+/// The largest a cell grows in a wide window: about half the height the graph had on a
+/// 1920-wide window before there was a limit. Below that the cells fill the width.
+pub const MAX_SIDE: f32 = 14.;
 /// How faded the days around the period are.
 const FADED: f32 = 0.35;
 /// How strong the days under the pointer are (what a click would pick): between faded and the period.
@@ -96,9 +100,10 @@ impl ReportsView {
         };
         let weeks: Vec<&[(NaiveDate, i64)]> = days.chunks(7).collect();
         // Square cells across the full width: the page spans the window, so the side is the
-        // window's width less the padding and the weekday labels, shared by the weeks.
+        // window's width less the padding and the weekday labels, shared by the weeks. In a wide
+        // window the side stops at MAX_SIDE and the graph sits in the middle.
         let n = weeks.len() as f32;
-        let side = ((f32::from(window.viewport_size().width) - 24. - 18.) / n - GAP).floor().max(6.);
+        let side = ((f32::from(window.viewport_size().width) - 24. - 18.) / n - GAP).floor().clamp(6., MAX_SIDE);
         // Each cell's hit area takes half the gap on every side, so the gaps click too.
         let slot = side + GAP;
         let label = |text: &'static str| div().h(px(slot)).flex().items_center().text_size(px(10.)).text_color(p.text_faint).child(text);
@@ -172,13 +177,14 @@ impl ReportsView {
             div()
                 .debug_selector(|| "report-heatmap".into())
                 .flex()
+                .justify_center()
                 .flex_shrink_0()
                 .px_3()
                 .py_3()
                 .border_b_1()
                 .border_color(p.border)
                 .child(div().w(px(18.)).flex_none().flex().flex_col().pt(px(14.)).children(WEEKDAYS.iter().map(|w| label(w))))
-                .child(div().flex_1().min_w_0().overflow_hidden().child(grid))
+                .child(div().debug_selector(|| "report-heatmap-grid".into()).w(px(n * slot)).flex_shrink(1.).min_w_0().overflow_hidden().child(grid))
                 .into_any_element(),
         )
     }

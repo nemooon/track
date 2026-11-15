@@ -272,6 +272,21 @@ fn heatmap_cells_are_square(cx: &mut TestAppContext) {
     assert!((cell.width - cell.height).abs() < gpui::px(0.5), "{cell:?}");
 }
 
+#[gpui::test]
+fn heatmap_stays_low_in_a_wide_window(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = setup(cx);
+    cx.simulate_resize(gpui::size(gpui::px(2560.), gpui::px(1400.)));
+    cx.run_until_parked();
+    let today = Local::now().date_naive();
+    let cell = cx.debug_bounds(leak(format!("heat-{today}"))).expect("today's cell").size;
+    assert!(cell.height <= gpui::px(crate::reports::heatmap::MAX_SIDE), "{cell:?}");
+    assert!((cell.width - cell.height).abs() < gpui::px(0.5), "still square: {cell:?}");
+    let heat = cx.debug_bounds("report-heatmap").expect("heatmap");
+    let grid = cx.debug_bounds("report-heatmap-grid").expect("grid");
+    let (left, right) = (grid.left() - heat.left(), heat.right() - grid.right());
+    assert!((left - right).abs() < gpui::px(30.), "centered: {left:?} / {right:?}");
+}
+
 #[test]
 fn heatmap_labels_the_week_that_holds_a_months_first_day() {
     use crate::reports::heatmap::month_label;
