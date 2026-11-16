@@ -275,6 +275,9 @@ pub struct TrackApp {
     _new_day: gpui::Task<()>,
 }
 
+/// The header's icons (tabs and settings): large enough for the day in the calendar icon.
+pub const HEADER_ICON: gpui::Pixels = px(18.);
+
 /// How long from `now` until just after the next local midnight (when the calendar tab's day
 /// changes).
 pub fn until_next_day(now: chrono::NaiveDateTime) -> std::time::Duration {
@@ -286,6 +289,7 @@ pub fn until_next_day(now: chrono::NaiveDateTime) -> std::time::Duration {
 fn calendar_day_icon(day: u32, side: f32) -> gpui::AnyElement {
     let unit = side / 24.;
     div()
+        .debug_selector(|| "tab-calendar-icon".into())
         .relative()
         .size(px(side))
         .flex_none()
@@ -477,11 +481,11 @@ impl TrackApp {
                     .flex()
                     .h_full()
                     .gap(px(14.))
-                    .child(tab("tab-calendar", "カレンダー", calendar_day_icon(chrono::Datelike::day(&chrono::Local::now()), 16.), Page::Calendar, self.page == Page::Calendar))
-                    .child(tab("tab-reports", "レポート", crate::ui::icons::clipboard_list().size_4().into_any_element(), Page::Reports, self.page == Page::Reports)),
+                    .child(tab("tab-calendar", "カレンダー", calendar_day_icon(chrono::Datelike::day(&chrono::Local::now()), f32::from(HEADER_ICON)), Page::Calendar, self.page == Page::Calendar))
+                    .child(tab("tab-reports", "レポート", div().debug_selector(|| "tab-reports-icon".into()).size(HEADER_ICON).child(crate::ui::icons::clipboard_list().size(HEADER_ICON)).into_any_element(), Page::Reports, self.page == Page::Reports)),
             )
             .child(
-                crate::ui::controls::icon_button(&p, "open-settings", Icon::new(IconName::Settings), "設定（⌘,）")
+                crate::ui::controls::icon_button_sized(&p, "open-settings", Icon::new(IconName::Settings), HEADER_ICON, "設定（⌘,）")
                     .debug_selector(|| "open-settings".into())
                     .ml_auto()
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())

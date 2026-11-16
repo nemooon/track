@@ -385,6 +385,15 @@ fn the_header_redraws_just_after_midnight() {
 }
 
 #[gpui::test]
+fn header_icons_are_one_size(cx: &mut TestAppContext) {
+    let (_app, cx) = open_app(cx);
+    for id in ["tab-calendar-icon", "tab-reports-icon", "open-settings-icon"] {
+        let b = cx.debug_bounds(id).unwrap_or_else(|| panic!("{id}"));
+        assert_eq!((b.size.width, b.size.height), (crate::app::HEADER_ICON, crate::app::HEADER_ICON), "{id}");
+    }
+}
+
+#[gpui::test]
 fn ai_notice_lives_in_the_status_bar(cx: &mut TestAppContext) {
     let (app, cx, f) = seeded(cx, false);
     refresh(&app, cx);

@@ -54,8 +54,16 @@ pub fn chip(p: &Palette, id: impl Into<ElementId>, on: bool) -> Stateful<Div> {
 
 /// An icon-only button. The tooltip is required: an icon alone does not say what it does.
 pub fn icon_button(p: &Palette, id: impl Into<ElementId>, icon: gpui_component::Icon, tooltip: &'static str) -> Stateful<Div> {
+    icon_button_sized(p, id, icon, px(16.), tooltip)
+}
+
+/// `icon_button` with an icon of `size` (the header's are larger). The icon's box carries the
+/// debug selector `<id>-icon`.
+pub fn icon_button_sized(p: &Palette, id: impl Into<ElementId>, icon: gpui_component::Icon, size: gpui::Pixels, tooltip: &'static str) -> Stateful<Div> {
     use gpui::StatefulInteractiveElement;
     let p = *p;
+    let id = id.into();
+    let sel = format!("{id}-icon");
     div()
         .id(id)
         .flex_shrink_0()
@@ -64,7 +72,7 @@ pub fn icon_button(p: &Palette, id: impl Into<ElementId>, icon: gpui_component::
         .text_color(p.text_muted)
         .cursor_pointer()
         .hover(move |s| s.bg(p.hover).text_color(p.text))
-        .child(icon.size_4())
+        .child(div().debug_selector(move || sel.clone()).size(size).child(icon.size(size)))
         .tooltip(move |window, cx| gpui_component::tooltip::Tooltip::new(tooltip).build(window, cx))
 }
 
