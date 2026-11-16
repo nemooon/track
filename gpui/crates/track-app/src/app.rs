@@ -394,6 +394,8 @@ impl TrackApp {
                 // inactive), so switching changes no size.
                 .border_b_2()
                 .border_color(gpui::transparent_black())
+                // The same 2px on top, so the label stays on the header's midline.
+                .pt(px(2.))
                 .map(|d| {
                     if active {
                         d.text_color(p.text).border_color(p.text)
@@ -402,7 +404,7 @@ impl TrackApp {
                     }
                 })
                 .child(icon.size_3p5())
-                .child(label)
+                .child(div().debug_selector(move || format!("{id}-label")).child(label))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(cx.listener(move |this, _, _, cx| this.show(page, cx)))
         };

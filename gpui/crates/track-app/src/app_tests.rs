@@ -357,6 +357,16 @@ fn a_segment_keeps_its_size_when_it_turns_off(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn header_tab_labels_sit_on_the_header_midline(cx: &mut TestAppContext) {
+    let (_app, cx) = open_app(cx);
+    let settings = cx.debug_bounds("open-settings").unwrap().center().y;
+    for id in ["tab-calendar-label", "tab-reports-label"] {
+        let y = cx.debug_bounds(id).unwrap().center().y;
+        assert!((y - settings).abs() < gpui::px(0.5), "{id}: {y:?} vs the settings button {settings:?}");
+    }
+}
+
+#[gpui::test]
 fn ai_notice_lives_in_the_status_bar(cx: &mut TestAppContext) {
     let (app, cx, f) = seeded(cx, false);
     refresh(&app, cx);
