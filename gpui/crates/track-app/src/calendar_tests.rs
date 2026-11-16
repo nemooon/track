@@ -553,6 +553,21 @@ fn saving_an_entry_reshuffles_the_header_dots(cx: &mut TestAppContext) {
     assert_ne!(created, seed(cx), "updating changes it too");
 }
 
+#[gpui::test]
+fn deleting_or_changing_leave_sparkles_too(cx: &mut TestAppContext) {
+    let (app, cx, _f) = setup(cx);
+    let shuffles = |cx: &mut gpui::VisualTestContext| app.read_with(cx, |a, cx| a.state.read(cx).header_shuffles);
+    cx.update(|window, cx| app.update(cx, |a, cx| a.calendar.update(cx, |c, cx| c.delete("a", window, cx))));
+    wait_io(cx);
+    sparkle_out(cx);
+    assert_eq!(shuffles(cx), crate::app::SPARKLE_STEPS, "deleting");
+    let api = app.read_with(cx, |a, cx| a.state.read(cx).api.clone());
+    gpui::block_on(api.set_leave(day(13), Some(track_core::model::LeaveKind::Full))).unwrap();
+    wait_io(cx);
+    sparkle_out(cx);
+    assert_eq!(shuffles(cx), 2 * crate::app::SPARKLE_STEPS, "leave");
+}
+
 /// Runs the header's sparkle to the end (its timer runs on the test clock).
 fn sparkle_out(cx: &mut gpui::VisualTestContext) {
     cx.executor().advance_clock(std::time::Duration::from_secs(1));

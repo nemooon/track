@@ -7,7 +7,7 @@ use crate::reports::ReportsView;
 use crate::ui::theme::*;
 use gpui::{
     App, AppContext, Context, Entity, FocusHandle, Focusable, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    Render, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px,
+    AnimationExt, Render, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px,
 };
 use gpui_component::{Icon, IconName};
 use std::path::PathBuf;
@@ -48,14 +48,22 @@ pub struct AppState {
     pub ai_op: Option<AiOpNotice>,
     /// The seed of the header's dot pattern; saving an entry changes it.
     pub header_seed: u64,
-    /// How many times the pattern has changed (tests).
+    /// The pattern the current one fades in from, and over how long.
+    pub header_prev_seed: u64,
+    pub header_fade: std::time::Duration,
+    /// How many times the pattern has changed (tests; also keys the fade).
     pub header_shuffles: u64,
     sparkle: Option<gpui::Task<()>>,
 }
 
-/// How many patterns one sparkle goes through, and how fast.
+/// How many patterns one sparkle goes through.
 pub const SPARKLE_STEPS: u64 = 10;
-const SPARKLE_EVERY: std::time::Duration = std::time::Duration::from_millis(45);
+
+/// How long step `step` of a sparkle lasts (and fades in over): 30ms, slowing by a sixth each
+/// step to about 120ms at the end (about 0.65s in all).
+pub fn sparkle_every(step: u64) -> std::time::Duration {
+    std::time::Duration::from_secs_f32(0.030 * 1.17f32.powi(step as i32))
+}
 
 /// 「AI が N 件変更しました［元に戻す］」: every AI operation that arrived while the notice
 /// was up (until it is closed), undone together newest first.
@@ -93,21 +101,24 @@ impl AiOpNotice {
 }
 
 impl AppState {
-    /// After saving an entry the header's dots sparkle: SPARKLE_STEPS new patterns in quick
-    /// succession, ending on the last. A new save restarts it.
+    /// When data changes the header's dots sparkle: SPARKLE_STEPS new patterns, each fading in
+    /// from the last, quick at first and slowing down, ending on the last. A new change restarts it.
     pub fn reshuffle_header(&mut self, cx: &mut Context<Self>) {
         self.sparkle = Some(cx.spawn(async move |this, cx| {
-            for _ in 0..SPARKLE_STEPS {
-                cx.background_executor().timer(SPARKLE_EVERY).await;
+            for step in 0..SPARKLE_STEPS {
+                let every = sparkle_every(step);
                 let ok = this.update(cx, |s, cx| {
                     let next = fresh_seed();
+                    s.header_prev_seed = s.header_seed;
                     s.header_seed = if next == s.header_seed { next.wrapping_add(1) } else { next };
+                    s.header_fade = every;
                     s.header_shuffles += 1;
                     cx.notify();
                 });
                 if ok.is_err() {
                     break;
                 }
+                cx.background_executor().timer(every).await;
             }
         }));
     }
@@ -117,7 +128,8 @@ impl AppState {
     }
 
     pub fn with_path(api: DataClient, persist_path: PathBuf) -> Self {
-        Self { reloads: 0, api, data: None, error: None, loading: false, persist: PersistState::load(&persist_path), persist_path, ops_seen: None, ai_op: None, header_seed: fresh_seed(), header_shuffles: 0, sparkle: None }
+        let seed = fresh_seed();
+        Self { reloads: 0, api, data: None, error: None, loading: false, persist: PersistState::load(&persist_path), persist_path, ops_seen: None, ai_op: None, header_seed: seed, header_prev_seed: seed, header_fade: std::time::Duration::ZERO, header_shuffles: 0, sparkle: None }
     }
 
     pub fn update_persist(&mut self, f: impl FnOnce(&mut PersistState)) {
@@ -306,6 +318,7 @@ pub struct TrackApp {
     _watcher: gpui::Task<()>,
     _backups: gpui::Task<()>,
     _new_day: gpui::Task<()>,
+    _changes: gpui::Task<()>,
 }
 
 /// The header's icons (tabs and settings): large enough for the day in the calendar icon.
@@ -391,6 +404,7 @@ impl TrackApp {
         // macOS switched light/dark: follow it when the setting is 自動.
         cx.observe_window_appearance(window, |this, window, cx| this.on_system_appearance(is_dark(window.appearance()), cx)).detach();
         let watcher = Self::watch_external_changes(state.clone(), cx);
+        let changes = Self::sparkle_on_changes(state.clone(), cx);
         let backups = Self::auto_backup(state.read(cx).api.clone(), cx);
         // Redraw just after midnight so the calendar tab shows the new day.
         let new_day = cx.spawn(async move |this, cx| loop {
@@ -410,7 +424,20 @@ impl TrackApp {
             _watcher: watcher,
             _backups: backups,
             _new_day: new_day,
+            _changes: changes,
         }
+    }
+
+    /// Sparkles the header's dots whenever an operation changes data (a burst of writes is one
+    /// sparkle).
+    fn sparkle_on_changes(state: Entity<AppState>, cx: &mut Context<Self>) -> gpui::Task<()> {
+        let rx = state.read(cx).api.changes();
+        cx.spawn(async move |_, cx| {
+            while rx.recv().await.is_ok() {
+                while rx.try_recv().is_ok() {}
+                cx.update(|cx| state.update(cx, |s, cx| s.reshuffle_header(cx)));
+            }
+        })
     }
 
     /// The automatic backups the Tauri app's server used to take: at start and every hour, a
@@ -437,7 +464,11 @@ impl TrackApp {
                 let Ok(v) = api.data_version().await else { continue };
                 if last.is_some_and(|l| l != v) {
                     // The task belongs to TrackApp, so it stops when the window goes away.
-                    cx.update(|cx| state.update(cx, |s, cx| s.refresh_all(cx)));
+                    // Changes from the CLI or an AI agent sparkle like the app's own.
+                    cx.update(|cx| state.update(cx, |s, cx| {
+                        s.refresh_all(cx);
+                        s.reshuffle_header(cx);
+                    }));
                 }
                 last = Some(v);
             }
@@ -489,8 +520,14 @@ impl TrackApp {
                 .on_click(cx.listener(move |this, _, _, cx| this.show(page, cx)))
         };
         let fullscreen = window.is_fullscreen();
-        let seed = self.state.read(cx).header_seed;
+        let (from, seed, fade, shuffles) = {
+            let s = self.state.read(cx);
+            (s.header_prev_seed, s.header_seed, s.header_fade, s.header_shuffles)
+        };
         let dot_color = p.text;
+        let dots = move |t: f32| {
+            gpui::canvas(|_, _, _| (), move |bounds, _, window, _| crate::ui::header_dots::paint(bounds, (from, seed, t), dot_color, window)).size_full()
+        };
         div()
             .id("header")
             .debug_selector(|| "app-header".into())
@@ -511,14 +548,18 @@ impl TrackApp {
                     window.start_window_move();
                 }
             })
-            // The dot pattern behind everything (it takes no clicks).
-            .child(
-                gpui::canvas(|_, _, _| (), move |bounds, _, window, _| crate::ui::header_dots::paint(bounds, seed, dot_color, window))
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .size_full(),
-            )
+            // The dot pattern behind everything (it takes no clicks). A new pattern fades in
+            // from the last over `fade`.
+            .child({
+                let layer = div().absolute().top_0().left_0().size_full();
+                if fade.is_zero() || from == seed {
+                    layer.child(dots(1.)).into_any_element()
+                } else {
+                    layer
+                        .with_animation(gpui::SharedString::from(format!("header-dots-{shuffles}")), gpui::Animation::new(fade), move |d, t| d.child(dots(t)))
+                        .into_any_element()
+                }
+            })
             .child(
                 // Page tabs, not a toolbar group: navigation looks different from view settings.
                 div()

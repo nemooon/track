@@ -48,6 +48,9 @@ pub struct DataClient {
     pub dev_root: PathBuf,
     /// Test hook: operations named here fail with `test_failure`.
     failing: Arc<Mutex<HashSet<&'static str>>>,
+    /// One message per operation that changed rows (see `changes`).
+    changed_tx: async_channel::Sender<()>,
+    changed_rx: async_channel::Receiver<()>,
 }
 
 impl DataClient {
@@ -93,7 +96,14 @@ impl DataClient {
                 }
             })
             .expect("db thread");
-        DataClient { tx, data_dir, dev_root, failing: Arc::default() }
+        let (changed_tx, changed_rx) = async_channel::unbounded();
+        DataClient { tx, data_dir, dev_root, failing: Arc::default(), changed_tx, changed_rx }
+    }
+
+    /// Receives a message after every operation that inserted, updated or deleted rows through
+    /// this client (the header's dots sparkle on it). One listener: clones share the queue.
+    pub fn changes(&self) -> async_channel::Receiver<()> {
+        self.changed_rx.clone()
     }
 
     /// Runs `f` on the DB thread. A closed DB (open failure, guard) answers every call with that error.
@@ -104,15 +114,23 @@ impl DataClient {
     ) -> impl Future<Output = DataResult<T>> + Send + 'static {
         let (tx, rx) = async_channel::bounded(1);
         let fail = self.failing.lock().unwrap().contains(op);
+        let changed = self.changed_tx.clone();
         let job: Job = Box::new(move |db| {
             let result = if fail {
                 Err(DataError { code: "test_failure".into(), message: format!("{op} failed (test)") })
             } else {
                 match db {
                     // A bug in one operation must not take the DB thread (and every later call) down with it.
-                    Ok(db) => std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(db)))
-                        .unwrap_or_else(|_| Err(CoreError::code_msg("internal_error", format!("{op} で内部エラーが発生しました。"))))
-                        .map_err(DataError::from),
+                    Ok(db) => {
+                        let before = db.conn().total_changes();
+                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(db)))
+                            .unwrap_or_else(|_| Err(CoreError::code_msg("internal_error", format!("{op} で内部エラーが発生しました。"))))
+                            .map_err(DataError::from);
+                        if result.is_ok() && db.conn().total_changes() != before {
+                            let _ = changed.try_send(());
+                        }
+                        result
+                    }
                     Err(e) => Err(e.clone()),
                 }
             };
@@ -372,5 +390,25 @@ impl DataClient {
             })
             .expect("ai thread");
         rx
+    }
+}
+
+#[cfg(test)]
+mod change_tests {
+    use super::*;
+
+    fn client() -> DataClient {
+        let dir = tempfile::tempdir().unwrap().keep();
+        DataClient::open_unguarded(&dir)
+    }
+
+    #[test]
+    fn a_write_signals_a_change_and_a_read_does_not() {
+        let api = client();
+        let rx = api.changes();
+        gpui::block_on(api.projects()).unwrap();
+        assert!(rx.try_recv().is_err(), "reading changes nothing");
+        gpui::block_on(api.create_tag("定例".into(), "#22c55e".into())).unwrap();
+        assert!(rx.try_recv().is_ok(), "writing signals");
     }
 }
