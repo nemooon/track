@@ -4,15 +4,15 @@
 use gpui::{Bounds, Hsla, PathBuilder, Pixels, Window, point, px};
 
 /// The grid's tilt, in degrees.
-pub const ANGLE: f32 = 15.;
+pub const ANGLE: f32 = 2.;
 /// Distance between dots.
-pub const SPACING: f32 = 7.;
+pub const SPACING: f32 = 4.;
 /// A dot's side.
 pub const SIDE: f32 = 2.5;
 /// The darkest a dot gets (alpha of the text color).
-pub const STRENGTH: f32 = 0.16;
+pub const STRENGTH: f32 = 0.15;
 /// How much fainter the left edge is than the right (0 = even, 1 = gone).
-pub const FADE: f32 = 0.7;
+pub const FADE: f32 = 0.8;
 /// Shades are drawn in this many steps (one path each).
 const STEPS: usize = 8;
 
