@@ -334,15 +334,15 @@ fn header_tabs_keep_their_size_when_switching(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn header_tabs_share_one_group(cx: &mut TestAppContext) {
+fn header_tabs_run_down_to_the_header_edge(cx: &mut TestAppContext) {
     let (_app, cx) = open_app(cx);
-    let group = cx.debug_bounds("header-tabs").expect("tab group");
+    let header = cx.debug_bounds("app-header").unwrap();
     for id in ["tab-calendar", "tab-reports"] {
         let b = cx.debug_bounds(id).unwrap();
-        assert!(group.contains(&b.origin) && group.contains(&b.bottom_right()), "{id} sits inside the group");
+        // The underline sits on the header's bottom border.
+        assert!(b.bottom() >= header.bottom() - gpui::px(1.5) && b.bottom() <= header.bottom(), "{id}: {b:?} in {header:?}");
     }
-    let header = cx.debug_bounds("app-header").unwrap();
-    assert!(header.contains(&group.origin) && group.bottom() <= header.bottom(), "the group fits in the header");
+    assert!(cx.debug_bounds("header-tabs").is_none(), "no shared group background");
 }
 
 #[gpui::test]

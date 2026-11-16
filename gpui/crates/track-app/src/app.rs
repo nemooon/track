@@ -385,20 +385,20 @@ impl TrackApp {
                 .flex()
                 .items_center()
                 .gap(px(6.))
-                .h(px(22.))
-                .px_2()
-                .rounded_md()
+                .h_full()
+                .px(px(2.))
                 .text_xs()
                 .font_weight(gpui::FontWeight::MEDIUM)
                 .cursor_pointer()
-                // Every tab has the border (clear when inactive), so switching changes no size.
-                .border_1()
+                // An underline on the header's edge marks the page. Every tab has it (clear when
+                // inactive), so switching changes no size.
+                .border_b_2()
                 .border_color(gpui::transparent_black())
                 .map(|d| {
                     if active {
-                        d.bg(p.bg).text_color(p.text).border_color(p.border)
+                        d.text_color(p.text).border_color(p.text)
                     } else {
-                        d.text_color(p.text_muted).hover(move |s| s.bg(p.selected).text_color(p.text))
+                        d.text_color(p.text_muted).hover(move |s| s.text_color(p.text))
                     }
                 })
                 .child(icon.size_3p5())
@@ -427,13 +427,11 @@ impl TrackApp {
                 }
             })
             .child(
-                // The toolbars' segmented group, a shade darker so it stands out on the header.
-                crate::ui::controls::group(&p)
-                    .debug_selector(|| "header-tabs".into())
-                    .bg(p.hover)
-                    // Tighter than the toolbars: the tabs fill the group.
-                    .p_0()
-                    .gap_0()
+                // Page tabs, not a toolbar group: navigation looks different from view settings.
+                div()
+                    .flex()
+                    .h_full()
+                    .gap(px(14.))
                     .child(tab("tab-calendar", "カレンダー", Icon::new(IconName::Calendar), Page::Calendar, self.page == Page::Calendar))
                     .child(tab("tab-reports", "レポート", crate::ui::icons::clipboard_list(), Page::Reports, self.page == Page::Reports)),
             )
