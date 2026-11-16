@@ -434,7 +434,7 @@ impl TrackApp {
                 .gap(px(6.))
                 .h_full()
                 .px(px(2.))
-                .text_xs()
+                .text_size(px(13.))
                 .font_weight(gpui::FontWeight::MEDIUM)
                 .cursor_pointer()
                 // An underline on the header's edge marks the page. Every tab has it (clear when
