@@ -367,6 +367,24 @@ fn header_tab_labels_sit_on_the_header_midline(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn the_calendar_tab_icon_shows_todays_day(cx: &mut TestAppContext) {
+    use chrono::Datelike;
+    let (_app, cx) = open_app(cx);
+    let day = Local::now().day();
+    let mark = cx.debug_bounds(Box::leak(format!("tab-calendar-day-{day}").into_boxed_str())).expect("today's day in the icon");
+    let tab = cx.debug_bounds("tab-calendar").unwrap();
+    assert!(tab.contains(&mark.center()));
+}
+
+#[test]
+fn the_header_redraws_just_after_midnight() {
+    use chrono::NaiveDate;
+    let at = |h, m, s| NaiveDate::from_ymd_opt(2026, 11, 16).unwrap().and_hms_opt(h, m, s).unwrap();
+    assert_eq!(crate::app::until_next_day(at(23, 59, 0)), std::time::Duration::from_secs(61));
+    assert_eq!(crate::app::until_next_day(at(0, 0, 0)), std::time::Duration::from_secs(24 * 60 * 60 + 1));
+}
+
+#[gpui::test]
 fn ai_notice_lives_in_the_status_bar(cx: &mut TestAppContext) {
     let (app, cx, f) = seeded(cx, false);
     refresh(&app, cx);

@@ -272,6 +272,41 @@ pub struct TrackApp {
     pub integrations: Option<Entity<crate::ui::integrations_dialog::IntegrationsDialog>>,
     _watcher: gpui::Task<()>,
     _backups: gpui::Task<()>,
+    _new_day: gpui::Task<()>,
+}
+
+/// How long from `now` until just after the next local midnight (when the calendar tab's day
+/// changes).
+pub fn until_next_day(now: chrono::NaiveDateTime) -> std::time::Duration {
+    let next = (now.date() + chrono::Duration::days(1)).and_hms_opt(0, 0, 1).unwrap();
+    (next - now).to_std().unwrap_or_default()
+}
+
+/// The calendar icon with today's day in its body (Lucide `calendar` leaves the body empty).
+fn calendar_day_icon(day: u32, side: f32) -> gpui::AnyElement {
+    let unit = side / 24.;
+    div()
+        .relative()
+        .size(px(side))
+        .flex_none()
+        .child(Icon::new(IconName::Calendar).size(px(side)))
+        .child(
+            div()
+                .debug_selector(move || format!("tab-calendar-day-{day}"))
+                .absolute()
+                .left(px(3. * unit))
+                .right(px(3. * unit))
+                .top(px(9. * unit))
+                .bottom(px(3. * unit))
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(px(8.))
+                .line_height(px(8.))
+                .font_weight(gpui::FontWeight::BOLD)
+                .child(day.to_string()),
+        )
+        .into_any_element()
 }
 
 /// How often the DB is checked for writes by other processes (track-cli, AI agents).
@@ -320,6 +355,13 @@ impl TrackApp {
         cx.observe_window_appearance(window, |this, window, cx| this.on_system_appearance(is_dark(window.appearance()), cx)).detach();
         let watcher = Self::watch_external_changes(state.clone(), cx);
         let backups = Self::auto_backup(state.read(cx).api.clone(), cx);
+        // Redraw just after midnight so the calendar tab shows the new day.
+        let new_day = cx.spawn(async move |this, cx| loop {
+            cx.background_executor().timer(until_next_day(chrono::Local::now().naive_local())).await;
+            if this.update(cx, |_, cx| cx.notify()).is_err() {
+                break;
+            }
+        });
         Self {
             state,
             page,
@@ -330,6 +372,7 @@ impl TrackApp {
             integrations: None,
             _watcher: watcher,
             _backups: backups,
+            _new_day: new_day,
         }
     }
 
@@ -378,7 +421,7 @@ impl TrackApp {
 
     fn render_header(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = palette(cx);
-        let tab = |id: &'static str, label: &'static str, icon: Icon, page: Page, active: bool| {
+        let tab = |id: &'static str, label: &'static str, icon: gpui::AnyElement, page: Page, active: bool| {
             div()
                 .id(id)
                 .debug_selector(move || id.into())
@@ -403,7 +446,7 @@ impl TrackApp {
                         d.text_color(p.text_muted).hover(move |s| s.text_color(p.text))
                     }
                 })
-                .child(icon.size_3p5())
+                .child(icon)
                 .child(div().debug_selector(move || format!("{id}-label")).child(label))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(cx.listener(move |this, _, _, cx| this.show(page, cx)))
@@ -434,8 +477,8 @@ impl TrackApp {
                     .flex()
                     .h_full()
                     .gap(px(14.))
-                    .child(tab("tab-calendar", "カレンダー", Icon::new(IconName::Calendar), Page::Calendar, self.page == Page::Calendar))
-                    .child(tab("tab-reports", "レポート", crate::ui::icons::clipboard_list(), Page::Reports, self.page == Page::Reports)),
+                    .child(tab("tab-calendar", "カレンダー", calendar_day_icon(chrono::Datelike::day(&chrono::Local::now()), 16.), Page::Calendar, self.page == Page::Calendar))
+                    .child(tab("tab-reports", "レポート", crate::ui::icons::clipboard_list().size_4().into_any_element(), Page::Reports, self.page == Page::Reports)),
             )
             .child(
                 crate::ui::controls::icon_button(&p, "open-settings", Icon::new(IconName::Settings), "設定（⌘,）")
