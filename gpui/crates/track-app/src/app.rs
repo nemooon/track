@@ -431,9 +431,9 @@ impl TrackApp {
                 crate::ui::controls::group(&p)
                     .debug_selector(|| "header-tabs".into())
                     .bg(p.hover)
-                    // Tighter than the toolbars: the tabs nearly fill the group.
-                    .p(px(1.))
-                    .gap(px(1.))
+                    // Tighter than the toolbars: the tabs fill the group.
+                    .p_0()
+                    .gap_0()
                     .child(tab("tab-calendar", "カレンダー", Icon::new(IconName::Calendar), Page::Calendar, self.page == Page::Calendar))
                     .child(tab("tab-reports", "レポート", crate::ui::icons::clipboard_list(), Page::Reports, self.page == Page::Reports)),
             )
