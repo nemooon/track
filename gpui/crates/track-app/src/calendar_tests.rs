@@ -515,3 +515,21 @@ fn normal_edit_dialog_has_times(cx: &mut TestAppContext) {
     assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).editing.clone()), Some("a".into()));
     assert!(cx.debug_bounds("edit-times").is_some());
 }
+
+#[gpui::test]
+fn today_is_marked_by_a_line_on_top_of_its_header(cx: &mut TestAppContext) {
+    use chrono::Datelike;
+    // The current week (setup() moves to another one).
+    let (_app, cx) = crate::testing::open_app(cx);
+    let today = chrono::Local::now().date_naive();
+    let bar = cx.debug_bounds("today-bar");
+    if today.weekday().num_days_from_monday() >= 5 {
+        assert!(bar.is_none(), "the default view hides weekends");
+        return;
+    }
+    let bar = bar.expect("today's line");
+    let header = cx.debug_bounds("day-header").unwrap();
+    assert_eq!(bar.top(), header.top(), "on the top edge");
+    assert!(bar.size.height >= gpui::px(2.) && bar.size.height <= gpui::px(3.));
+    assert!(bar.size.width > gpui::px(50.), "spans the day's column");
+}

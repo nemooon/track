@@ -277,7 +277,9 @@ impl CalendarView {
             .children(days.iter().map(|&d| {
                 let total = day_total_minutes(self.cache.entries(), d);
                 let holiday = holiday_name(d);
+                let is_today = d == today;
                 div()
+                    .relative()
                     .flex_1()
                     .min_w_0()
                     .h(px(36.))
@@ -288,6 +290,11 @@ impl CalendarView {
                     .border_color(p.border)
                     .px_2()
                     .text_xs()
+                    // Today: a line on the column's top edge and the date in the accent (it wins
+                    // over a holiday, which has its own label).
+                    .when(is_today, |c| {
+                        c.child(div().debug_selector(|| "today-bar".into()).absolute().top_0().left_0().right_0().h(px(3.)).bg(p.accent))
+                    })
                     .child(
                         div()
                             .h(px(24.))
@@ -297,13 +304,12 @@ impl CalendarView {
                             .flex_shrink_0()
                             .items_center()
                             .justify_center()
-                            .rounded_full()
-                            .when(d == today, |c| c.bg(p.accent).text_color(p.accent_text))
+                            .when(is_today, |c| c.text_color(p.accent))
                             .text_base()
                             .font_weight(FontWeight::BOLD)
                             .child(d.day().to_string()),
                     )
-                    .child(div().flex_shrink_0().text_color(p.text_muted).font_weight(FontWeight::SEMIBOLD).child(weekday_ja(d)))
+                    .child(div().flex_shrink_0().text_color(if is_today { p.accent } else { p.text_muted }).font_weight(FontWeight::SEMIBOLD).child(weekday_ja(d)))
                     .when_some(holiday, |s, name| {
                         // A holiday on a work day counts as leave unless the day menu says otherwise.
                         let tip = if self.counts_holiday_leave(d, cx) { format!("{name}（休暇）") } else { name.to_string() };
