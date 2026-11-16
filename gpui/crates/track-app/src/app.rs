@@ -378,7 +378,7 @@ impl TrackApp {
 
     fn render_header(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = palette(cx);
-        let tab = |id: &'static str, label: &'static str, icon: IconName, page: Page, active: bool| {
+        let tab = |id: &'static str, label: &'static str, icon: Icon, page: Page, active: bool| {
             div()
                 .id(id)
                 .debug_selector(move || id.into())
@@ -391,14 +391,17 @@ impl TrackApp {
                 .text_xs()
                 .font_weight(gpui::FontWeight::MEDIUM)
                 .cursor_pointer()
+                // Every tab has the border (clear when inactive), so switching changes no size.
+                .border_1()
+                .border_color(gpui::transparent_black())
                 .map(|d| {
                     if active {
-                        d.bg(p.bg).text_color(p.text).border_1().border_color(p.border)
+                        d.bg(p.bg).text_color(p.text).border_color(p.border)
                     } else {
                         d.text_color(p.text_muted).hover(move |s| s.bg(p.hover).text_color(p.text))
                     }
                 })
-                .child(Icon::new(icon).size_3p5())
+                .child(icon.size_3p5())
                 .child(label)
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(cx.listener(move |this, _, _, cx| this.show(page, cx)))
@@ -428,8 +431,8 @@ impl TrackApp {
                     .flex()
                     .items_center()
                     .gap_1()
-                    .child(tab("tab-calendar", "カレンダー", IconName::Calendar, Page::Calendar, self.page == Page::Calendar))
-                    .child(tab("tab-reports", "レポート", IconName::ChartPie, Page::Reports, self.page == Page::Reports)),
+                    .child(tab("tab-calendar", "カレンダー", Icon::new(IconName::Calendar), Page::Calendar, self.page == Page::Calendar))
+                    .child(tab("tab-reports", "レポート", crate::ui::icons::clipboard_list(), Page::Reports, self.page == Page::Reports)),
             )
             .child(
                 crate::ui::controls::icon_button(&p, "open-settings", Icon::new(IconName::Settings), "設定（⌘,）")

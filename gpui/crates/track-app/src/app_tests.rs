@@ -324,6 +324,16 @@ fn header_has_only_tabs_and_settings(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn header_tabs_keep_their_size_when_switching(cx: &mut TestAppContext) {
+    let (_app, cx) = open_app(cx);
+    let before = ["tab-calendar", "tab-reports"].map(|id| cx.debug_bounds(id).unwrap());
+    cx.simulate_click(before[1].center(), gpui::Modifiers::none());
+    cx.run_until_parked();
+    let after = ["tab-calendar", "tab-reports"].map(|id| cx.debug_bounds(id).unwrap());
+    assert_eq!(before, after, "switching moves or resizes nothing");
+}
+
+#[gpui::test]
 fn ai_notice_lives_in_the_status_bar(cx: &mut TestAppContext) {
     let (app, cx, f) = seeded(cx, false);
     refresh(&app, cx);

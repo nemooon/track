@@ -1,7 +1,7 @@
 //! Icons beyond gpui-component's built-in set, served next to its assets.
 use gpui::{AssetSource, SharedString};
 
-gpui_kit_assets::icon_assets!(ExtraIcons, [Pipette, Archive, ArchiveRestore, Trash, CalendarCog]);
+gpui_kit_assets::icon_assets!(ExtraIcons, [Pipette, Archive, ArchiveRestore, Trash, CalendarCog, ClipboardList]);
 
 /// gpui-component's assets plus the extra Lucide icons this app uses.
 pub struct AppAssets(pub gpui_kit_assets::Assets);
@@ -46,4 +46,9 @@ pub fn trash() -> gpui_component::Icon {
 /// The day menu: 休暇・直行直帰 (Lucide `calendar-cog`).
 pub fn calendar_cog() -> gpui_component::Icon {
     gpui_component::Icon::empty().path(gpui_kit_assets::IconName::CalendarCog.path())
+}
+
+/// The reports page (Lucide `clipboard-list`): a list of totals, not a chart.
+pub fn clipboard_list() -> gpui_component::Icon {
+    gpui_component::Icon::empty().path(gpui_kit_assets::IconName::ClipboardList.path())
 }

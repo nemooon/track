@@ -66,15 +66,15 @@ impl SettingsSection {
         }
     }
 
-    fn icon(self) -> IconName {
+    fn icon(self) -> Icon {
         match self {
-            Self::Appearance => IconName::Eye,
-            Self::Calendar => IconName::Calendar,
-            Self::Reports => IconName::ChartPie,
-            Self::Projects => IconName::Folder,
-            Self::Tags => IconName::Star,
-            Self::Ai => IconName::Bot,
-            Self::Backup => IconName::HardDrive,
+            Self::Appearance => Icon::new(IconName::Eye),
+            Self::Calendar => Icon::new(IconName::Calendar),
+            Self::Reports => crate::ui::icons::clipboard_list(),
+            Self::Projects => Icon::new(IconName::Folder),
+            Self::Tags => Icon::new(IconName::Star),
+            Self::Ai => Icon::new(IconName::Bot),
+            Self::Backup => Icon::new(IconName::HardDrive),
         }
     }
 }
@@ -166,7 +166,7 @@ impl SettingsWindow {
                     .cursor_pointer()
                     .when(active, |d| d.bg(p.selected).font_weight(FontWeight::MEDIUM).text_color(p.text))
                     .when(!active, |d| d.text_color(p.text).hover(|h| h.bg(p.hover)))
-                    .child(Icon::new(s.icon()).size_4())
+                    .child(s.icon().size_4())
                     .child(s.label())
                     .on_click(cx.listener(move |this, _, _, cx| this.show(s, cx))),
             );
