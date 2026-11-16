@@ -533,3 +533,28 @@ fn today_is_marked_by_a_line_on_top_of_its_header(cx: &mut TestAppContext) {
     assert!(bar.size.height >= gpui::px(2.) && bar.size.height <= gpui::px(3.));
     assert!(bar.size.width > gpui::px(50.), "spans the day's column");
 }
+
+#[gpui::test]
+fn saving_an_entry_reshuffles_the_header_dots(cx: &mut TestAppContext) {
+    let (app, cx, _f) = setup(cx);
+    let seed = |cx: &mut gpui::VisualTestContext| app.read_with(cx, |a, cx| a.state.read(cx).header_seed);
+    let shuffles = |cx: &mut gpui::VisualTestContext| app.read_with(cx, |a, cx| a.state.read(cx).header_shuffles);
+    let before = seed(cx);
+    let body = track_core::model::NewEntry { start: at(13, 9, 0), end: at(13, 10, 0), title: Some("新規".into()), ..Default::default() };
+    cx.update(|window, cx| app.update(cx, |a, cx| a.calendar.update(cx, |c, cx| c.create(body, window, cx))));
+    wait_io(cx);
+    sparkle_out(cx);
+    let created = seed(cx);
+    assert_ne!(before, created, "creating changes the pattern");
+    assert_eq!(shuffles(cx), crate::app::SPARKLE_STEPS, "it flickers through several patterns");
+    cx.update(|window, cx| app.update(cx, |a, cx| a.calendar.update(cx, |c, cx| c.commit_times("a", at(12, 11, 0), at(12, 12, 0), window, cx))));
+    wait_io(cx);
+    sparkle_out(cx);
+    assert_ne!(created, seed(cx), "updating changes it too");
+}
+
+/// Runs the header's sparkle to the end (its timer runs on the test clock).
+fn sparkle_out(cx: &mut gpui::VisualTestContext) {
+    cx.executor().advance_clock(std::time::Duration::from_secs(1));
+    cx.run_until_parked();
+}

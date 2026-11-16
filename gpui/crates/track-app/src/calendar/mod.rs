@@ -693,6 +693,7 @@ impl CalendarView {
                 match result {
                     Ok(updated) => {
                         this.cache.replace(updated);
+                        this.state.update(cx, |s, cx| s.reshuffle_header(cx));
                         this.notify_msg(Notification::success("保存しました"), cx);
                     }
                     Err(_) => {
@@ -714,7 +715,10 @@ impl CalendarView {
             let result = fut.await;
             let _ = this.update(cx, |this, cx| {
                 match result {
-                    Ok(e) => this.cache.insert(e),
+                    Ok(e) => {
+                        this.cache.insert(e);
+                        this.state.update(cx, |s, cx| s.reshuffle_header(cx));
+                    }
                     Err(_) => this.notify_msg(Notification::error("記録の作成に失敗しました"), cx),
                 }
                 cx.notify();

@@ -28,6 +28,11 @@ pub enum StateEvent {
     Reloaded,
 }
 
+/// A seed that differs from the last (the clock's nanoseconds).
+fn fresh_seed() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(1)
+}
+
 pub struct AppState {
     /// How many `refresh_all` rounds have finished (tests).
     pub reloads: u64,
@@ -41,7 +46,16 @@ pub struct AppState {
     pub ops_seen: Option<i64>,
     /// The AI operations offered for undo in the main window.
     pub ai_op: Option<AiOpNotice>,
+    /// The seed of the header's dot pattern; saving an entry changes it.
+    pub header_seed: u64,
+    /// How many times the pattern has changed (tests).
+    pub header_shuffles: u64,
+    sparkle: Option<gpui::Task<()>>,
 }
+
+/// How many patterns one sparkle goes through, and how fast.
+pub const SPARKLE_STEPS: u64 = 10;
+const SPARKLE_EVERY: std::time::Duration = std::time::Duration::from_millis(45);
 
 /// 「AI が N 件変更しました［元に戻す］」: every AI operation that arrived while the notice
 /// was up (until it is closed), undone together newest first.
@@ -79,12 +93,31 @@ impl AiOpNotice {
 }
 
 impl AppState {
+    /// After saving an entry the header's dots sparkle: SPARKLE_STEPS new patterns in quick
+    /// succession, ending on the last. A new save restarts it.
+    pub fn reshuffle_header(&mut self, cx: &mut Context<Self>) {
+        self.sparkle = Some(cx.spawn(async move |this, cx| {
+            for _ in 0..SPARKLE_STEPS {
+                cx.background_executor().timer(SPARKLE_EVERY).await;
+                let ok = this.update(cx, |s, cx| {
+                    let next = fresh_seed();
+                    s.header_seed = if next == s.header_seed { next.wrapping_add(1) } else { next };
+                    s.header_shuffles += 1;
+                    cx.notify();
+                });
+                if ok.is_err() {
+                    break;
+                }
+            }
+        }));
+    }
+
     pub fn new(api: DataClient) -> Self {
         Self::with_path(api, PersistState::default_path())
     }
 
     pub fn with_path(api: DataClient, persist_path: PathBuf) -> Self {
-        Self { reloads: 0, api, data: None, error: None, loading: false, persist: PersistState::load(&persist_path), persist_path, ops_seen: None, ai_op: None }
+        Self { reloads: 0, api, data: None, error: None, loading: false, persist: PersistState::load(&persist_path), persist_path, ops_seen: None, ai_op: None, header_seed: fresh_seed(), header_shuffles: 0, sparkle: None }
     }
 
     pub fn update_persist(&mut self, f: impl FnOnce(&mut PersistState)) {
@@ -456,9 +489,12 @@ impl TrackApp {
                 .on_click(cx.listener(move |this, _, _, cx| this.show(page, cx)))
         };
         let fullscreen = window.is_fullscreen();
+        let seed = self.state.read(cx).header_seed;
+        let dot_color = p.text;
         div()
             .id("header")
             .debug_selector(|| "app-header".into())
+            .relative()
             .flex()
             .flex_shrink_0()
             .items_center()
@@ -475,6 +511,14 @@ impl TrackApp {
                     window.start_window_move();
                 }
             })
+            // The dot pattern behind everything (it takes no clicks).
+            .child(
+                gpui::canvas(|_, _, _| (), move |bounds, _, window, _| crate::ui::header_dots::paint(bounds, seed, dot_color, window))
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size_full(),
+            )
             .child(
                 // Page tabs, not a toolbar group: navigation looks different from view settings.
                 div()
