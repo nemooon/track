@@ -385,7 +385,7 @@ impl TrackApp {
                 .flex()
                 .items_center()
                 .gap(px(6.))
-                .h(px(24.))
+                .h(px(22.))
                 .px_2()
                 .rounded_md()
                 .text_xs()
@@ -398,7 +398,7 @@ impl TrackApp {
                     if active {
                         d.bg(p.bg).text_color(p.text).border_color(p.border)
                     } else {
-                        d.text_color(p.text_muted).hover(move |s| s.bg(p.hover).text_color(p.text))
+                        d.text_color(p.text_muted).hover(move |s| s.bg(p.selected).text_color(p.text))
                     }
                 })
                 .child(icon.size_3p5())
@@ -427,10 +427,10 @@ impl TrackApp {
                 }
             })
             .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1()
+                // The toolbars' segmented group, a shade darker so it stands out on the header.
+                crate::ui::controls::group(&p)
+                    .debug_selector(|| "header-tabs".into())
+                    .bg(p.hover)
                     .child(tab("tab-calendar", "カレンダー", Icon::new(IconName::Calendar), Page::Calendar, self.page == Page::Calendar))
                     .child(tab("tab-reports", "レポート", crate::ui::icons::clipboard_list(), Page::Reports, self.page == Page::Reports)),
             )

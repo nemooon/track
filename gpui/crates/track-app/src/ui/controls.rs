@@ -83,9 +83,12 @@ pub fn button(p: &Palette, id: impl Into<ElementId>, active: bool, icon_only: bo
         .font_weight(gpui::FontWeight::MEDIUM)
         .cursor_pointer()
         .map(|d| if icon_only { d.w(px(32.)) } else { d.px(px(10.)) })
+        // Every segment has the border (clear when off), so turning one on changes no size.
+        .border_1()
+        .border_color(gpui::transparent_black())
         .map(|d| {
             if active {
-                d.bg(p.bg).text_color(p.text).border_1().border_color(p.border)
+                d.bg(p.bg).text_color(p.text).border_color(p.border)
             } else {
                 d.text_color(p.text_muted).hover(move |s| s.bg(p.hover).text_color(p.text))
             }

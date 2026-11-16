@@ -334,6 +334,29 @@ fn header_tabs_keep_their_size_when_switching(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn header_tabs_share_one_group(cx: &mut TestAppContext) {
+    let (_app, cx) = open_app(cx);
+    let group = cx.debug_bounds("header-tabs").expect("tab group");
+    for id in ["tab-calendar", "tab-reports"] {
+        let b = cx.debug_bounds(id).unwrap();
+        assert!(group.contains(&b.origin) && group.contains(&b.bottom_right()), "{id} sits inside the group");
+    }
+    let header = cx.debug_bounds("app-header").unwrap();
+    assert!(header.contains(&group.origin) && group.bottom() <= header.bottom(), "the group fits in the header");
+}
+
+#[gpui::test]
+fn a_segment_keeps_its_size_when_it_turns_off(cx: &mut TestAppContext) {
+    let (_app, cx) = open_app(cx);
+    let on = cx.debug_bounds("nav-today").expect("today button");
+    let prev = cx.debug_bounds("nav-prev").unwrap();
+    cx.simulate_click(prev.center(), gpui::Modifiers::none());
+    cx.run_until_parked();
+    let off = cx.debug_bounds("nav-today").unwrap();
+    assert_eq!(on.size, off.size, "today's button is the same size on and off");
+}
+
+#[gpui::test]
 fn ai_notice_lives_in_the_status_bar(cx: &mut TestAppContext) {
     let (app, cx, f) = seeded(cx, false);
     refresh(&app, cx);

@@ -67,6 +67,7 @@ pub fn render<V: HasDateNav>(nav: DateNav, anchor: NaiveDate, kind: NavKind, cx:
         .relative()
         .child(
             controls::button(&p, "nav-prev", false, true)
+                .debug_selector(|| "nav-prev".into())
                 .child(Icon::new(IconName::ChevronLeft).size_4())
                 .tooltip(|window, cx| gpui_component::tooltip::Tooltip::new("前の期間（⌘[）").build(window, cx))
                 .on_click(cx.listener(|this, _, w, cx| this.on_nav(NavEvent::Prev, w, cx))),
@@ -92,6 +93,7 @@ pub fn render<V: HasDateNav>(nav: DateNav, anchor: NaiveDate, kind: NavKind, cx:
         )
         .child(
             controls::button(&p, "nav-today", includes_today, false)
+                .debug_selector(|| "nav-today".into())
                 .child("今日")
                 .on_click(cx.listener(|this, _, w, cx| this.on_nav(NavEvent::Today, w, cx))),
         )
