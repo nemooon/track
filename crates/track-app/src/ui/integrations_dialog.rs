@@ -5,7 +5,7 @@ use gpui::{Context, FontWeight, InteractiveElement, IntoElement, ParentElement, 
 use std::path::PathBuf;
 use track_core::integrations::{IntegrationKind, install_integrations_in};
 
-/// Remove when the GPUI version replaces the Tauri app (the real names are `track`).
+/// Remove when the app moves from the copy DB to the real `~/.track` (the real names are `track`).
 pub const DEV_NAMES: bool = true;
 
 pub struct IntegrationsDialog {

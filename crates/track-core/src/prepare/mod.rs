@@ -1,5 +1,5 @@
 //! `track-cli prepare`: candidate entries from Codex / Claude Code conversation logs.
-//! A line-for-line port of src/cli/index.ts (same windows, rounding, JSON shape and errors).
+//! Ported from the earlier Tauri app's CLI (same windows, rounding, JSON shape and errors).
 use crate::error::{CoreError, Result};
 use crate::model::TimeEntry;
 use crate::Db;
@@ -94,7 +94,7 @@ pub fn json_lines(file: &Path) -> Result<Vec<Value>> {
 
 fn walk(dir: &Path) -> Vec<PathBuf> {
     let Ok(rd) = std::fs::read_dir(dir) else { return vec![] };
-    // Filesystem order, like Bun's readdirSync (it does not sort); ties in the final
+    // Filesystem order (not sorted, as before); ties in the final
     // session order depend on it.
     let entries: Vec<_> = rd.flatten().collect();
     let mut out = Vec::new();

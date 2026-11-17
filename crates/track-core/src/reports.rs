@@ -1,4 +1,4 @@
-//! Report aggregation (src/server/routes/reports.ts).
+//! Report aggregation.
 use crate::dates::{month_range, week_range};
 use crate::error::Result;
 use crate::model::*;
@@ -142,7 +142,7 @@ impl Db {
                 },
             }
         }
-        // stable sort by minutes, ties keep first-seen order (like Array.prototype.sort)
+        // stable sort by minutes, ties keep first-seen order
         let mut out: Vec<ReportRow> = order.into_iter().filter_map(|k| rows.remove(&k)).collect();
         if let Some(leave) = self.leave_in(q, from, to)?.filter(|m| *m > 0) {
             total += leave;

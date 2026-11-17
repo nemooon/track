@@ -1,4 +1,4 @@
-//! The settings window (Tauri: SettingsLayout + SettingsPage + ProjectsPage + ReportCopyFormatPage).
+//! The settings window: a list of pages on the left, the chosen page on the right.
 //! A second window with the section list on the left; opened by ⌘, , the Track menu or the
 //! header button, one at a time.
 use crate::app::AppState;
@@ -200,7 +200,7 @@ impl Render for SettingsWindow {
                         div().flex_1().min_h_0().children(content).into_any_element()
                     } else {
                         div()
-                            // A new id per page starts it scrolled to the top (Tauri navigates between pages).
+                            // A new id per page starts it scrolled to the top.
                             .id(gpui::SharedString::from(format!("settings-content-{}-{}", self.section.key(), editing_format)))
                             .flex_1()
                             .min_h_0()

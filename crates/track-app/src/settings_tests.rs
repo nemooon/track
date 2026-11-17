@@ -330,7 +330,7 @@ fn add_format_and_edit_columns(cx: &mut TestAppContext) {
     assert!(scx.debug_bounds("format-row-0").is_some(), "the default 標準 format is listed");
     click(&mut scx, "format-add");
     wait_io(&mut scx);
-    assert_eq!(saved_formats(&f).len(), 2, "added right away, like Tauri");
+    assert_eq!(saved_formats(&f).len(), 2, "added right away");
     let ed = format_editor(&view, &mut scx);
     let name = ed.read_with(&scx, |e, _| e.name.clone());
     assert_eq!(name.read_with(&scx, |n, _| n.value().to_string()), "新しい出力形式");

@@ -1,4 +1,4 @@
-//! 「バックアップと復元」 (SettingsPage「保存の設定」「復元ポイント」). Settings go to config.json;
+//! 「バックアップと復元」: where and how often to back up, and the restore points. Settings go to gpui-config.json;
 //! snapshots and restore run on the DB thread.
 use super::form::{self, Actions};
 use crate::app::AppState;

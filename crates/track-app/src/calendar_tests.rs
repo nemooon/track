@@ -255,7 +255,7 @@ fn changing_period_mid_drag_cancels_instead_of_saving_elsewhere(cx: &mut TestApp
     assert_eq!((e.start, e.end), (at(12, 10, 0), at(12, 11, 0)), "no save after navigating away");
 }
 
-/// The hover time pill sits left of the line on one line, like Tauri's `right-full whitespace-nowrap`.
+/// The hover time pill sits left of the line, on one line.
 #[gpui::test]
 fn hover_time_label_is_one_line_left_of_the_line(cx: &mut TestAppContext) {
     let (_app, cx, _f) = setup(cx);

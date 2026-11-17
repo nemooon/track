@@ -1,4 +1,4 @@
-//! Ports of src/cli/index.test.ts (same inputs, same expectations).
+//! Ported from the earlier Tauri app's CLI tests (same inputs, same expectations).
 use super::*;
 use chrono::DateTime;
 use std::fs;

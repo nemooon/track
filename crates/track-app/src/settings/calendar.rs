@@ -1,10 +1,10 @@
-//! 「カレンダー」: working hours and days (SettingsPage「勤務スケジュール」).
+//! 「カレンダー」: working hours and days.
 use super::form::{self, Actions};
 use crate::app::AppState;
 use crate::ui::theme::*;
 use gpui::{Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled, Window, div, px};
 
-/// The time inputs step by 30 minutes, like `step={1800}` in the Tauri screen.
+/// The time inputs step by 30 minutes.
 const STEP: i64 = 30;
 const DAYS: [&str; 7] = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -54,7 +54,7 @@ impl CalendarSettings {
         self.saved(cx).is_some_and(|saved| saved != (self.work_start, self.work_end, days))
     }
 
-    /// The Tauri screen's client-side checks.
+    /// Checks before saving.
     pub fn validation(&self) -> Option<&'static str> {
         if self.work_end <= self.work_start {
             Some("勤務終了は勤務開始より後にしてください")

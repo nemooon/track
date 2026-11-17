@@ -8,7 +8,7 @@ use crate::Db;
 use chrono::{DateTime, Utc};
 
 /// Project colours for the settings screen and the CLI, in hue order (red → rose) with the two
-/// greys last. The Tauri app's ten `PROJECT_COLORS` (src/client/lib/utils.ts) are all included.
+/// greys last. The earlier Tauri app's ten colours are all included, so its projects keep theirs.
 pub const PROJECT_COLORS: [&str; 20] = [
     "#ef4444", "#f97316", "#b45309", "#f59e0b", "#eab308", "#84cc16", "#22c55e", "#10b981", "#14b8a6", "#06b6d4",
     "#0ea5e9", "#3b82f6", "#6366f1", "#8b5cf6", "#a855f7", "#d946ef", "#ec4899", "#f43f5e", "#64748b", "#78716c",

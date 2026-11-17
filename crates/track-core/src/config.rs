@@ -1,6 +1,6 @@
 //! GPUI-only settings (`gpui-config.json` in the data directory): backups, AI and appearance.
-//! The values and rules are those of the Tauri app's `config.json` (src/server/config.ts), which
-//! is read once to seed this file and never written.
+//! The values and rules follow the earlier Tauri app's `config.json`, which is read once to seed
+//! this file and never written.
 use crate::error::{CoreError, Result};
 use crate::model::AppConfig;
 use serde_json::{Map, Value};
@@ -10,7 +10,7 @@ pub const PROVIDERS: [&str; 3] = ["apple-intelligence", "codex", "custom-command
 
 /// This app's own settings file.
 pub const FILE: &str = "gpui-config.json";
-/// The Tauri app's file, read only to seed `FILE`.
+/// The earlier Tauri app's file, read only to seed `FILE`.
 pub const LEGACY_FILE: &str = "config.json";
 
 /// Light / dark choice; `System` follows macOS.
@@ -121,7 +121,7 @@ fn write_object(data_dir: &Path, obj: Map<String, Value>) -> Result<()> {
     Ok(())
 }
 
-/// Seeds `gpui-config.json` from the Tauri app's `config.json` the first time (or with the
+/// Seeds `gpui-config.json` from the earlier Tauri app's `config.json` the first time (or with the
 /// defaults when there is none). Once the file exists — even unreadable — it is left alone.
 /// A backup folder outside `dev_root` is not carried over (the real backups live there).
 pub fn migrate_in(data_dir: &Path, dev_root: &Path) -> Result<()> {
@@ -137,13 +137,13 @@ pub fn migrate_in(data_dir: &Path, dev_root: &Path) -> Result<()> {
     write_object(data_dir, obj)
 }
 
-/// Reads `gpui-config.json`, normalised like `loadConfig` (defaults when missing). Never writes:
+/// Reads `gpui-config.json`, normalised (defaults when missing). Never writes:
 /// seeding is `migrate_in`, run by the app only once the development guard has passed.
 pub fn load_config(data_dir: &Path) -> Config {
     normalize(data_dir, read_object(data_dir))
 }
 
-/// Same normalisation as `loadConfig` (without the `TRACK_EXPORT_DIR` override).
+/// Fills in defaults and drops values out of range.
 fn normalize(data_dir: &Path, v: Map<String, Value>) -> Config {
     let base = Config::defaults(data_dir);
     let s = |k: &str| v.get(k).and_then(Value::as_str).map(|s| s.trim().to_string());

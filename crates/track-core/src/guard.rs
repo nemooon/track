@@ -28,7 +28,7 @@ pub fn dev_guard(data_dir: &Path) -> Result<()> {
     }
 }
 
-/// `TRACK_DATA_DIR`, else `~/.track` (same as the Bun server and CLI).
+/// `TRACK_DATA_DIR`, else `~/.track`.
 pub fn data_dir_from_env() -> PathBuf {
     std::env::var_os("TRACK_DATA_DIR").map(PathBuf::from).unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".track"))
 }

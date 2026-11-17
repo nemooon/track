@@ -440,7 +440,7 @@ impl TrackApp {
         })
     }
 
-    /// The automatic backups the Tauri app's server used to take: at start and every hour, a
+    /// Automatic backups: at start and every hour, a
     /// snapshot when the newest automatic one is older than `backupIntervalHours`.
     fn auto_backup(api: DataClient, cx: &mut Context<Self>) -> gpui::Task<()> {
         cx.spawn(async move |_, cx| loop {

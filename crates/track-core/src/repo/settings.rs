@@ -3,7 +3,7 @@ use crate::error::{CoreError, Result};
 use crate::model::{ReportCopyColumn, ReportCopyField, ReportCopyFormat, Settings, SettingsPatch};
 use crate::Db;
 
-/// `DEFAULT_REPORT_COPY_FORMATS` in src/server/routes/settings.ts.
+/// The output formats a new DB starts with.
 pub fn default_report_copy_formats() -> Vec<ReportCopyFormat> {
     serde_json::from_value(serde_json::json!([{
         "id": "standard-output", "name": "標準", "target": "ai-aggregation", "delimiter": "tab",
@@ -33,7 +33,7 @@ fn len16(s: &str) -> usize {
     s.encode_utf16().count()
 }
 
-/// `reportCopyFormatSchema` in src/shared/validators.ts; returns the format trimmed like zod.
+/// Checks an output format; returns it with names and labels trimmed.
 pub fn validate_report_copy_format(f: &ReportCopyFormat) -> Result<ReportCopyFormat> {
     use ReportCopyField::*;
     let mut f = f.clone();

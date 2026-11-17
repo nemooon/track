@@ -1,5 +1,5 @@
-//! AI generation providers (Codex CLI, a custom command, the Apple Intelligence helper),
-//! replacing src/server/ai. Each call blocks; run it off the UI thread.
+//! AI generation providers (Codex CLI, a custom command, the Apple Intelligence helper).
+//! Each call blocks; run it off the UI thread.
 pub mod apple;
 pub mod codex;
 pub mod custom;
@@ -51,7 +51,7 @@ impl AiMode {
     }
 }
 
-/// Same text as `buildAiPrompt` in src/server/ai/prompts.ts.
+/// The prompt sent to the provider.
 pub fn build_prompt(mode: AiMode, input: &str) -> String {
     format!("{}\n\nツール、ファイル、ネットワークは使わず、以下の入力だけから回答してください。\n\n<input>\n{input}\n</input>", mode.instructions())
 }
@@ -94,7 +94,7 @@ pub(crate) fn clean_response(value: &str) -> Result<String, CoreError> {
     if v.is_empty() { Err(ai_error("AIから応答がありませんでした。")) } else { Ok(v.to_string()) }
 }
 
-/// Same choice as `createAiProvider`: unknown values fall back to Apple Intelligence.
+/// The provider for `ai_provider`: unknown values fall back to Apple Intelligence.
 pub fn provider_from_config(config: &AppConfig) -> Box<dyn AiProvider + Send> {
     let home = dirs::home_dir().unwrap_or_default();
     match config.ai_provider.as_str() {

@@ -1,4 +1,4 @@
-//! `runtime.json`: tells AI skills where the CLI is. Unlike src/server/runtime.ts it is not removed
+//! `runtime.json`: tells AI skills where the CLI is. It is not removed
 //! on exit, because the CLI works without the app running.
 use crate::error::Result;
 use std::io::Write;

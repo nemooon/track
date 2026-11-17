@@ -1,4 +1,4 @@
-//! 「AI」: the generation provider (SettingsPage「生成プロバイダー」). Saved to config.json.
+//! 「AI」: the generation provider. Saved to gpui-config.json.
 use super::form::{self, Actions};
 use crate::app::AppState;
 use crate::ui::theme::*;
@@ -120,7 +120,7 @@ impl AiSettings {
             || d.ai_command_args.as_ref() != Some(&s.ai_command_args)
     }
 
-    /// The Tauri screen's client-side checks.
+    /// Checks before saving.
     fn validation(&self, cx: &gpui::App) -> Option<&'static str> {
         let d = self.draft(cx);
         if self.provider == "custom-command" && d.ai_command_executable.as_deref().unwrap_or("").is_empty() {

@@ -1,4 +1,4 @@
-//! Shapes shared by the app, CLI and storage (same JSON field names as the Bun API).
+//! Shapes shared by the app, CLI and storage (camelCase JSON field names).
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 

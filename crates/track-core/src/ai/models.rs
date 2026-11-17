@@ -1,4 +1,4 @@
-//! Codex model suggestions for the settings screen (src/server/ai/models.ts): ask the CLI's
+//! Codex model suggestions for the settings screen: ask the CLI's
 //! `app-server` over JSON-RPC, else read Codex's local cache, else a built-in list.
 use super::process::resolve_executable;
 use serde_json::{Value, json};

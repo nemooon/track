@@ -17,7 +17,7 @@ pub fn bind_keys(cx: &mut App) {
     ]);
 }
 
-/// Japanese native menus mirroring the Tauri app's 「表示」 menu.
+/// Japanese native menus (the standard ones plus 「表示」 for pages, periods and zoom).
 pub fn set_menus(cx: &mut App) {
     cx.set_menus([
         Menu::new("Track").items([

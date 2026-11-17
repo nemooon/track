@@ -1,5 +1,5 @@
-//! Applies `database/migrations/*.sql` exactly like `src/server/db/migrate.ts`:
-//! same `_local_migrations` table, lexicographic order, one transaction per file,
+//! Applies `database/migrations/*.sql` the way the earlier Tauri app did, so a DB moves freely
+//! between them: the `_local_migrations` table, lexicographic order, one transaction per file,
 //! FK checks off during migration and a `foreign_key_check` afterwards.
 use crate::error::{CoreError, Result};
 use rusqlite::Connection;

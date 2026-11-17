@@ -1,4 +1,4 @@
-//! 「レポート」: output formats (Task 9) and the weekly report template (SettingsPage「週報テンプレート」).
+//! 「レポート」: output formats and the weekly report template.
 use super::form::{self, Actions};
 use crate::app::AppState;
 use crate::ui::theme::*;
@@ -18,7 +18,7 @@ pub struct ReportSettings {
     save_error: Option<String>,
     /// The saved value last put into the editor; differs from the editor once the user types.
     shown: String,
-    /// The format being edited, replacing the list (Tauri navigates to /report-formats/:id).
+    /// The format being edited, shown in place of the list.
     pub editing: Option<Entity<FormatEditor>>,
     _editing_sub: Option<Subscription>,
     adding: bool,
@@ -71,7 +71,7 @@ impl ReportSettings {
         cx.notify();
     }
 
-    /// Like Tauri: the new format is saved first, then opened.
+    /// The new format is saved first, then opened.
     fn add_format(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let mut formats = self.formats(cx);
         if formats.len() >= 20 || self.adding {

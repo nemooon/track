@@ -53,7 +53,7 @@ impl Db {
         }
     }
 
-    /// Changes whenever another connection commits (CLI, Tauri server).
+    /// Changes whenever another connection commits (the CLI, an AI agent).
     pub fn data_version(&self) -> Result<i64> {
         Ok(self.conn.query_row("PRAGMA data_version", [], |r| r.get(0))?)
     }

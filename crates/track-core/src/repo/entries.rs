@@ -1,4 +1,4 @@
-//! Time entries: overlap query, create/update/delete with the Bun server's rules.
+//! Time entries: overlap query, create/update/delete with validation.
 use crate::error::{CoreError, Result};
 use crate::model::{Client, EntryPatch, NewEntry, Project, Tag, TagLink, TimeEntry};
 use crate::validate::{check_break, check_same_day, check_text, invalid, normalize_tag_ids, snap_to_quarter};

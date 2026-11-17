@@ -1,4 +1,4 @@
-//! Idempotent AI registration (POST /api/entries with `aiRegistration` in the Bun server).
+//! Idempotent AI registration: a request sent twice makes one entry.
 use crate::error::{CoreError, Result};
 use crate::model::{NewEntry, TimeEntry};
 use crate::repo::entries::{check_new_entry, insert_entry};
@@ -27,8 +27,8 @@ fn js(v: impl serde::Serialize) -> String {
     serde_json::to_string(&v).unwrap()
 }
 
-/// sha256 of the same `JSON.stringify` the Bun server hashes, so requests registered by
-/// either implementation replay correctly. Key order:
+/// sha256 of the payload as compact JSON, the same bytes the earlier Tauri app hashed, so its
+/// stored registrations still match on replay. Key order:
 /// projectId, start, end, title, note, externalEventId, externalEventSource, breakMinutes, [tags], source, sessionId.
 pub fn payload_hash(e: &NewEntry, source: &str, session_id: &str) -> String {
     let tags = normalize_tag_ids(&e.tag_ids);
@@ -262,7 +262,7 @@ mod tests {
     }
 }
 
-/// Real registrations made by the Bun server (copy DB, run with --ignored): our hash must
+/// Real registrations made by the earlier Tauri app (copy DB, run with --ignored): our hash must
 /// reproduce every stored `payloadHash` whose entry still exists unchanged.
 #[cfg(test)]
 mod live_tests {

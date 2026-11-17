@@ -13,8 +13,8 @@
 - `crates/track-app/` — GPUI アプリ（`track-gpui`）。`calendar/`、`reports/`、`settings/`、`ui/`
 - `database/migrations/` — 手書き SQL。`track-core/src/migrate.rs` が `include_str!` で埋め込み、起動時とリストア後に当てる
 - `integrations/` — Codex スキルと Claude Code コマンドの元の文面（`track-core/src/integrations.rs` が埋め込む）
-- `scripts/` — `prepare-db.sh`（コピー DB を作る）、`winshot.sh`（アプリのウインドウだけを撮る）
-- `bench/` — 起動時間・メモリの計測
+- `helpers/apple-intelligence/` — Apple Intelligence で生成するためのヘルパーアプリ（Swift）
+- `scripts/` — `prepare-db.sh`（コピー DB を作る）、`winshot.sh`（アプリのウインドウだけを撮る）、`build-ai-helper.sh`（ヘルパーを `target/ai-helper/` にビルド）
 - `docs/superpowers/` — 設計書と実装計画
 
 ## 開発コマンド

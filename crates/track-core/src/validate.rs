@@ -1,4 +1,4 @@
-//! Entry rules shared with `src/shared/validators.ts` and `src/server/routes/entries.ts`.
+//! Entry rules shared by the app and the CLI.
 use crate::error::{CoreError, Result};
 use chrono::{DateTime, Local, Timelike, Utc};
 

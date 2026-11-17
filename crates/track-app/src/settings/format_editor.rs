@@ -1,4 +1,4 @@
-//! Editing one custom-output format (ReportCopyFormatPage.tsx): name, delimiter, header row, the
+//! Editing one custom-output format: name, delimiter, header row, the
 //! AI instruction and the ordered columns. Formats always target the custom output (aggregation).
 use super::form;
 use crate::app::AppState;

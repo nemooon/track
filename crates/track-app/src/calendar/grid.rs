@@ -37,7 +37,7 @@ pub fn paint_stripes(bounds: Bounds<Pixels>, color: gpui::Hsla, window: &mut Win
     });
 }
 
-/// Dashed 30-minute ticks (4px on / 3px off) and solid hour lines, as in WeekCalendar.tsx.
+/// Dashed 30-minute ticks (4px on / 3px off) and solid hour lines.
 pub fn paint_grid_lines(bounds: Bounds<Pixels>, hour_px: f32, window: &mut Window, cx: &mut App) {
     let (x0, y0) = (f32::from(bounds.origin.x), f32::from(bounds.origin.y));
     let w = f32::from(bounds.size.width);

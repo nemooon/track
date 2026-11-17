@@ -1,5 +1,5 @@
-//! `track-cli`: the same subcommands, flags, JSON output and error codes as
-//! src/cli/index.ts, but reading and writing the SQLite DB directly through track-core.
+//! `track-cli`: the CLI the AI skills call. Answers in JSON (with stable error codes) and reads
+//! and writes the SQLite DB directly through track-core.
 use serde_json::{Value, json};
 use std::path::Path;
 use track_core::ai_registration::AiRegistrationInput;

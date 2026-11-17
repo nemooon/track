@@ -6740,7 +6740,6 @@ dependencies = [
  "serde_json",
  "tempfile",
  "track-core",
- "uuid",
 ]
 
 [[package]]

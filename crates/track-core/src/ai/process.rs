@@ -1,4 +1,4 @@
-//! Child-process helpers shared by the providers (src/server/ai/process.ts).
+//! Child-process helpers shared by the providers.
 use std::io::{Read, Write};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};

@@ -1,5 +1,5 @@
-//! Installs the Codex skill and the Claude Code command (same places and overwrite rules as
-//! `src-tauri/src/lib.rs`), with the text adapted to the direct-DB CLI. The development build
+//! Installs the Codex skill and the Claude Code command (the same places the earlier Tauri app
+//! used), with the text adapted to the direct-DB CLI. The development build
 //! installs them as `track-dev` so the real `track` skill and command are never touched.
 use crate::error::{CoreError, Result};
 use std::io::{ErrorKind, Write};
@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 const SKILL: &str = include_str!("../../../integrations/codex/track/SKILL.md");
 const OPENAI_YAML: &str = include_str!("../../../integrations/codex/track/agents/openai.yaml");
 const CLAUDE_COMMAND: &str = include_str!("../../../integrations/claude/track.md");
-/// Editing and undo (GPUI only: the Tauri CLI has no such commands, so the shared texts stay as they are).
+/// Editing and undo, added at install time (the shared texts in `integrations/` stay as they are).
 const EDITING: &str = include_str!("integrations_edit.md");
 
 /// Appends the editing section for one AI tool.
@@ -178,10 +178,4 @@ pub fn install_integrations_in(home: &Path, kind: IntegrationKind, dev: bool) ->
         std::fs::remove_file(&legacy)?;
     }
     Ok(installed)
-}
-
-/// Installs into the user's home directory.
-pub fn install_integrations(kind: IntegrationKind, dev: bool) -> Result<Vec<PathBuf>> {
-    let home = dirs::home_dir().ok_or_else(|| fail("ホームフォルダが見つかりません。".into()))?;
-    install_integrations_in(&home, kind, dev)
 }

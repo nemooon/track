@@ -675,7 +675,7 @@ impl CalendarView {
         }
     }
 
-    /// Optimistic PATCH of start/end (updateEntry in WeekCalendar.tsx).
+    /// Saves new start/end, showing them at once and rolling back if the save fails.
     pub fn commit_times(&mut self, id: &str, start: chrono::DateTime<chrono::Utc>, end: chrono::DateTime<chrono::Utc>, window: &mut Window, cx: &mut Context<Self>) {
         let patch = EntryPatch { start: Some(start), end: Some(end), ..Default::default() };
         let snapshot = self.cache.snapshot();

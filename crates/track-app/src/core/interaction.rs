@@ -1,4 +1,4 @@
-//! Calendar pointer state machine (WeekCalendar.tsx `interaction`), free of GPUI.
+//! Calendar pointer state machine (create, move, resize), free of GPUI.
 use super::time::{DAY_MINUTES, SNAP_MIN};
 use track_core::model::TimeEntry;
 use chrono::{DateTime, Utc};

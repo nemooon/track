@@ -1,4 +1,4 @@
-//! Whole-DB backups and restore (src/server/db/backup.ts). Snapshots are written with
+//! Whole-DB backups and restore. Snapshots are written with
 //! `VACUUM INTO`, so each is one consistent file that is safe in a synced folder such as
 //! iCloud Drive (unlike the live `track.db` with its `-wal`/`-shm`).
 use crate::config::{Config, dev_guard_dir};
