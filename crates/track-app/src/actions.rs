@@ -23,7 +23,7 @@ pub fn set_menus(cx: &mut App) {
         Menu::new("Track").items([
             MenuItem::action("設定…", OpenSettings),
             MenuItem::separator(),
-            MenuItem::action("AI 連携をインストール…（開発用）", InstallIntegrations),
+            MenuItem::action(if track_core::guard::GUARDED { "AI 連携をインストール…（開発用）" } else { "AI 連携をインストール…" }, InstallIntegrations),
             MenuItem::separator(),
             MenuItem::os_submenu("サービス", SystemMenuType::Services),
             MenuItem::separator(),

@@ -1,12 +1,13 @@
 //! 「AI 連携をインストール」: installs the Codex skill and/or the Claude Code command.
-//! While the GPUI version is in development they go in under the `track-dev` names.
+//! Everyday (guarded) builds install them under the `track-dev` names, so the real `track`
+//! skill and command are left alone; the packaged app installs the real ones.
 use crate::ui::theme::*;
 use gpui::{Context, FontWeight, InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px};
 use std::path::PathBuf;
 use track_core::integrations::{IntegrationKind, install_integrations_in};
 
-/// Remove when the app moves from the copy DB to the real `~/.track` (the real names are `track`).
-pub const DEV_NAMES: bool = true;
+/// `track-dev` names in guarded builds, the real `track` in the packaged app.
+pub const DEV_NAMES: bool = track_core::guard::GUARDED;
 
 pub struct IntegrationsDialog {
     home: PathBuf,

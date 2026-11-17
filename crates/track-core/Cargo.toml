@@ -4,6 +4,11 @@ edition.workspace = true
 version.workspace = true
 publish.workspace = true
 
+[features]
+# The alpha / release app: no development guard, so it opens the real ~/.track.
+# scripts/package.sh turns it on; everyday builds and tests leave it off.
+real-data = []
+
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true

@@ -14,7 +14,8 @@
 - `database/migrations/` — 手書き SQL。`track-core/src/migrate.rs` が `include_str!` で埋め込み、起動時とリストア後に当てる
 - `integrations/` — Codex スキルと Claude Code コマンドの元の文面（`track-core/src/integrations.rs` が埋め込む）
 - `helpers/apple-intelligence/` — Apple Intelligence で生成するためのヘルパーアプリ（Swift）
-- `scripts/` — `prepare-db.sh`（コピー DB を作る）、`winshot.sh`（アプリのウインドウだけを撮る）、`build-ai-helper.sh`（ヘルパーをアプリの隣の `target/debug/` にビルド）
+- `packaging/` — `.app` の `Info.plist` とアイコン
+- `scripts/` — `package.sh`（アルファ版を作る）、`prepare-db.sh`（コピー DB を作る）、`winshot.sh`（アプリのウインドウだけを撮る）、`build-ai-helper.sh`（ヘルパーをアプリの隣の `target/debug/` にビルド）
 - `docs/superpowers/` — 設計書と実装計画
 
 ## 開発コマンド
@@ -23,11 +24,12 @@
 - `cargo build --workspace` — アプリと `track-cli` を同じフォルダにビルド
 - `TRACK_DATA_DIR="$HOME/.track-gpui" cargo run` — アプリを起動（`~` ではなく `$HOME` を使う）
 - `cargo test --workspace` — テスト。`cargo test` だけではアプリのバイナリは作り直されないので、実画面で確かめる前に `cargo build -p track-app`
-- `cargo clippy --workspace --all-targets` — 警告ゼロを保つ
+- `cargo clippy --workspace --all-targets` — 警告ゼロを保つ（`--features track-core/real-data` を付けた形でも）
+- `scripts/package.sh` — アルファ版の `Track.app` と DMG を `target/package/` に作る。これだけが開発用ガードを外して本物の `~/.track` を開く
 
 ## 守ること
 
-- 開発版は `~/.track-gpui` のコピー DB だけを扱う（開発用ガード）。本物の `~/.track` と iCloud Drive のバックアップには触れない
+- 開発版は `~/.track-gpui` のコピー DB だけを扱う（開発用ガード）。本物の `~/.track` と iCloud Drive のバックアップには触れない。パッケージ版を試すときも `TRACK_DATA_DIR="$HOME/.track-gpui"` を付けて起動する
 - 色は `ui/theme.rs` の `Palette` を意味の名前で引く（`palette(cx)`）。生の色は書かない（テストで確かめている）
 - UI のテストは GPUI の TestAppContext で、`debug_selector` を付けた要素の位置を確かめる（`src/testing.rs`）
 - 確認や選択は押した部品からのポップオーバーで出し、行の下に開く UI は作らない

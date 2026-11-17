@@ -479,7 +479,7 @@ impl TrackApp {
         use gpui_component::WindowExt as _;
         let view = cx.new(|_| crate::ui::integrations_dialog::IntegrationsDialog::new(self.integrations_home.clone()));
         self.integrations = Some(view.clone());
-        window.open_dialog(cx, move |dialog, _, _| dialog.title("AI 連携をインストール（開発用）").w(px(520.)).child(view.clone()));
+        window.open_dialog(cx, move |dialog, _, _| dialog.title(if track_core::guard::GUARDED { "AI 連携をインストール（開発用）" } else { "AI 連携をインストール" }).w(px(520.)).child(view.clone()));
     }
 
     fn show(&mut self, page: Page, cx: &mut Context<Self>) {

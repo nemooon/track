@@ -123,13 +123,14 @@ fn write_object(data_dir: &Path, obj: Map<String, Value>) -> Result<()> {
 
 /// Seeds `gpui-config.json` from the earlier Tauri app's `config.json` the first time (or with the
 /// defaults when there is none). Once the file exists — even unreadable — it is left alone.
-/// A backup folder outside `dev_root` is not carried over (the real backups live there).
+/// In a guarded build a backup folder outside `dev_root` is not carried over (the real backups
+/// live there).
 pub fn migrate_in(data_dir: &Path, dev_root: &Path) -> Result<()> {
     if path_of(data_dir).exists() {
         return Ok(());
     }
     let mut c = normalize(data_dir, read_object_at(&data_dir.join(LEGACY_FILE)));
-    if !within(&c.export_dir, dev_root) {
+    if crate::guard::GUARDED && !within(&c.export_dir, dev_root) {
         c.export_dir = Config::defaults(data_dir).export_dir;
     }
     let mut obj = Map::new();
@@ -193,7 +194,7 @@ pub fn within(path: &Path, root: &Path) -> bool {
 }
 
 pub(crate) fn dev_guard_dir(path: &Path, root: &Path) -> Result<()> {
-    if within(path, root) {
+    if !crate::guard::GUARDED || within(path, root) {
         Ok(())
     } else {
         Err(CoreError::code_msg(
