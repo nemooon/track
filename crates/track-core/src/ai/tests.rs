@@ -202,3 +202,18 @@ fn codex_models_fall_back_to_builtin() {
     assert_eq!(cat.models.len(), 4);
     assert_eq!(cat.models[0], ("gpt-6.1-sol".to_string(), "GPT-6.1 Sol".to_string()));
 }
+
+#[test]
+fn the_helper_is_looked_for_beside_the_app_first() {
+    use std::path::Path;
+    let home = Path::new("/Users/me");
+    let dev = apple::helper_candidates(Some(Path::new("/repo/target/debug/track-gpui")), home);
+    assert_eq!(dev[0], Path::new("/repo/target/debug/TrackAIHelper.app"), "next to the binary (a dev build)");
+    let bundled = apple::helper_candidates(Some(Path::new("/Applications/Track.app/Contents/MacOS/track-gpui")), home);
+    assert_eq!(bundled[1], Path::new("/Applications/Track.app/Contents/MacOS/../Resources/TrackAIHelper.app"), "inside the app bundle");
+    assert!(dev.ends_with(&[
+        "/Applications/Track.app/Contents/Resources/TrackAIHelper.app".into(),
+        "/Users/me/Applications/Track.app/Contents/Resources/TrackAIHelper.app".into(),
+    ]), "an installed Track.app last");
+    assert_eq!(apple::helper_candidates(None, home).len(), 2);
+}

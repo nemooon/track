@@ -1,13 +1,17 @@
 #!/bin/sh
-# Builds the Apple Intelligence helper (TrackAIHelper.app) into target/ai-helper/.
+# Builds the Apple Intelligence helper (TrackAIHelper.app) next to the app:
+#   scripts/build-ai-helper.sh            -> target/debug/TrackAIHelper.app
+#   scripts/build-ai-helper.sh release    -> target/release/TrackAIHelper.app
+# A packaged Track.app carries it in Contents/Resources/. The app looks beside its binary
+# first, then in the bundle (crates/track-core/src/ai/apple.rs).
 # Needs an Apple Silicon Mac with the macOS 26 SDK (Foundation Models).
-# The app looks for it inside Track.app (crates/track-core/src/ai/apple.rs).
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SRC="$ROOT/helpers/apple-intelligence"
-OUT="$ROOT/target/ai-helper"
-APP="$OUT/TrackAIHelper.app"
-CACHE="$OUT/.swift-module-cache"
+PROFILE=${1:-debug}
+case "$PROFILE" in debug|release) ;; *) echo "usage: $0 [debug|release]" >&2; exit 1 ;; esac
+APP="$ROOT/target/$PROFILE/TrackAIHelper.app"
+CACHE="$ROOT/target/swift-module-cache"
 
 [ "$(uname -s)" = Darwin ] && [ "$(uname -m)" = arm64 ] || { echo "Apple Intelligence ヘルパーは Apple Silicon Mac でのみビルドできます" >&2; exit 1; }
 SDK=$(xcrun --sdk macosx --show-sdk-path)

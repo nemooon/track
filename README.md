@@ -77,8 +77,9 @@ track-cli undo --id <操作ID>                                    # 取り消し
 （本物のバックアップがそこにあるため）。
 
 AI 生成（週報・カスタム出力）は `config.json` の `aiProvider` に従い、Codex CLI・カスタムコマンド・
-Apple Intelligence ヘルパー（`/Applications/Track.app` 同梱）をアプリから直接起動する。
-ヘルパーのソースは `helpers/apple-intelligence/`、ビルドは `scripts/build-ai-helper.sh`（`target/ai-helper/` に出る。macOS 26 SDK が要る）。
+Apple Intelligence ヘルパーをアプリから直接起動する。
+ヘルパーのソースは `helpers/apple-intelligence/`、ビルドは `scripts/build-ai-helper.sh`（アプリと同じ `target/debug/` に置く。`release` を付けると `target/release/`。macOS 26 SDK が要る）。
+アプリはまず自分の隣、次に `.app` の `Contents/Resources/`、最後にインストール済みの `/Applications/Track.app` の中を探す。
 
 ## 休暇と直行直帰
 

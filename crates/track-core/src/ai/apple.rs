@@ -9,13 +9,27 @@ pub struct AppleIntelligence {
     helper: Option<PathBuf>,
 }
 
+/// The helper bundle's name.
+pub const HELPER: &str = "TrackAIHelper.app";
+
+/// Where to look for the helper, in order: beside the running binary (a development build,
+/// where `scripts/build-ai-helper.sh` puts it), in the app bundle's `Resources` (a packaged
+/// `Track.app`), then an installed `Track.app` (the earlier Tauri app ships one).
+pub fn helper_candidates(exe: Option<&Path>, home: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Some(dir) = exe.and_then(Path::parent) {
+        out.push(dir.join(HELPER));
+        out.push(dir.join("../Resources").join(HELPER));
+    }
+    out.push(Path::new("/Applications/Track.app/Contents/Resources").join(HELPER));
+    out.push(home.join("Applications/Track.app/Contents/Resources").join(HELPER));
+    out
+}
+
 impl AppleIntelligence {
     pub fn new(home: &Path) -> Self {
-        let candidates = [
-            PathBuf::from("/Applications/Track.app/Contents/Resources/TrackAIHelper.app"),
-            home.join("Applications/Track.app/Contents/Resources/TrackAIHelper.app"),
-        ];
-        AppleIntelligence { helper: candidates.into_iter().find(|p| p.exists()) }
+        let exe = std::env::current_exe().ok();
+        AppleIntelligence { helper: helper_candidates(exe.as_deref(), home).into_iter().find(|p| p.exists()) }
     }
 
     pub fn with_helper(helper: Option<PathBuf>) -> Self {
