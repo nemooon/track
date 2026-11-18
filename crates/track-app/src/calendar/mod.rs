@@ -51,7 +51,7 @@ pub fn work_band(s: &track_core::model::Settings, day: NaiveDate, leave: Option<
 
 /// How dark off hours get at midnight (the border color's alpha); next to the work hours they
 /// stay at `OFF_HOURS_LIGHTEST`, as before.
-pub const OFF_HOURS_DARKEST: f32 = 0.6;
+pub const OFF_HOURS_DARKEST: f32 = 0.9;
 pub const OFF_HOURS_LIGHTEST: f32 = 0.2;
 
 /// The two off-hours spans around `band` as `(from, to, dark_at_top)`: 0:00 → work start darkens
