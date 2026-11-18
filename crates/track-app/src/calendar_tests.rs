@@ -462,6 +462,24 @@ fn off_hours_darken_toward_midnight() {
     assert_eq!(off_hours_spans(None), [(0, 720, true), (720, 1440, false)]);
 }
 
+/// The grid lines darken with the background: none in work hours, the lightest step next to them,
+/// the darkest at midnight, in proportion between.
+#[test]
+fn off_hours_alpha_follows_the_gradient() {
+    use crate::calendar::{OFF_HOURS_DARKEST as D, OFF_HOURS_LIGHTEST as L, off_hours_alpha};
+    let band = Some((600, 1110));
+    assert_eq!(off_hours_alpha(800, band), 0.);
+    assert_eq!(off_hours_alpha(0, band), D);
+    assert_eq!(off_hours_alpha(1440, band), D);
+    assert_eq!(off_hours_alpha(600, band), L);
+    assert_eq!(off_hours_alpha(1110, band), L);
+    assert!((off_hours_alpha(300, band) - (L + D) / 2.).abs() < 1e-6);
+    assert_eq!(off_hours_alpha(720, None), L);
+    assert_eq!(off_hours_alpha(0, None), D);
+    use crate::calendar::grid::{LINE_TINT, off_hours_line_alpha};
+    assert!(off_hours_line_alpha(L) > LINE_TINT && off_hours_line_alpha(D) > off_hours_line_alpha(L), "lines deepen with the background");
+}
+
 /// A 直行直帰 on the 13th (made through core, like the day menu does), with its block's selector.
 fn direct_block(f: &Fixture, cx: &mut gpui::VisualTestContext) -> (track_core::model::TimeEntry, &'static str) {
     let e = f.db().set_direct(day(13), Some("p1")).unwrap();

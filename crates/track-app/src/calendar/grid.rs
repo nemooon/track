@@ -2,6 +2,16 @@
 use crate::ui::theme::*;
 use gpui::{App, Bounds, PathBuilder, Pixels, Window, fill, point, px, size};
 
+/// The text color's alpha that draws a line as dark as `border_subtle` on the plain background.
+pub const LINE_TINT: f32 = 0.08;
+/// The same for the column borders (as dark as `border`).
+pub const BORDER_TINT: f32 = 0.15;
+
+/// A grid line's tint over off hours whose background has alpha `a`: darker in proportion.
+pub fn off_hours_line_alpha(a: f32) -> f32 {
+    LINE_TINT * (1. + a)
+}
+
 fn line_color(cx: &App) -> gpui::Hsla {
     palette(cx).border_subtle
 }
@@ -37,19 +47,29 @@ pub fn paint_stripes(bounds: Bounds<Pixels>, color: gpui::Hsla, window: &mut Win
     });
 }
 
-/// Dashed 30-minute ticks (4px on / 3px off) and solid hour lines.
-pub fn paint_grid_lines(bounds: Bounds<Pixels>, hour_px: f32, window: &mut Window, cx: &mut App) {
+/// Dashed 30-minute ticks (4px on / 3px off) and solid hour lines. Off hours (outside `band`)
+/// darken the lines as much as the background under them.
+pub fn paint_grid_lines(bounds: Bounds<Pixels>, hour_px: f32, band: Option<(i64, i64)>, window: &mut Window, cx: &mut App) {
     let (x0, y0) = (f32::from(bounds.origin.x), f32::from(bounds.origin.y));
     let w = f32::from(bounds.size.width);
+    let text = palette(cx).text;
+    let line = |x: f32, y: f32, width: f32, minute: i64, window: &mut Window| {
+        let r = Bounds::new(point(px(x0 + x), px(y)), size(px(width), px(1.)));
+        let a = crate::calendar::off_hours_alpha(minute, band);
+        // Over the off-hours background the line is a tint of the text color that deepens with it,
+        // so it keeps standing out instead of fading into the gray.
+        let color = if a > 0. { with_alpha(text, off_hours_line_alpha(a)) } else { line_color(cx) };
+        window.paint_quad(fill(r, color));
+    };
     for hour in 0..24 {
+        let half = hour * 60 + 30;
         let y = y0 + hour as f32 * hour_px + hour_px / 2. - 1.;
         let mut x = 0.;
         while x < w {
-            let seg = 4f32.min(w - x);
-            window.paint_quad(fill(Bounds::new(point(px(x0 + x), px(y)), size(px(seg), px(1.))), line_color(cx)));
+            line(x, y, 4f32.min(w - x), half, window);
             x += 7.;
         }
         let y = y0 + (hour + 1) as f32 * hour_px - 1.;
-        window.paint_quad(fill(Bounds::new(point(px(x0), px(y)), size(px(w), px(1.))), line_color(cx)));
+        line(0., y, w, (hour + 1) * 60, window);
     }
 }

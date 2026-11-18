@@ -1,7 +1,7 @@
 mod day_menu;
 mod edit_dialog;
 mod entry_block;
-mod grid;
+pub mod grid;
 mod picker;
 
 use std::collections::HashMap;
@@ -59,6 +59,20 @@ pub const OFF_HOURS_LIGHTEST: f32 = 0.2;
 pub fn off_hours_spans(band: Option<(i64, i64)>) -> [(i64, i64, bool); 2] {
     let (from, to) = band.unwrap_or((DAY_MINUTES / 2, DAY_MINUTES / 2));
     [(0, from, true), (to, DAY_MINUTES, false)]
+}
+
+/// How dark the off-hours background is at `minute` (the border color's alpha): 0 in work hours,
+/// `OFF_HOURS_LIGHTEST` next to them, rising in proportion to `OFF_HOURS_DARKEST` at midnight.
+pub fn off_hours_alpha(minute: i64, band: Option<(i64, i64)>) -> f32 {
+    off_hours_spans(band)
+        .into_iter()
+        .find(|(from, to, _)| to > from && (*from..=*to).contains(&minute))
+        .map(|(from, to, dark_at_top)| {
+            let toward_midnight = if dark_at_top { to - minute } else { minute - from };
+            let t = toward_midnight as f32 / (to - from) as f32;
+            OFF_HOURS_LIGHTEST + (OFF_HOURS_DARKEST - OFF_HOURS_LIGHTEST) * t
+        })
+        .unwrap_or(0.)
 }
 
 pub struct CalendarView {
@@ -460,8 +474,21 @@ impl CalendarView {
                     .top(px(minutes_to_y(from, hour_px)))
                     .h(px(minutes_to_y(to - from, hour_px)))
                     .bg(gpui::linear_gradient(180., gpui::linear_color_stop(top, 0.), gpui::linear_color_stop(bottom, 1.)))
+                    // The column's left border darkens along with the background.
+                    .child({
+                        let tint = |a: f32| with_alpha(p.text, grid::BORDER_TINT * a);
+                        // Over the divider (p.border), deepening toward midnight.
+                        let (top, bottom) = if dark_at_top { (tint(OFF_HOURS_DARKEST), tint(OFF_HOURS_LIGHTEST)) } else { (tint(OFF_HOURS_LIGHTEST), tint(OFF_HOURS_DARKEST)) };
+                        div()
+                            .absolute()
+                            .top_0()
+                            .bottom_0()
+                            .left(px(-1.))
+                            .w(px(1.))
+                            .bg(gpui::linear_gradient(180., gpui::linear_color_stop(top, 0.), gpui::linear_color_stop(bottom, 1.)))
+                    })
             }))
-            .child(canvas(|_, _, _| (), move |b, _, w, cx| grid::paint_grid_lines(b, hour_px, w, cx)).absolute().size_full())
+            .child(canvas(|_, _, _| (), move |b, _, w, cx| grid::paint_grid_lines(b, hour_px, band, w, cx)).absolute().size_full())
             .children(laid.iter().map(|l| {
                 let e = day_entries[l.index];
                 let g = BlockGeometry { start_min: spans[l.index].0, end_min: spans[l.index].1, lane: l.lane, lane_count: l.lane_count, span: l.span };
@@ -584,8 +611,10 @@ impl CalendarView {
             .relative()
             .flex_1()
             .min_w_0()
+            // The divider is drawn as a child (a border would paint over the off-hours tint).
             .border_l_1()
-            .border_color(p.border)
+            .border_color(gpui::transparent_black())
+            .child(div().absolute().top_0().bottom_0().left(px(-1.)).w(px(1.)).bg(p.border))
             .child(hatch())
             .child(body)
             .child(hatch())
