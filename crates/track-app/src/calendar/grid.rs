@@ -72,7 +72,8 @@ pub fn paint_grid_lines(bounds: Bounds<Pixels>, hour_px: f32, hours: (i64, i64),
             line(x, y, 4f32.min(w - x), half, window);
             x += 7.;
         }
-        let y = y0 + (hour + 1) as f32 * hour_px - 1.;
+        // Hour lines sit just above the hour; 24:00 takes the body's last row, against the buffer.
+        let y = y0 + (hour + 1) as f32 * hour_px - if hour == 23 { 0. } else { 1. };
         line(0., y, w, (hour + 1) * 60, window);
     }
 }

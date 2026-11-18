@@ -641,6 +641,16 @@ impl CalendarView {
             .child(hatch())
             .child(body)
             .child(hatch())
+            // Beside the buffers the divider keeps the darkest off-hours shade.
+            .children([true, false].map(|top| {
+                div()
+                    .absolute()
+                    .map(|d| if top { d.top_0() } else { d.bottom_0() })
+                    .h(px(BUFFER_PX))
+                    .left(px(-1.))
+                    .w(px(1.))
+                    .bg(with_alpha(p.text, grid::BORDER_TINT * OFF_HOURS_DARKEST))
+            }))
             .into_any_element()
     }
 }
