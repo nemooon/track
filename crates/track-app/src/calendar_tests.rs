@@ -573,3 +573,66 @@ fn sparkle_out(cx: &mut gpui::VisualTestContext) {
     cx.executor().advance_clock(std::time::Duration::from_secs(1));
     cx.run_until_parked();
 }
+
+fn scroll_y(app: &gpui::Entity<crate::app::TrackApp>, cx: &mut gpui::VisualTestContext) -> f32 {
+    app.read_with(cx, |a, cx| a.calendar.read(cx).scroll_offset_y())
+}
+
+fn moving_start(app: &gpui::Entity<crate::app::TrackApp>, cx: &mut gpui::VisualTestContext) -> i64 {
+    match app.read_with(cx, |a, cx| a.calendar.read(cx).drag.clone()) {
+        DragState::Moving { start_min, .. } => start_min,
+        other => panic!("expected Moving, got {other:?}"),
+    }
+}
+
+/// Holding a dragged entry near the bottom of the grid keeps scrolling and carries the entry along,
+/// even with the mouse still; letting go saves and stops the scrolling.
+#[gpui::test]
+fn dragging_to_the_bottom_edge_scrolls_and_carries_the_entry(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
+    let view = cx.debug_bounds("calendar-scroll").expect("scroll area");
+    let b = cx.debug_bounds("entry-a").expect("entry block");
+    cx.simulate_mouse_down(b.center(), MouseButton::Left, Modifiers::none());
+    let edge = point(b.center().x, view.bottom() - px(5.));
+    cx.simulate_mouse_move(edge, Some(MouseButton::Left), Modifiers::none());
+    let (y0, s0) = (scroll_y(&app, cx), moving_start(&app, cx));
+    cx.executor().advance_clock(std::time::Duration::from_millis(500));
+    let (y1, s1) = (scroll_y(&app, cx), moving_start(&app, cx));
+    assert!(y1 < y0 - 100., "scrolled down: {y0} -> {y1}");
+    assert!(s1 > s0, "entry follows the scroll: {s0} -> {s1}");
+    cx.simulate_mouse_up(edge, MouseButton::Left, Modifiers::none());
+    wait_io(cx);
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).drag.clone()), DragState::Idle);
+    assert_ne!(stored(&f, "a").unwrap().start, at(12, 10, 0), "saved where it was dropped");
+    let y2 = scroll_y(&app, cx);
+    cx.executor().advance_clock(std::time::Duration::from_millis(500));
+    assert_eq!(scroll_y(&app, cx), y2, "no scrolling after letting go");
+}
+
+#[gpui::test]
+fn dragging_to_the_top_edge_scrolls_up(cx: &mut TestAppContext) {
+    let (app, cx, _f) = setup(cx);
+    let view = cx.debug_bounds("calendar-scroll").expect("scroll area");
+    let b = cx.debug_bounds("entry-a").expect("entry block");
+    let y0 = scroll_y(&app, cx);
+    assert!(y0 < -100., "starts scrolled into the day: {y0}");
+    cx.simulate_mouse_down(b.center(), MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_move(point(b.center().x, view.top() + px(5.)), Some(MouseButton::Left), Modifiers::none());
+    cx.executor().advance_clock(std::time::Duration::from_secs(5));
+    assert_eq!(scroll_y(&app, cx), 0., "stops at the top");
+    cx.simulate_mouse_up(point(b.center().x, view.top() + px(5.)), MouseButton::Left, Modifiers::none());
+}
+
+/// Each day's total sits in a footer under the grid, in line with that day's column.
+#[gpui::test]
+fn day_totals_sit_in_a_footer_under_their_columns(cx: &mut TestAppContext) {
+    let (_app, cx, _f) = setup(cx);
+    let grid = cx.debug_bounds("calendar-scroll").expect("scroll area");
+    let footer = cx.debug_bounds("day-footer").expect("day footer");
+    assert!(footer.top() >= grid.bottom() - px(1.), "footer under the grid: {footer:?} / {grid:?}");
+    let total = cx.debug_bounds("day-total-2026-11-12").expect("total of the 12th");
+    let entry = cx.debug_bounds("entry-a").expect("entry block");
+    assert!(footer.top() <= total.top() && total.bottom() <= footer.bottom(), "in the footer");
+    assert!(total.left() < entry.right() && entry.left() < total.right(), "under the 12th's column");
+    assert!(cx.debug_bounds("day-total-2026-11-11").is_none(), "no total on an empty day");
+}

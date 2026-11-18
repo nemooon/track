@@ -8,6 +8,24 @@ pub const GUTTER_PX: f32 = 60.;
 pub const ZOOM_LEVELS: [f32; 3] = [48., 120., 192.];
 pub const DEFAULT_ZOOM: usize = 1;
 
+/// How close to the top/bottom of the time grid a drag starts scrolling it.
+pub const EDGE_ZONE_PX: f32 = 40.;
+/// The fastest auto-scroll step (per tick), reached at the edge and beyond.
+pub const EDGE_MAX_STEP_PX: f32 = 16.;
+
+/// Auto-scroll step while dragging at `y` in a viewport spanning `top..bottom`:
+/// negative scrolls up, positive down, 0 away from the edges.
+pub fn edge_scroll_speed(y: f32, top: f32, bottom: f32) -> f32 {
+    let depth = |d: f32| d.clamp(0., EDGE_ZONE_PX) / EDGE_ZONE_PX * EDGE_MAX_STEP_PX;
+    if y < top + EDGE_ZONE_PX {
+        -depth(top + EDGE_ZONE_PX - y)
+    } else if y > bottom - EDGE_ZONE_PX {
+        depth(y - (bottom - EDGE_ZONE_PX))
+    } else {
+        0.
+    }
+}
+
 pub fn snap_px(hour_px: f32) -> f32 {
     hour_px * SNAP_MIN as f32 / 60.
 }
@@ -52,5 +70,17 @@ mod tests {
         assert_eq!(t, Local.with_ymd_and_hms(2026, 11, 12, 10, 15, 0).unwrap());
         assert_eq!(minutes_of_day(t, day), 615);
         assert_eq!(minutes_of_day(at_minutes(day, 1440), day), 1440);
+    }
+
+    #[test]
+    fn edge_scroll_speed_grows_toward_the_edges() {
+        let (top, bottom) = (100., 600.);
+        assert_eq!(edge_scroll_speed(350., top, bottom), 0.);
+        assert_eq!(edge_scroll_speed(140., top, bottom), 0.);
+        assert_eq!(edge_scroll_speed(120., top, bottom), -8.);
+        assert_eq!(edge_scroll_speed(100., top, bottom), -16.);
+        assert_eq!(edge_scroll_speed(50., top, bottom), -16.);
+        assert_eq!(edge_scroll_speed(580., top, bottom), 8.);
+        assert_eq!(edge_scroll_speed(610., top, bottom), 16.);
     }
 }

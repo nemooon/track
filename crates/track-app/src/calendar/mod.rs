@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use track_core::model::{EntryPatch, NewEntry, TimeEntry};
 use crate::app::AppState;
 use crate::core::interaction::{self, DragState, Edge, EntryCache};
-use crate::core::geometry::{BUFFER_PX, GUTTER_PX, ZOOM_LEVELS, at_minutes, minutes_to_y, y_to_minutes};
+use crate::core::geometry::{BUFFER_PX, GUTTER_PX, ZOOM_LEVELS, at_minutes, edge_scroll_speed, minutes_to_y, y_to_minutes};
 use crate::core::holidays::holiday_name;
 use crate::core::layout::{day_total_minutes, entries_for_day, entry_span_minutes, layout_blocks};
 use crate::core::time::{DAY_MINUTES, DayCount, effective_day_count, format_duration, step_days, visible_days, weekday_ja};
@@ -77,6 +77,10 @@ pub struct CalendarView {
     column_bounds: Rc<RefCell<Vec<Bounds<Pixels>>>>,
     scroll: ScrollHandle,
     initial_scroll_done: bool,
+    /// Where the mouse last was during a drag, to redo the drag as the grid auto-scrolls.
+    last_drag_pos: Option<Point<Pixels>>,
+    /// Scrolls the grid while a drag is held near its top or bottom edge.
+    autoscroll: Option<Task<()>>,
     _ticker: Task<()>,
 }
 
@@ -115,6 +119,8 @@ impl CalendarView {
             column_bounds: Rc::default(),
             scroll: ScrollHandle::new(),
             initial_scroll_done: false,
+            last_drag_pos: None,
+            autoscroll: None,
             _ticker: ticker,
         }
     }
@@ -263,7 +269,7 @@ impl CalendarView {
             )
     }
 
-    /// One row per day: the date (a pill for today), weekday, holiday and the day's total.
+    /// One row per day: the date (a pill for today), weekday, holiday and the day menu.
     fn render_day_header(&self, days: &[NaiveDate], cx: &mut Context<Self>) -> impl IntoElement {
         let p = palette(cx);
         let today = Local::now().date_naive();
@@ -275,7 +281,6 @@ impl CalendarView {
             .border_color(p.border)
             .child(div().w(px(GUTTER_PX)).flex_shrink_0())
             .children(days.iter().map(|&d| {
-                let total = day_total_minutes(self.cache.entries(), d);
                 let holiday = holiday_name(d);
                 let is_today = d == today;
                 div()
@@ -332,7 +337,42 @@ impl CalendarView {
                     .children(self.day_mark(d, cx))
                     .child(div().flex_1())
                     .child(self.render_day_menu(d, cx))
-                    .when(total > 0, |s| s.child(div().flex_shrink_0().text_color(p.text_muted).font_weight(FontWeight::SEMIBOLD).child(self.duration(total, cx))))
+            }))
+    }
+
+    /// One row under the grid with each day's total, in line with the day columns.
+    fn render_day_footer(&self, days: &[NaiveDate], cx: &mut Context<Self>) -> impl IntoElement {
+        let p = palette(cx);
+        div()
+            .debug_selector(|| "day-footer".into())
+            .flex()
+            .flex_shrink_0()
+            .border_t_1()
+            .border_color(p.border)
+            .child(div().w(px(GUTTER_PX)).flex_shrink_0())
+            .children(days.iter().map(|&d| {
+                let total = day_total_minutes(self.cache.entries(), d);
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .h(px(28.))
+                    .flex()
+                    .items_center()
+                    .justify_end()
+                    .border_l_1()
+                    .border_color(p.border)
+                    .px_2()
+                    .text_xs()
+                    .when(total > 0, |c| {
+                        c.child(
+                            div()
+                                .debug_selector(move || format!("day-total-{d}"))
+                                .flex_shrink_0()
+                                .text_color(p.text_muted)
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child(self.duration(total, cx)),
+                        )
+                    })
             }))
     }
 
@@ -603,7 +643,68 @@ impl CalendarView {
         cx.notify();
     }
 
+    #[cfg(test)]
+    pub fn scroll_offset_y(&self) -> f32 {
+        f32::from(self.scroll.offset().y)
+    }
+
+    fn dragging(&self) -> bool {
+        matches!(self.drag, DragState::Creating { .. } | DragState::Moving { .. } | DragState::Resizing { .. })
+    }
+
+    /// The auto-scroll step for the last drag position (0 when not dragging or away from the edges).
+    fn autoscroll_step(&self) -> f32 {
+        let (Some(pos), true) = (self.last_drag_pos, self.dragging()) else { return 0. };
+        let view = self.scroll.bounds();
+        edge_scroll_speed(f32::from(pos.y), f32::from(view.top()), f32::from(view.bottom()))
+    }
+
+    /// Starts the auto-scroll loop if the drag sits at an edge and none is running.
+    fn maybe_autoscroll(&mut self, cx: &mut Context<Self>) {
+        if self.autoscroll.is_some() || self.autoscroll_step() == 0. {
+            return;
+        }
+        self.autoscroll = Some(cx.spawn(async move |this, cx| loop {
+            cx.background_executor().timer(std::time::Duration::from_millis(16)).await;
+            let go_on = this.update(cx, |this, cx| this.step_autoscroll(cx)).unwrap_or(false);
+            if !go_on {
+                break;
+            }
+        }));
+    }
+
+    /// Scrolls one step and redoes the drag at the last mouse position; false ends the loop.
+    fn step_autoscroll(&mut self, cx: &mut Context<Self>) -> bool {
+        let step = self.autoscroll_step();
+        let old = self.scroll.offset();
+        let new_y = (f32::from(old.y) - step).clamp(-f32::from(self.scroll.max_offset().y), 0.);
+        let delta = new_y - f32::from(old.y);
+        if step == 0. || delta == 0. {
+            self.autoscroll = None;
+            return false;
+        }
+        self.scroll.set_offset(point(old.x, px(new_y)));
+        // The columns moved with the content; shift their bounds now rather than wait for a frame.
+        for b in self.column_bounds.borrow_mut().iter_mut() {
+            b.origin.y += px(delta);
+        }
+        if let Some(pos) = self.last_drag_pos {
+            self.on_drag_move(pos, cx);
+        }
+        cx.notify();
+        true
+    }
+
+    fn stop_autoscroll(&mut self) {
+        self.autoscroll = None;
+        self.last_drag_pos = None;
+    }
+
     fn on_drag_move(&mut self, pos: Point<Pixels>, cx: &mut Context<Self>) {
+        if self.dragging() {
+            self.last_drag_pos = Some(pos);
+            self.maybe_autoscroll(cx);
+        }
         let next = match &self.drag {
             DragState::Creating { day_index, .. } => match self.pointer_minutes(*day_index, pos, cx) {
                 Some(m) => interaction::update_create(&self.drag, m),
@@ -629,6 +730,7 @@ impl CalendarView {
     }
 
     fn on_drag_end(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.stop_autoscroll();
         let drag = std::mem::take(&mut self.drag);
         match drag {
             DragState::Creating { .. } => {
@@ -902,6 +1004,7 @@ impl HasDateNav for CalendarView {
 
     fn on_nav(&mut self, ev: NavEvent, window: &mut Window, cx: &mut Context<Self>) {
         // A drag or pending pick refers to column indexes of the current range: cancel it.
+        self.stop_autoscroll();
         if self.drag != DragState::Idle {
             self.picker = None;
             self.drag = DragState::Idle;
@@ -953,6 +1056,7 @@ impl Render for CalendarView {
             .child(
                 div()
                     .id("calendar-scroll")
+                    .debug_selector(|| "calendar-scroll".into())
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
@@ -961,6 +1065,7 @@ impl Render for CalendarView {
                     .on_scroll(cx.listener(|_, _, _, cx| cx.notify()))
                     .child(div().flex().items_start().child(self.render_gutter(p, hour_px)).child(div().flex_1().flex().items_start().children(columns))),
             )
+            .child(self.render_day_footer(&days, cx))
             .children(picker_overlay)
     }
 }
