@@ -507,9 +507,9 @@ impl CalendarView {
                     .top(px(minutes_to_y(from, hour_px)))
                     // The body is 1px taller than 24 hours (for the 24:00 line): reach its bottom.
                     .h(px(minutes_to_y(to - from, hour_px) + if to == DAY_MINUTES { 1. } else { 0. }))
-                    .bg(gradient(&|a| with_alpha(p.border, a)))
+                    .bg(gradient(&|a| grid::off_hours_bg(&p, a)))
                     // Over the divider (p.border), deepening with the background.
-                    .child(div().absolute().top_0().bottom_0().left(px(-1.)).w(px(1.)).bg(gradient(&|a| with_alpha(p.text, grid::BORDER_TINT * a))))
+                    .child(div().absolute().top_0().bottom_0().left(px(-1.)).w(px(1.)).bg(gradient(&|a| grid::off_hours_divider(&p, a))))
             }))
             .child(canvas(|_, _, _| (), move |b, _, w, cx| grid::paint_grid_lines(b, hour_px, hours, band, w, cx)).absolute().size_full())
             .children(laid.iter().map(|l| {
@@ -649,7 +649,7 @@ impl CalendarView {
                     .h(px(BUFFER_PX))
                     .left(px(-1.))
                     .w(px(1.))
-                    .bg(with_alpha(p.text, grid::BORDER_TINT * OFF_HOURS_DARKEST))
+                    .bg(grid::off_hours_divider(&p, OFF_HOURS_DARKEST))
             }))
             .into_any_element()
     }

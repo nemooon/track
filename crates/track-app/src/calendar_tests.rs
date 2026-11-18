@@ -496,6 +496,23 @@ fn off_hours_alpha_follows_the_gradient() {
     assert!(off_hours_line_alpha(L) > LINE_TINT && off_hours_line_alpha(D) > off_hours_line_alpha(L), "lines deepen with the background");
 }
 
+/// In both themes the work hours are the lightest part of the calendar: off hours get darker
+/// toward midnight, and their grid lines darker with them while staying apart from the background.
+#[test]
+fn off_hours_get_darker_in_both_themes() {
+    use crate::calendar::grid::{off_hours_bg, off_hours_line};
+    use crate::calendar::{OFF_HOURS_DARKEST as D, OFF_HOURS_LIGHTEST as L};
+    use crate::ui::theme::Palette;
+    let lum = |c: gpui::Hsla| { let r = gpui::Rgba::from(c); 0.2126 * r.r + 0.7152 * r.g + 0.0722 * r.b };
+    for (name, p) in [("light", Palette::light()), ("dark", Palette::dark())] {
+        let (bg_l, bg_d) = (off_hours_bg(&p, L), off_hours_bg(&p, D));
+        assert!(lum(bg_l) < lum(p.bg) && lum(bg_d) < lum(bg_l), "{name}: background darkens toward midnight");
+        let (line_l, line_d) = (off_hours_line(&p, L), off_hours_line(&p, D));
+        assert!(lum(line_d) < lum(line_l), "{name}: lines darken toward midnight");
+        assert!((lum(line_d) - lum(bg_d)).abs() > 0.02, "{name}: lines stay visible at midnight");
+    }
+}
+
 /// A 直行直帰 on the 13th (made through core, like the day menu does), with its block's selector.
 fn direct_block(f: &Fixture, cx: &mut gpui::VisualTestContext) -> (track_core::model::TimeEntry, &'static str) {
     let e = f.db().set_direct(day(13), Some("p1")).unwrap();
