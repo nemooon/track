@@ -73,6 +73,8 @@ pub struct Palette {
     pub now_line: Hsla,
     /// Calendar inside working hours (outside is shaded by the calendar's off-hours gradient).
     pub work_hours: Hsla,
+    /// The calendar's hour and half-hour lines over the working hours.
+    pub grid_line: Hsla,
     /// Laid over the calendar outside working hours, more toward midnight. Darker than `bg` in
     /// both themes, so the working hours stay the lightest part.
     pub off_hours_shade: Hsla,
@@ -135,8 +137,9 @@ impl Palette {
             danger_bg: c(0x3a2a2e),
             warning_bg: c(0x3a3428),
             now_line: c(0xe06c75),
-            work_hours: c(0x24272e),
-            off_hours_shade: c(0x15171b),
+            work_hours: c(0x2c3039),
+            grid_line: c(0x3a3f49),
+            off_hours_shade: c(0x0c0d10),
             sunday: c(0xe06c75),
             saturday: c(0x74ade8),
             holiday: c(0xdfa35b),
@@ -182,6 +185,7 @@ impl Palette {
             warning_bg: c(0xfffbeb),
             now_line: c(0xef4444),
             work_hours: c(0xffffff),
+            grid_line: c(0xececee),
             off_hours_shade: c(0xdedee1),
             sunday: c(0xdc2626),
             saturday: c(0x2563eb),

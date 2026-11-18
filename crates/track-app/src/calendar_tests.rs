@@ -506,7 +506,7 @@ fn off_hours_get_darker_in_both_themes() {
     let lum = |c: gpui::Hsla| { let r = gpui::Rgba::from(c); 0.2126 * r.r + 0.7152 * r.g + 0.0722 * r.b };
     for (name, p) in [("light", Palette::light()), ("dark", Palette::dark())] {
         let (bg_l, bg_d) = (off_hours_bg(&p, L), off_hours_bg(&p, D));
-        assert!(lum(bg_l) < lum(p.bg) && lum(bg_d) < lum(bg_l), "{name}: background darkens toward midnight");
+        assert!(lum(bg_l) < lum(p.work_hours) && lum(bg_d) < lum(bg_l), "{name}: background darkens toward midnight");
         let (line_l, line_d) = (off_hours_line(&p, L), off_hours_line(&p, D));
         assert!(lum(line_d) < lum(line_l), "{name}: lines darken toward midnight");
         assert!((lum(line_d) - lum(bg_d)).abs() > 0.02, "{name}: lines stay visible at midnight");

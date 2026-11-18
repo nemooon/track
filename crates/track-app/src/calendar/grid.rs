@@ -16,19 +16,19 @@ pub fn off_hours_line_alpha(a: f32) -> f32 {
 }
 
 fn is_light(p: &Palette) -> bool {
-    p.bg.l > 0.5
+    p.work_hours.l > 0.5
 }
 
 /// The off-hours background at depth `a` (0 = work hours, `OFF_HOURS_DARKEST` = midnight).
 pub fn off_hours_bg(p: &Palette, a: f32) -> Hsla {
-    mix(p.off_hours_shade, a, p.bg).into()
+    mix(p.off_hours_shade, a, p.work_hours).into()
 }
 
 /// A grid line over off hours at depth `a`. A light theme tints it with the text color, deeper with
 /// the background; a dark one shades the usual line, so it darkens too but stays lighter than the
 /// background.
 pub fn off_hours_line(p: &Palette, a: f32) -> Hsla {
-    if is_light(p) { mix(p.text, off_hours_line_alpha(a), off_hours_bg(p, a)).into() } else { mix(p.off_hours_shade, a * DARK_MARK, p.border_subtle).into() }
+    if is_light(p) { mix(p.text, off_hours_line_alpha(a), off_hours_bg(p, a)).into() } else { mix(p.off_hours_shade, a * DARK_MARK, p.grid_line).into() }
 }
 
 /// The column divider over off hours at depth `a`, darkening the same way as the lines.
@@ -37,7 +37,7 @@ pub fn off_hours_divider(p: &Palette, a: f32) -> Hsla {
 }
 
 fn line_color(cx: &App) -> gpui::Hsla {
-    palette(cx).border_subtle
+    palette(cx).grid_line
 }
 
 /// The buffers beyond 0:00 and 24:00: the off-hours gradient's darkest shade, with faint stripes.

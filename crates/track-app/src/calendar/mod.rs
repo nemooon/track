@@ -480,7 +480,7 @@ impl CalendarView {
             .relative()
             .h(px(body_h))
             .cursor(gpui::CursorStyle::Crosshair)
-            .bg(p.bg)
+            .bg(p.work_hours)
             .child(
                 canvas(move |b, _, _| {
                     let mut v = bounds_store.borrow_mut();
