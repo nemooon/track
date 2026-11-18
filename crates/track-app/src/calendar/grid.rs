@@ -16,11 +16,12 @@ fn line_color(cx: &App) -> gpui::Hsla {
     palette(cx).border_subtle
 }
 
-/// `repeating-linear-gradient(45deg, #e5e5e5 0 4px, #f5f5f5 4px 10px)`
+/// The buffers beyond 0:00 and 24:00: the off-hours gradient's darkest shade, with faint stripes.
 pub fn paint_hatch(bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
     let p = palette(cx);
-    window.paint_quad(fill(bounds, p.off_hours));
-    paint_stripes(bounds, p.border_subtle, window);
+    window.paint_quad(fill(bounds, p.bg));
+    window.paint_quad(fill(bounds, with_alpha(p.border, crate::calendar::OFF_HOURS_DARKEST)));
+    paint_stripes(bounds, with_alpha(p.text, LINE_TINT), window);
 }
 
 /// 45° stripes, 4px on and 6px off, clipped to `bounds`.

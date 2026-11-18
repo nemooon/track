@@ -71,9 +71,8 @@ pub struct Palette {
     pub danger_bg: Hsla,
     pub warning_bg: Hsla,
     pub now_line: Hsla,
-    /// Calendar inside working hours (outside is `off_hours`).
+    /// Calendar inside working hours (outside is shaded by the calendar's off-hours gradient).
     pub work_hours: Hsla,
-    pub off_hours: Hsla,
     /// Sunday / Saturday / holiday day names and numbers.
     pub sunday: Hsla,
     pub saturday: Hsla,
@@ -134,7 +133,6 @@ impl Palette {
             warning_bg: c(0x3a3428),
             now_line: c(0xe06c75),
             work_hours: c(0x24272e),
-            off_hours: c(0x1f2228),
             sunday: c(0xe06c75),
             saturday: c(0x74ade8),
             holiday: c(0xdfa35b),
@@ -180,7 +178,6 @@ impl Palette {
             warning_bg: c(0xfffbeb),
             now_line: c(0xef4444),
             work_hours: c(0xffffff),
-            off_hours: c(0xf7f7f8),
             sunday: c(0xdc2626),
             saturday: c(0x2563eb),
             holiday: c(0xd97706),
