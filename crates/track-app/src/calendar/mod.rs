@@ -49,6 +49,18 @@ pub fn work_band(s: &track_core::model::Settings, day: NaiveDate, leave: Option<
     }
 }
 
+/// How dark off hours get at midnight (the border color's alpha); next to the work hours they
+/// stay at `OFF_HOURS_LIGHTEST`, as before.
+pub const OFF_HOURS_DARKEST: f32 = 0.6;
+pub const OFF_HOURS_LIGHTEST: f32 = 0.2;
+
+/// The two off-hours spans around `band` as `(from, to, dark_at_top)`: 0:00 → work start darkens
+/// upward, work end → 24:00 darkens downward. Without work hours the day splits at noon.
+pub fn off_hours_spans(band: Option<(i64, i64)>) -> [(i64, i64, bool); 2] {
+    let (from, to) = band.unwrap_or((DAY_MINUTES / 2, DAY_MINUTES / 2));
+    [(0, from, true), (to, DAY_MINUTES, false)]
+}
+
 pub struct CalendarView {
     state: Entity<AppState>,
     pub anchor: NaiveDate,
@@ -426,7 +438,7 @@ impl CalendarView {
             .relative()
             .h(px(body_h))
             .cursor(gpui::CursorStyle::Crosshair)
-            .bg(with_alpha(p.border, 0.2))
+            .bg(p.bg)
             .child(
                 canvas(move |b, _, _| {
                     let mut v = bounds_store.borrow_mut();
@@ -438,9 +450,17 @@ impl CalendarView {
                 .absolute()
                 .size_full(),
             )
-            .when_some(band, |d, (from, to)| {
-                d.child(div().absolute().left_0().right_0().top(px(minutes_to_y(from, hour_px))).h(px(minutes_to_y(to - from, hour_px).max(0.))).bg(p.bg))
-            })
+            .children(off_hours_spans(band).into_iter().filter(|(from, to, _)| to > from).map(|(from, to, dark_at_top)| {
+                let (dark, light) = (with_alpha(p.border, OFF_HOURS_DARKEST), with_alpha(p.border, OFF_HOURS_LIGHTEST));
+                let (top, bottom) = if dark_at_top { (dark, light) } else { (light, dark) };
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .top(px(minutes_to_y(from, hour_px)))
+                    .h(px(minutes_to_y(to - from, hour_px)))
+                    .bg(gpui::linear_gradient(180., gpui::linear_color_stop(top, 0.), gpui::linear_color_stop(bottom, 1.)))
+            }))
             .child(canvas(|_, _, _| (), move |b, _, w, cx| grid::paint_grid_lines(b, hour_px, w, cx)).absolute().size_full())
             .children(laid.iter().map(|l| {
                 let e = day_entries[l.index];

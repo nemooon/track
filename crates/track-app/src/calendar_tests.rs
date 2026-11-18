@@ -453,6 +453,15 @@ fn work_band_leaves_out_leave() {
     assert_eq!(work_band(&s, d(11, 3), Some(LeaveKind::None)), Some((600, 1110)), "「休暇にしない」 on a holiday");
 }
 
+/// Off hours darken toward midnight: from 0:00 down to the work start, and from the work end
+/// down to 24:00. A day without work hours darkens from noon toward both ends.
+#[test]
+fn off_hours_darken_toward_midnight() {
+    use crate::calendar::off_hours_spans;
+    assert_eq!(off_hours_spans(Some((600, 1110))), [(0, 600, true), (1110, 1440, false)]);
+    assert_eq!(off_hours_spans(None), [(0, 720, true), (720, 1440, false)]);
+}
+
 /// A 直行直帰 on the 13th (made through core, like the day menu does), with its block's selector.
 fn direct_block(f: &Fixture, cx: &mut gpui::VisualTestContext) -> (track_core::model::TimeEntry, &'static str) {
     let e = f.db().set_direct(day(13), Some("p1")).unwrap();
