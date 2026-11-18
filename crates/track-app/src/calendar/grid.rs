@@ -62,6 +62,8 @@ pub fn paint_grid_lines(bounds: Bounds<Pixels>, hour_px: f32, hours: (i64, i64),
         let color = if a > 0. { with_alpha(text, off_hours_line_alpha(a)) } else { line_color(cx) };
         window.paint_quad(fill(r, color));
     };
+    // 0:00, mirroring the 24:00 line at the bottom.
+    line(0., y0, w, 0, window);
     for hour in 0..24 {
         let half = hour * 60 + 30;
         let y = y0 + hour as f32 * hour_px + hour_px / 2. - 1.;

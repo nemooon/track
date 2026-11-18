@@ -505,7 +505,8 @@ impl CalendarView {
                     .left_0()
                     .right_0()
                     .top(px(minutes_to_y(from, hour_px)))
-                    .h(px(minutes_to_y(to - from, hour_px)))
+                    // The body is 1px taller than 24 hours (for the 24:00 line): reach its bottom.
+                    .h(px(minutes_to_y(to - from, hour_px) + if to == DAY_MINUTES { 1. } else { 0. }))
                     .bg(gradient(&|a| with_alpha(p.border, a)))
                     // Over the divider (p.border), deepening with the background.
                     .child(div().absolute().top_0().bottom_0().left(px(-1.)).w(px(1.)).bg(gradient(&|a| with_alpha(p.text, grid::BORDER_TINT * a))))
