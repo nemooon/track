@@ -49,13 +49,13 @@ pub fn paint_stripes(bounds: Bounds<Pixels>, color: gpui::Hsla, window: &mut Win
 
 /// Dashed 30-minute ticks (4px on / 3px off) and solid hour lines. Off hours (outside `band`)
 /// darken the lines as much as the background under them.
-pub fn paint_grid_lines(bounds: Bounds<Pixels>, hour_px: f32, band: Option<(i64, i64)>, window: &mut Window, cx: &mut App) {
+pub fn paint_grid_lines(bounds: Bounds<Pixels>, hour_px: f32, hours: (i64, i64), band: Option<(i64, i64)>, window: &mut Window, cx: &mut App) {
     let (x0, y0) = (f32::from(bounds.origin.x), f32::from(bounds.origin.y));
     let w = f32::from(bounds.size.width);
     let text = palette(cx).text;
     let line = |x: f32, y: f32, width: f32, minute: i64, window: &mut Window| {
         let r = Bounds::new(point(px(x0 + x), px(y)), size(px(width), px(1.)));
-        let a = crate::calendar::off_hours_alpha(minute, band);
+        let a = crate::calendar::off_hours_alpha(minute, hours, band);
         // Over the off-hours background the line is a tint of the text color that deepens with it,
         // so it keeps standing out instead of fading into the gray.
         let color = if a > 0. { with_alpha(text, off_hours_line_alpha(a)) } else { line_color(cx) };

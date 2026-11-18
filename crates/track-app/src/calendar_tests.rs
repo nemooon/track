@@ -453,29 +453,45 @@ fn work_band_leaves_out_leave() {
     assert_eq!(work_band(&s, d(11, 3), Some(LeaveKind::None)), Some((600, 1110)), "「休暇にしない」 on a holiday");
 }
 
-/// Off hours darken toward midnight: from 0:00 down to the work start, and from the work end
-/// down to 24:00. A day without work hours darkens from noon toward both ends.
+/// Off hours darken toward midnight only outside the work hours (0:00 → work start upward, work
+/// end → 24:00 downward). Inside the work hours, a part that is not worked (a day off, a half day)
+/// is one flat shade, the lightest.
 #[test]
 fn off_hours_darken_toward_midnight() {
-    use crate::calendar::off_hours_spans;
-    assert_eq!(off_hours_spans(Some((600, 1110))), [(0, 600, true), (1110, 1440, false)]);
-    assert_eq!(off_hours_spans(None), [(0, 720, true), (720, 1440, false)]);
+    use crate::calendar::{Shade, off_hours_spans};
+    let hours = (600, 1110);
+    assert_eq!(off_hours_spans(hours, Some((600, 1110))), vec![(0, 600, Shade::DarkTop), (1110, 1440, Shade::DarkBottom)]);
+    assert_eq!(
+        off_hours_spans(hours, None),
+        vec![(0, 600, Shade::DarkTop), (600, 1110, Shade::Flat), (1110, 1440, Shade::DarkBottom)],
+        "a day off: flat through the work hours"
+    );
+    assert_eq!(
+        off_hours_spans(hours, Some((855, 1110))),
+        vec![(0, 600, Shade::DarkTop), (600, 855, Shade::Flat), (1110, 1440, Shade::DarkBottom)],
+        "前半休: the morning is flat"
+    );
+    assert_eq!(
+        off_hours_spans(hours, Some((600, 855))),
+        vec![(0, 600, Shade::DarkTop), (855, 1110, Shade::Flat), (1110, 1440, Shade::DarkBottom)],
+        "後半休: the afternoon is flat"
+    );
 }
 
-/// The grid lines darken with the background: none in work hours, the lightest step next to them,
-/// the darkest at midnight, in proportion between.
+/// The grid lines darken with the background: none in worked hours, the lightest step next to the
+/// work hours and through a day off, the darkest at midnight, in proportion between.
 #[test]
 fn off_hours_alpha_follows_the_gradient() {
     use crate::calendar::{OFF_HOURS_DARKEST as D, OFF_HOURS_LIGHTEST as L, off_hours_alpha};
-    let band = Some((600, 1110));
-    assert_eq!(off_hours_alpha(800, band), 0.);
-    assert_eq!(off_hours_alpha(0, band), D);
-    assert_eq!(off_hours_alpha(1440, band), D);
-    assert_eq!(off_hours_alpha(600, band), L);
-    assert_eq!(off_hours_alpha(1110, band), L);
-    assert!((off_hours_alpha(300, band) - (L + D) / 2.).abs() < 1e-6);
-    assert_eq!(off_hours_alpha(720, None), L);
-    assert_eq!(off_hours_alpha(0, None), D);
+    let (hours, band) = ((600, 1110), Some((600, 1110)));
+    assert_eq!(off_hours_alpha(800, hours, band), 0.);
+    assert_eq!(off_hours_alpha(0, hours, band), D);
+    assert_eq!(off_hours_alpha(1440, hours, band), D);
+    assert_eq!(off_hours_alpha(600, hours, band), L);
+    assert_eq!(off_hours_alpha(1110, hours, band), L);
+    assert!((off_hours_alpha(300, hours, band) - (L + D) / 2.).abs() < 1e-6);
+    assert_eq!(off_hours_alpha(800, hours, None), L, "a day off is flat in the work hours");
+    assert_eq!(off_hours_alpha(300, hours, None), off_hours_alpha(300, hours, band), "same gradient as a work day");
     use crate::calendar::grid::{LINE_TINT, off_hours_line_alpha};
     assert!(off_hours_line_alpha(L) > LINE_TINT && off_hours_line_alpha(D) > off_hours_line_alpha(L), "lines deepen with the background");
 }

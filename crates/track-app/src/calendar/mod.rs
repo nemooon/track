@@ -54,23 +54,50 @@ pub fn work_band(s: &track_core::model::Settings, day: NaiveDate, leave: Option<
 pub const OFF_HOURS_DARKEST: f32 = 0.9;
 pub const OFF_HOURS_LIGHTEST: f32 = 0.2;
 
-/// The two off-hours spans around `band` as `(from, to, dark_at_top)`: 0:00 → work start darkens
-/// upward, work end → 24:00 darkens downward. Without work hours the day splits at noon.
-pub fn off_hours_spans(band: Option<(i64, i64)>) -> [(i64, i64, bool); 2] {
-    let (from, to) = band.unwrap_or((DAY_MINUTES / 2, DAY_MINUTES / 2));
-    [(0, from, true), (to, DAY_MINUTES, false)]
+/// How an off-hours span is shaded.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Shade {
+    /// 0:00 → work start: darkest at the top.
+    DarkTop,
+    /// Work end → 24:00: darkest at the bottom.
+    DarkBottom,
+    /// Unworked time inside the work hours (a day off, a half day): the lightest, evenly.
+    Flat,
 }
 
-/// How dark the off-hours background is at `minute` (the border color's alpha): 0 in work hours,
-/// `OFF_HOURS_LIGHTEST` next to them, rising in proportion to `OFF_HOURS_DARKEST` at midnight.
-pub fn off_hours_alpha(minute: i64, band: Option<(i64, i64)>) -> f32 {
-    off_hours_spans(band)
+/// The off-hours spans of a day with work `hours` of which `band` is worked: a gradient on each
+/// side of the work hours, and flat where the work hours are not worked.
+pub fn off_hours_spans(hours: (i64, i64), band: Option<(i64, i64)>) -> Vec<(i64, i64, Shade)> {
+    let (start, end) = hours;
+    let mut out = vec![(0, start, Shade::DarkTop)];
+    match band {
+        None => out.push((start, end, Shade::Flat)),
+        Some((from, to)) => {
+            out.push((start, from.max(start), Shade::Flat));
+            out.push((to.min(end), end, Shade::Flat));
+        }
+    }
+    out.push((end, DAY_MINUTES, Shade::DarkBottom));
+    out.retain(|(from, to, _)| to > from);
+    out
+}
+
+/// The off-hours background's alpha for `t` from the work hours (0) to midnight (1).
+fn off_hours_depth(t: f32) -> f32 {
+    OFF_HOURS_LIGHTEST + (OFF_HOURS_DARKEST - OFF_HOURS_LIGHTEST) * t
+}
+
+/// How dark the off-hours background is at `minute` (the border color's alpha): 0 in worked hours,
+/// `OFF_HOURS_LIGHTEST` next to the work hours and through unworked ones, rising in proportion to
+/// `OFF_HOURS_DARKEST` at midnight.
+pub fn off_hours_alpha(minute: i64, hours: (i64, i64), band: Option<(i64, i64)>) -> f32 {
+    off_hours_spans(hours, band)
         .into_iter()
-        .find(|(from, to, _)| to > from && (*from..=*to).contains(&minute))
-        .map(|(from, to, dark_at_top)| {
-            let toward_midnight = if dark_at_top { to - minute } else { minute - from };
-            let t = toward_midnight as f32 / (to - from) as f32;
-            OFF_HOURS_LIGHTEST + (OFF_HOURS_DARKEST - OFF_HOURS_LIGHTEST) * t
+        .find(|(from, to, _)| (*from..=*to).contains(&minute))
+        .map(|(from, to, shade)| match shade {
+            Shade::DarkTop => off_hours_depth((to - minute) as f32 / (to - from) as f32),
+            Shade::DarkBottom => off_hours_depth((minute - from) as f32 / (to - from) as f32),
+            Shade::Flat => OFF_HOURS_LIGHTEST,
         })
         .unwrap_or(0.)
 }
@@ -429,6 +456,7 @@ impl CalendarView {
         let state = self.state.read(cx);
         let settings = state.data.as_ref().map(|d| d.settings.clone());
         let band = settings.as_ref().and_then(|s| work_band(s, day, self.leaves.get(&day).copied()));
+        let hours = settings.as_ref().map(|s| (s.work_start, s.work_end)).unwrap_or((DAY_MINUTES / 2, DAY_MINUTES / 2));
         let body_h = 24. * hour_px + 1.;
         let bounds_store = self.column_bounds.clone();
         let day_entries: Vec<&TimeEntry> = entries_for_day(rendered, day);
@@ -464,31 +492,25 @@ impl CalendarView {
                 .absolute()
                 .size_full(),
             )
-            .children(off_hours_spans(band).into_iter().filter(|(from, to, _)| to > from).map(|(from, to, dark_at_top)| {
-                let (dark, light) = (with_alpha(p.border, OFF_HOURS_DARKEST), with_alpha(p.border, OFF_HOURS_LIGHTEST));
-                let (top, bottom) = if dark_at_top { (dark, light) } else { (light, dark) };
+            .children(off_hours_spans(hours, band).into_iter().map(|(from, to, shade)| {
+                // (top, bottom) depth of the span; the divider on its left deepens alike.
+                let (top_a, bottom_a) = match shade {
+                    Shade::DarkTop => (OFF_HOURS_DARKEST, OFF_HOURS_LIGHTEST),
+                    Shade::DarkBottom => (OFF_HOURS_LIGHTEST, OFF_HOURS_DARKEST),
+                    Shade::Flat => (OFF_HOURS_LIGHTEST, OFF_HOURS_LIGHTEST),
+                };
+                let gradient = |f: &dyn Fn(f32) -> gpui::Hsla| gpui::linear_gradient(180., gpui::linear_color_stop(f(top_a), 0.), gpui::linear_color_stop(f(bottom_a), 1.));
                 div()
                     .absolute()
                     .left_0()
                     .right_0()
                     .top(px(minutes_to_y(from, hour_px)))
                     .h(px(minutes_to_y(to - from, hour_px)))
-                    .bg(gpui::linear_gradient(180., gpui::linear_color_stop(top, 0.), gpui::linear_color_stop(bottom, 1.)))
-                    // The column's left border darkens along with the background.
-                    .child({
-                        let tint = |a: f32| with_alpha(p.text, grid::BORDER_TINT * a);
-                        // Over the divider (p.border), deepening toward midnight.
-                        let (top, bottom) = if dark_at_top { (tint(OFF_HOURS_DARKEST), tint(OFF_HOURS_LIGHTEST)) } else { (tint(OFF_HOURS_LIGHTEST), tint(OFF_HOURS_DARKEST)) };
-                        div()
-                            .absolute()
-                            .top_0()
-                            .bottom_0()
-                            .left(px(-1.))
-                            .w(px(1.))
-                            .bg(gpui::linear_gradient(180., gpui::linear_color_stop(top, 0.), gpui::linear_color_stop(bottom, 1.)))
-                    })
+                    .bg(gradient(&|a| with_alpha(p.border, a)))
+                    // Over the divider (p.border), deepening with the background.
+                    .child(div().absolute().top_0().bottom_0().left(px(-1.)).w(px(1.)).bg(gradient(&|a| with_alpha(p.text, grid::BORDER_TINT * a))))
             }))
-            .child(canvas(|_, _, _| (), move |b, _, w, cx| grid::paint_grid_lines(b, hour_px, band, w, cx)).absolute().size_full())
+            .child(canvas(|_, _, _| (), move |b, _, w, cx| grid::paint_grid_lines(b, hour_px, hours, band, w, cx)).absolute().size_full())
             .children(laid.iter().map(|l| {
                 let e = day_entries[l.index];
                 let g = BlockGeometry { start_min: spans[l.index].0, end_min: spans[l.index].1, lane: l.lane, lane_count: l.lane_count, span: l.span };
