@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Draws the app icon (packaging/icon.svg): a stopwatch face (no buttons) on a dark tile under the
-header's dot pattern, its tracked time marked in blue. scripts/build-icon.sh renders it into icon.icns.
+header's dot pattern, its tracked time marked in the app's key colour (a blue-leaning green). scripts/build-icon.sh renders it into icon.icns.
 
 Shadows are stacked translucent shapes, not SVG filters (macOS's SVG renderer ignores filters).
 """
@@ -12,6 +12,8 @@ CX, CY = 512, 512  # the watch's centre: the middle of the icon
 R = 292  # the watch's outer radius (before WATCH_SCALE)
 # The whole watch (with its shadow) is drawn this much smaller, about the centre.
 WATCH_SCALE = 0.9
+# The tracked time and the hand's cap: the app's key colour (Palette::dark().accent).
+ACCENT = "#4cc9b8"
 TILE = (100, 100, 824, 185)  # x, y, side, corner radius (Apple's icon grid)
 
 
@@ -76,12 +78,12 @@ def svg():
 <circle cx="{CX}" cy="{CY}" r="{R}" fill="url(#metal)"/>
 <circle cx="{CX}" cy="{CY}" r="262" fill="#6b7280"/>
 <circle cx="{CX}" cy="{CY}" r="256" fill="url(#face)"/>
-<path d="{arc(214, 0, 130)}" fill="none" stroke="#3b82f6" stroke-opacity="0.25" stroke-width="66" stroke-linecap="round"/>
-<path d="{arc(214, 0, 130)}" fill="none" stroke="#3b82f6" stroke-width="40" stroke-linecap="round"/>
+<path d="{arc(214, 0, 130)}" fill="none" stroke="{ACCENT}" stroke-opacity="0.25" stroke-width="66" stroke-linecap="round"/>
+<path d="{arc(214, 0, 130)}" fill="none" stroke="{ACCENT}" stroke-width="40" stroke-linecap="round"/>
 {ticks()}
 <line x1="{hand_tail[0]:.1f}" y1="{hand_tail[1]:.1f}" x2="{hand_end[0]:.1f}" y2="{hand_end[1]:.1f}" stroke="#ffffff" stroke-width="15" stroke-linecap="round"/>
 <circle cx="{CX}" cy="{CY}" r="26" fill="#ffffff"/>
-<circle cx="{CX}" cy="{CY}" r="11" fill="#3b82f6"/>
+<circle cx="{CX}" cy="{CY}" r="11" fill="{ACCENT}"/>
 </g>
 </svg>
 '''
