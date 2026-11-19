@@ -430,8 +430,8 @@ impl CalendarView {
                     .border_color(p.border)
                     .px_2()
                     .text_xs()
-                    // Ten to a row (a long day wraps under the first ten).
-                    .child(div().flex_none().w(px(FOOTER_DOT * FOOTER_DOTS as f32 + FOOTER_DOT_GAP * (FOOTER_DOTS - 1) as f32)).flex().flex_wrap().gap(px(FOOTER_DOT_GAP)).children(dots.into_iter().enumerate().map(|(i, project)| {
+                    // Twenty to a row (a long day wraps under the first twenty).
+                    .child(div().flex_none().w(px(FOOTER_DOT * FOOTER_ROW as f32 + FOOTER_DOT_GAP * (FOOTER_ROW - 1) as f32)).flex().flex_wrap().gap(px(FOOTER_DOT_GAP)).children(dots.into_iter().enumerate().map(|(i, project)| {
                         let color = project.and_then(|id| colors.get(&id).cloned()).filter(|c| !c.is_empty());
                         div()
                             .debug_selector(move || format!("day-dot-{d}-{i}"))
@@ -1318,6 +1318,8 @@ impl Render for CalendarView {
 
 /// How many dots in the footer stand for a day's work hours.
 const FOOTER_DOTS: usize = 10;
+/// How many footer dots go in a row (two days of work hours) before wrapping.
+const FOOTER_ROW: usize = 20;
 /// A footer dot's side and the space between dots.
 const FOOTER_DOT: f32 = 4.;
 const FOOTER_DOT_GAP: f32 = 2.;

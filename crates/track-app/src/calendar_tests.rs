@@ -1060,9 +1060,9 @@ fn all_day_has_no_duplicate(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("entry-menu-duplicate").is_none());
 }
 
-/// The footer's dots go ten to a row: the eleventh starts a new row under the first.
+/// The footer's dots go twenty to a row: the twenty-first starts a new row under the first.
 #[gpui::test]
-fn footer_dots_wrap_after_ten(cx: &mut TestAppContext) {
+fn footer_dots_wrap_after_twenty(cx: &mut TestAppContext) {
     let (app, cx, _f) = open_app_db(cx, |db| {
         insert_entry(db, "long", at(12, 6, 0), at(12, 22, 0), Some("p1"), "長い日");
     });
@@ -1071,13 +1071,13 @@ fn footer_dots_wrap_after_ten(cx: &mut TestAppContext) {
         cx.notify();
     }));
     wait_io(cx);
-    // 16 hours = 960 of 450 minutes → 21 dots: rows of 10, 10 and 1.
+    // 16 hours = 960 of 450 minutes → 21 dots: rows of 20 and 1.
     let first = cx.debug_bounds("day-dot-2026-11-12-0").unwrap();
-    let tenth = cx.debug_bounds("day-dot-2026-11-12-9").unwrap();
-    let eleventh = cx.debug_bounds("day-dot-2026-11-12-10").unwrap();
-    assert_eq!(tenth.top(), first.top(), "ten in the first row");
-    assert!(eleventh.top() > first.bottom(), "the eleventh on the next row");
-    assert_eq!(eleventh.left(), first.left(), "under the first");
+    let twentieth = cx.debug_bounds("day-dot-2026-11-12-19").unwrap();
+    let last = cx.debug_bounds("day-dot-2026-11-12-20").unwrap();
+    assert_eq!(twentieth.top(), first.top(), "twenty in the first row");
+    assert!(last.top() > first.bottom(), "the twenty-first on the next row");
+    assert_eq!(last.left(), first.left(), "under the first");
     assert!(cx.debug_bounds("day-dot-2026-11-12-20").is_some() && cx.debug_bounds("day-dot-2026-11-12-21").is_none());
     let footer = cx.debug_bounds("day-footer").unwrap();
     let last = cx.debug_bounds("day-dot-2026-11-12-20").unwrap();
