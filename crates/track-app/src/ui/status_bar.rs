@@ -17,7 +17,8 @@ pub fn render(app: &TrackApp, left: Vec<AnyElement>, cx: &mut Context<TrackApp>)
         .flex_shrink_0()
         .items_center()
         .gap_4()
-        .h(px(24.))
+        .relative()
+        .h(px(STATUS_BAR_HEIGHT))
         .px_3()
         .bg(p.surface)
         .border_t_1()
@@ -27,13 +28,12 @@ pub fn render(app: &TrackApp, left: Vec<AnyElement>, cx: &mut Context<TrackApp>)
         .children(left)
         .child(div().flex_1())
         .when_some(flash, |d, item| d.child(flash_notice(&item, p, cx)))
-        .child(history_bell(&history, open, p, cx))
+        .child(history_bell(open, p, cx))
+        .when(open, |d| d.child(history_list(&history, p, cx)))
 }
 
-/// The status bar's side padding (`px_3`), so the history panel can reach the window edge.
-const STATUS_BAR_PAD: f32 = 12.;
-/// From the bell's bottom to the status bar's top edge: the 18px bell sits centred in the 24px bar.
-const BELL_TO_BAR_TOP: f32 = 21.;
+/// About as tall as Zed's status bar (4px above and below 22px buttons).
+pub const STATUS_BAR_HEIGHT: f32 = 30.;
 
 fn toggle_history(this: &mut TrackApp, open: bool, cx: &mut Context<TrackApp>) {
     this.history_open = open;
@@ -68,8 +68,8 @@ fn flash_notice(item: &HistoryItem, p: Palette, cx: &mut Context<TrackApp>) -> i
 }
 
 /// The bell at the right end; it opens the list above it.
-fn history_bell(history: &NoticeHistory, open: bool, p: Palette, cx: &mut Context<TrackApp>) -> impl IntoElement {
-    let bell = div()
+fn history_bell(open: bool, p: Palette, cx: &mut Context<TrackApp>) -> impl IntoElement {
+    div()
         .id("status-history")
         .debug_selector(|| "status-history".into())
         .relative()
@@ -84,8 +84,7 @@ fn history_bell(history: &NoticeHistory, open: bool, p: Palette, cx: &mut Contex
         .on_click(cx.listener(|this, _, _, cx| {
             let open = !this.history_open;
             toggle_history(this, open, cx);
-        }));
-    div().relative().flex_none().child(bell).when(open, |d| d.child(history_list(history, p, cx)))
+        }))
 }
 
 fn history_list(history: &NoticeHistory, p: Palette, cx: &mut Context<TrackApp>) -> impl IntoElement {
@@ -97,8 +96,8 @@ fn history_list(history: &NoticeHistory, p: Palette, cx: &mut Context<TrackApp>)
             // A solid panel standing on the status bar at the window's right edge: square, no
             // shadow, a title strip, rows split by lines.
             .absolute()
-            .bottom(px(BELL_TO_BAR_TOP))
-            .right(px(-STATUS_BAR_PAD))
+            .bottom(px(STATUS_BAR_HEIGHT))
+            .right_0()
             .w(px(360.))
             .max_h(px(320.))
             .overflow_y_scroll()

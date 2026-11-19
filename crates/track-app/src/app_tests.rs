@@ -444,3 +444,16 @@ fn ai_changes_are_kept_in_the_history(cx: &mut TestAppContext) {
     assert_eq!(items.len(), 1);
     assert!(items[0].text.starts_with("AI が 1 件変更しました"), "{}", items[0].text);
 }
+
+/// The status bar is about as tall as Zed's (30px), and the history panel stands right on it.
+#[gpui::test]
+fn status_bar_is_as_tall_as_zeds(cx: &mut TestAppContext) {
+    let (_app, cx) = open_app(cx);
+    let bar = cx.debug_bounds("status-bar").expect("status bar");
+    assert_eq!(bar.size.height, gpui::px(30.));
+    let b = cx.debug_bounds("status-history").unwrap();
+    cx.simulate_click(b.center(), gpui::Modifiers::none());
+    settle(cx);
+    let list = cx.debug_bounds("status-history-list").expect("history");
+    assert_eq!(list.bottom(), bar.top(), "the panel stands on the status bar");
+}
