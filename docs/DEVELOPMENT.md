@@ -114,6 +114,7 @@ Apple Intelligence ヘルパーをアプリから直接起動する。
 ## 開発用
 
 - `scripts/winshot.sh out.png` — アプリのウインドウだけをスクリーンショットする
+- `scripts/seed-demo.py <空のフォルダ>` — README のスクリーンショット用に、架空のクライアント・プロジェクト・1 週間分の工数を入れる（本物のデータは写さない。`docs/images/` は 1440px 幅に縮めて置く）
 - `TRACK_GPUI_PAGE=reports cargo run` — レポート画面から起動する
 - `TRACK_GPUI_WINDOW=1440x900` — 起動時のウインドウサイズ
 - `TRACK_GPUI_APPEARANCE=light|dark` — 外観の設定と macOS の外観より優先して明暗を決める（撮影用）
