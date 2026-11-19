@@ -753,3 +753,22 @@ fn deleting_is_listed_in_the_history(cx: &mut TestAppContext) {
     assert!(list.bottom() <= bell.top(), "it opens above the bell");
     assert!(cx.debug_bounds("status-history-item-0").is_some(), "the deletion is listed");
 }
+
+/// Pressing and dragging on the open notice history stays in the history: nothing is made in the
+/// calendar under it.
+#[gpui::test]
+fn the_history_panel_does_not_pass_clicks_to_the_calendar(cx: &mut TestAppContext) {
+    let (app, cx, _f) = setup(cx);
+    click(cx, "status-history");
+    let panel = cx.debug_bounds("status-history-list").expect("history open");
+    let at = point(panel.center().x, panel.top() + px(16.));
+    let grid = cx.debug_bounds("calendar-scroll").unwrap();
+    assert!(grid.contains(&at), "the press is over the calendar grid");
+    cx.simulate_mouse_move(at, None, Modifiers::none());
+    assert!(cx.debug_bounds("hover-time").is_none(), "the calendar under the panel is not hovered");
+    cx.simulate_mouse_down(at, MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_move(point(at.x, at.y - px(30.)), Some(MouseButton::Left), Modifiers::none());
+    cx.simulate_mouse_up(point(at.x, at.y - px(30.)), MouseButton::Left, Modifiers::none());
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).drag.clone()), DragState::Idle, "no drag in the calendar");
+    assert!(cx.debug_bounds("status-history-list").is_some(), "the history stays open");
+}

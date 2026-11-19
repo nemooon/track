@@ -94,6 +94,8 @@ fn history_list(history: &NoticeHistory, p: Palette, cx: &mut Context<TrackApp>)
         div()
             .id("status-history-list")
             .debug_selector(|| "status-history-list".into())
+            // Takes the mouse: nothing under the panel (the calendar) is hovered or pressed.
+            .occlude()
             // A solid panel standing on the status bar at the window's right edge: square, no
             // shadow, a title strip, rows split by lines.
             .absolute()
