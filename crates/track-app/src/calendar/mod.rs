@@ -6,7 +6,7 @@ mod picker;
 
 use std::collections::HashMap;
 use track_core::model::{EntryPatch, NewEntry, TimeEntry};
-use crate::app::AppState;
+use crate::app::{AppState, StatusNote};
 use crate::core::interaction::{self, DragState, Edge, EntryCache};
 use crate::core::geometry::{BUFFER_PX, GUTTER_PX, ZOOM_LEVELS, at_minutes, edge_scroll_speed, minutes_to_y, y_to_minutes};
 use crate::core::holidays::holiday_name;
@@ -22,7 +22,7 @@ use gpui::{
     MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollHandle,
     StatefulInteractiveElement, Styled, Subscription, Task, Window, anchored, canvas, deferred, div, point, prelude::FluentBuilder, px,
 };
-use gpui_component::{Icon, IconName, WindowExt, button::Button, notification::Notification};
+use gpui_component::{Icon, IconName, WindowExt};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -852,11 +852,25 @@ impl CalendarView {
         (list, Some(id))
     }
 
-    fn notify_msg(&self, n: Notification, cx: &mut Context<Self>) {
-        let n = n.autohide(true);
-        if let Some(w) = self.window {
-            let _ = w.update(cx, |_, window, cx| window.push_notification(n, cx));
-        }
+    /// Tells about a change in the status bar.
+    fn note(&self, note: StatusNote, cx: &mut Context<Self>) {
+        self.state.update(cx, |s, cx| s.set_note(note, cx));
+    }
+
+    /// 「元に戻す」 for a deletion: makes the same entry again.
+    pub fn restore_deleted(&mut self, removed: TimeEntry, window: &mut Window, cx: &mut Context<Self>) {
+        let body = NewEntry {
+            project_id: removed.project_id.clone(),
+            start: removed.start,
+            end: removed.end,
+            title: removed.title.clone(),
+            note: removed.note.clone(),
+            tag_ids: removed.tags.iter().map(|t| t.tag_id.clone()).collect(),
+            external_event_id: removed.external_event_id.clone(),
+            external_event_source: removed.external_event_source.clone(),
+            break_minutes: removed.break_minutes,
+        };
+        self.create(body, window, cx);
     }
 
     /// Saves new start/end, showing them at once and rolling back if the save fails.
@@ -875,13 +889,10 @@ impl CalendarView {
             let result = fut.await;
             let _ = this.update(cx, |this, cx| {
                 match result {
-                    Ok(updated) => {
-                        this.cache.replace(updated);
-                        this.notify_msg(Notification::success("保存しました"), cx);
-                    }
+                    Ok(updated) => this.cache.replace(updated),
                     Err(_) => {
                         this.cache.rollback(snapshot);
-                        this.notify_msg(Notification::error("更新に失敗しました"), cx);
+                        this.note(StatusNote::Error("更新に失敗しました".into()), cx);
                     }
                 }
                 cx.notify();
@@ -899,7 +910,7 @@ impl CalendarView {
             let _ = this.update(cx, |this, cx| {
                 match result {
                     Ok(e) => this.cache.insert(e),
-                    Err(_) => this.notify_msg(Notification::error("記録の作成に失敗しました"), cx),
+                    Err(_) => this.note(StatusNote::Error("記録の作成に失敗しました".into()), cx),
                 }
                 cx.notify();
             });
@@ -907,7 +918,7 @@ impl CalendarView {
         .detach();
     }
 
-    /// Delete immediately; the toast offers 「元に戻す」 which re-creates the same entry.
+    /// Delete immediately; the status bar offers 「元に戻す」 which re-creates the same entry.
     pub fn delete(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
         self.window = Some(window.window_handle());
         let snapshot = self.cache.snapshot();
@@ -920,31 +931,10 @@ impl CalendarView {
             let result = fut.await;
             let _ = this.update(cx, |this, cx| {
                 match result {
-                    Ok(_) => {
-                        let weak = cx.weak_entity();
-                        let n = Notification::success("削除しました").action(move |_, _, _| {
-                            let weak = weak.clone();
-                            let removed = removed.clone();
-                            Button::new("undo-delete").label("元に戻す").on_click(move |_, window, cx| {
-                                let body = NewEntry {
-                                    project_id: removed.project_id.clone(),
-                                    start: removed.start,
-                                    end: removed.end,
-                                    title: removed.title.clone(),
-                                    note: removed.note.clone(),
-                                    tag_ids: removed.tags.iter().map(|t| t.tag_id.clone()).collect(),
-                                    external_event_id: removed.external_event_id.clone(),
-                                    external_event_source: removed.external_event_source.clone(),
-                                    break_minutes: removed.break_minutes,
-                                };
-                                let _ = weak.update(cx, |this, cx| this.create(body, window, cx));
-                            })
-                        });
-                        this.notify_msg(n, cx);
-                    }
+                    Ok(_) => this.note(StatusNote::Deleted(Box::new(removed)), cx),
                     Err(_) => {
                         this.cache.rollback(snapshot);
-                        this.notify_msg(Notification::error("削除に失敗しました"), cx);
+                        this.note(StatusNote::Error("削除に失敗しました".into()), cx);
                     }
                 }
                 cx.notify();

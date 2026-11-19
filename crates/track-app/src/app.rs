@@ -46,6 +46,8 @@ pub struct AppState {
     pub ops_seen: Option<i64>,
     /// The AI operations offered for undo in the main window.
     pub ai_op: Option<AiOpNotice>,
+    /// The notice about the user's own change in the status bar (the newest replaces it).
+    pub note: Option<StatusNote>,
     /// The seed of the header's dot pattern; saving an entry changes it.
     pub header_seed: u64,
     /// The pattern the current one fades in from, and over how long.
@@ -63,6 +65,16 @@ pub const SPARKLE_STEPS: u64 = 10;
 /// step to about 120ms at the end (about 0.65s in all).
 pub fn sparkle_every(step: u64) -> std::time::Duration {
     std::time::Duration::from_secs_f32(0.030 * 1.17f32.powi(step as i32))
+}
+
+/// The status bar's notice about the user's own change. Plain saves say nothing: the calendar
+/// already shows them and the header sparkles.
+#[derive(Debug, Clone, PartialEq)]
+pub enum StatusNote {
+    /// 「1件削除しました：<題名>［元に戻す］」, which makes the same entry again.
+    Deleted(Box<track_core::model::TimeEntry>),
+    /// A change that could not be saved, in red until closed.
+    Error(String),
 }
 
 /// 「AI が N 件変更しました［元に戻す］」: every AI operation that arrived while the notice
@@ -129,7 +141,7 @@ impl AppState {
 
     pub fn with_path(api: DataClient, persist_path: PathBuf) -> Self {
         let seed = fresh_seed();
-        Self { reloads: 0, api, data: None, error: None, loading: false, persist: PersistState::load(&persist_path), persist_path, ops_seen: None, ai_op: None, header_seed: seed, header_prev_seed: seed, header_fade: std::time::Duration::ZERO, header_shuffles: 0, sparkle: None }
+        Self { reloads: 0, api, data: None, error: None, loading: false, persist: PersistState::load(&persist_path), persist_path, ops_seen: None, ai_op: None, note: None, header_seed: seed, header_prev_seed: seed, header_fade: std::time::Duration::ZERO, header_shuffles: 0, sparkle: None }
     }
 
     pub fn update_persist(&mut self, f: impl FnOnce(&mut PersistState)) {
@@ -262,6 +274,16 @@ impl AppState {
             });
         })
         .detach();
+    }
+
+    pub fn set_note(&mut self, note: StatusNote, cx: &mut Context<Self>) {
+        self.note = Some(note);
+        cx.notify();
+    }
+
+    pub fn dismiss_note(&mut self, cx: &mut Context<Self>) {
+        self.note = None;
+        cx.notify();
     }
 
     pub fn dismiss_ai_op(&mut self, cx: &mut Context<Self>) {
@@ -650,7 +672,7 @@ impl Render for TrackApp {
             .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.calendar.update(cx, |c, cx| c.zoom(-1, cx))))
             .child(self.render_header(window, cx))
             .child(div().flex_1().min_h_0().flex().flex_col().child(self.render_body(cx)))
-            .child(crate::ui::status_bar::render(self.status_left(window, cx), self.state.read(cx).ai_op.clone(), cx))
+            .child(crate::ui::status_bar::render(self.status_left(window, cx), self.state.read(cx).note.clone(), self.state.read(cx).ai_op.clone(), cx))
     }
 }
 
