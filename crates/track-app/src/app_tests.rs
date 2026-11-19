@@ -145,21 +145,45 @@ fn external_write_triggers_reload(cx: &mut TestAppContext) {
     assert_eq!(projects, Some(true), "reference data is reloaded too");
 }
 
+/// 「AI 連携…」 opens a window of its own: Codex and Claude Code in two areas split by a line,
+/// each with its state and install / uninstall (no 「両方」). Development builds use track-dev.
 #[gpui::test]
-fn integrations_dialog_installs_dev_names(cx: &mut TestAppContext) {
+fn the_integrations_window_installs_and_uninstalls_each_tool(cx: &mut TestAppContext) {
     let (app, cx) = open_app(cx);
     let home = tempfile::tempdir().unwrap();
     app.update(cx, |a, _| a.integrations_home = home.path().to_path_buf());
     cx.dispatch_action(crate::actions::InstallIntegrations);
-    cx.run_until_parked();
-    let b = cx.debug_bounds("install-both").expect("dialog with choices");
-    cx.simulate_click(b.center(), gpui::Modifiers::none());
-    cx.run_until_parked();
+    settle(cx);
+    assert_eq!(cx.update(|_, cx| cx.windows().len()), 2, "a window of its own");
+    let (handle, _) = cx.update(|_, cx| crate::ui::integrations_window::integrations_window(cx)).expect("integrations window");
+    let mut w = gpui::VisualTestContext::from_window(handle, cx);
+    w.run_until_parked();
+    let codex = w.debug_bounds("integration-codex").expect("Codex area");
+    let claude = w.debug_bounds("integration-claude").expect("Claude Code area");
+    let line = w.debug_bounds("integration-divider").expect("a line between them");
+    assert!(codex.bottom() <= line.top() && line.bottom() <= claude.top(), "Codex, the line, then Claude Code");
+    assert!(w.debug_bounds("install-both").is_none(), "no 「両方」");
+    assert!(w.debug_bounds("integration-codex-not-installed").is_some());
+    assert!(w.debug_bounds("integration-codex-uninstall").is_none(), "nothing to uninstall yet");
+
+    let click = |w: &mut gpui::VisualTestContext, sel: &'static str| {
+        let b = w.debug_bounds(sel).unwrap_or_else(|| panic!("{sel}"));
+        w.simulate_click(b.center(), gpui::Modifiers::none());
+        w.run_until_parked();
+    };
+    click(&mut w, "integration-codex-install");
     assert!(home.path().join(".codex/skills/track-dev/SKILL.md").is_file());
-    assert!(home.path().join(".claude/commands/track-dev.md").is_file());
     assert!(!home.path().join(".codex/skills/track").exists(), "the real skill name is never used");
-    let status = app.read_with(cx, |a, cx| a.integrations.as_ref().map(|d| d.read(cx).status.clone()));
-    assert!(matches!(status, Some(Some(Ok(ref paths))) if paths.len() == 2), "{status:?}");
+    assert!(w.debug_bounds("integration-codex-installed").is_some());
+    assert!(w.debug_bounds("integration-claude-not-installed").is_some(), "Claude Code is untouched");
+
+    click(&mut w, "integration-codex-uninstall");
+    assert!(!home.path().join(".codex/skills/track-dev").exists());
+    assert!(w.debug_bounds("integration-codex-not-installed").is_some());
+
+    click(&mut w, "integration-claude-install");
+    assert!(home.path().join(".claude/commands/track-dev.md").is_file());
+    assert!(w.debug_bounds("integration-claude-installed").is_some());
 }
 
 #[test]

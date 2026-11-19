@@ -437,9 +437,8 @@ pub struct TrackApp {
     pub calendar: Entity<CalendarView>,
     pub reports: Entity<ReportsView>,
     focus: FocusHandle,
-    /// Where 「AI 連携をインストール」 installs (tests point it at a tempdir).
+    /// Where 「AI 連携…」 installs the skills (tests point it at a tempdir).
     pub integrations_home: PathBuf,
-    pub integrations: Option<Entity<crate::ui::integrations_dialog::IntegrationsDialog>>,
     /// The notice history list is open above the status bar's bell.
     pub history_open: bool,
     /// The header's 「…」 menu is open.
@@ -552,7 +551,6 @@ impl TrackApp {
             reports,
             focus,
             integrations_home: dirs::home_dir().unwrap_or_default(),
-            integrations: None,
             history_open: false,
             app_menu_open: false,
             bell_bounds: Default::default(),
@@ -610,11 +608,9 @@ impl TrackApp {
         })
     }
 
-    pub fn open_integrations(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        use gpui_component::WindowExt as _;
-        let view = cx.new(|_| crate::ui::integrations_dialog::IntegrationsDialog::new(self.integrations_home.clone()));
-        self.integrations = Some(view.clone());
-        window.open_dialog(cx, move |dialog, _, _| dialog.title(if track_core::guard::GUARDED { "AI 連携をインストール（開発用）" } else { "AI 連携をインストール" }).w(px(520.)).child(view.clone()));
+    /// 「AI 連携…」: the window that installs and uninstalls the AI skills.
+    pub fn open_integrations(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+        crate::ui::integrations_window::open_integrations(self.integrations_home.clone(), cx);
     }
 
     fn show(&mut self, page: Page, cx: &mut Context<Self>) {

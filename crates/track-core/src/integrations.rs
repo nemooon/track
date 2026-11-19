@@ -179,3 +179,67 @@ pub fn install_integrations_in(home: &Path, kind: IntegrationKind, dev: bool) ->
     }
     Ok(installed)
 }
+
+/// Where one AI tool's integration lives in `home`.
+fn integration_path(home: &Path, kind: IntegrationKind, dev: bool) -> PathBuf {
+    let name = skill_name(dev);
+    match kind {
+        IntegrationKind::Claude => home.join(".claude/commands").join(format!("{name}.md")),
+        _ => home.join(".codex/skills").join(name),
+    }
+}
+
+/// How one AI tool's integration stands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IntegrationStatus {
+    NotInstalled,
+    /// Ours, with the text this version would write.
+    Installed,
+    /// Ours, but an older text (installing again updates it).
+    Outdated,
+    /// Something else is there under the same name; it is never touched.
+    Conflict(String),
+}
+
+/// The text this version installs for `kind` (the skill's SKILL.md, or the command).
+fn expected_text(kind: IntegrationKind, dev: bool) -> String {
+    match kind {
+        IntegrationKind::Claude => adapt(&with_editing(CLAUDE_COMMAND, IntegrationKind::Claude), dev),
+        _ => adapt(&with_editing(SKILL, IntegrationKind::Codex), dev),
+    }
+}
+
+/// The state of the Codex skill or the Claude Code command (not `Both`).
+pub fn integration_status(home: &Path, kind: IntegrationKind, dev: bool) -> IntegrationStatus {
+    let path = integration_path(home, kind, dev);
+    let file = if kind == IntegrationKind::Claude { path.clone() } else { path.join("SKILL.md") };
+    if std::fs::symlink_metadata(&path).is_err() {
+        return IntegrationStatus::NotInstalled;
+    }
+    let ours = if kind == IntegrationKind::Claude { is_track_command(&file) } else { is_track_skill(&file, skill_name(dev)) };
+    if !ours {
+        return IntegrationStatus::Conflict(format!("同じ名前の別のものがあります: {}", path.display()));
+    }
+    match std::fs::read_to_string(&file) {
+        Ok(text) if text == expected_text(kind, dev) => IntegrationStatus::Installed,
+        _ => IntegrationStatus::Outdated,
+    }
+}
+
+/// Removes the Codex skill folder or the Claude Code command, only when it is Track's.
+pub fn uninstall_integration_in(home: &Path, kind: IntegrationKind, dev: bool) -> Result<PathBuf> {
+    let path = integration_path(home, kind, dev);
+    match integration_status(home, kind, dev) {
+        IntegrationStatus::NotInstalled => Err(fail(format!("インストールされていません: {}", path.display()))),
+        IntegrationStatus::Conflict(message) => Err(fail(message)),
+        IntegrationStatus::Installed | IntegrationStatus::Outdated => {
+            let meta = std::fs::symlink_metadata(&path)?;
+            if meta.file_type().is_symlink() || meta.is_file() {
+                std::fs::remove_file(&path)?;
+            } else {
+                std::fs::remove_dir_all(&path)?;
+            }
+            Ok(path)
+        }
+    }
+}

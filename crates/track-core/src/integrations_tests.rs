@@ -121,3 +121,37 @@ fn installed_texts_include_editing_section() {
     let skill = std::fs::read_to_string(prod.path().join(".codex/skills/track/SKILL.md")).unwrap();
     assert!(skill.contains("\"$TRACK_CLI\" undo") && !skill.contains(".track-gpui"));
 }
+
+#[test]
+fn status_follows_install_edit_and_uninstall() {
+    let home = tempfile::tempdir().unwrap();
+    for kind in [IntegrationKind::Codex, IntegrationKind::Claude] {
+        assert_eq!(integration_status(home.path(), kind, true), IntegrationStatus::NotInstalled, "{kind:?}");
+        install_integrations_in(home.path(), kind, true).unwrap();
+        assert_eq!(integration_status(home.path(), kind, true), IntegrationStatus::Installed, "{kind:?}");
+    }
+    // An older text (ours, but not what this version would write) is out of date.
+    let skill = home.path().join(".codex/skills/track-dev/SKILL.md");
+    std::fs::write(&skill, "---\nname: track-dev\n---\n古い文面\n").unwrap();
+    assert_eq!(integration_status(home.path(), IntegrationKind::Codex, true), IntegrationStatus::Outdated);
+    // Uninstalling removes only ours.
+    let removed = uninstall_integration_in(home.path(), IntegrationKind::Codex, true).unwrap();
+    assert_eq!(removed, home.path().join(".codex/skills/track-dev"));
+    assert!(!removed.exists());
+    assert_eq!(integration_status(home.path(), IntegrationKind::Codex, true), IntegrationStatus::NotInstalled);
+    uninstall_integration_in(home.path(), IntegrationKind::Claude, true).unwrap();
+    assert!(!home.path().join(".claude/commands/track-dev.md").exists());
+    assert!(home.path().join(".claude/commands").is_dir(), "the commands folder itself stays");
+}
+
+#[test]
+fn someone_elses_files_are_reported_and_never_removed() {
+    let home = tempfile::tempdir().unwrap();
+    let cmd = home.path().join(".claude/commands/track-dev.md");
+    std::fs::create_dir_all(cmd.parent().unwrap()).unwrap();
+    std::fs::write(&cmd, "# 別のコマンド\n").unwrap();
+    assert!(matches!(integration_status(home.path(), IntegrationKind::Claude, true), IntegrationStatus::Conflict(_)));
+    assert!(uninstall_integration_in(home.path(), IntegrationKind::Claude, true).is_err());
+    assert!(cmd.exists(), "left alone");
+    assert!(uninstall_integration_in(home.path(), IntegrationKind::Codex, true).is_err(), "nothing to uninstall");
+}

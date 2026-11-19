@@ -33,7 +33,7 @@ pub fn render(app: &TrackApp, cx: &mut Context<TrackApp>) -> AnyElement {
         })
         .trigger(Trigger::new(button));
     if app.app_menu_open {
-        let integrations = if track_core::guard::GUARDED { "AI 連携をインストール…（開発用）" } else { "AI 連携をインストール…" };
+        let integrations = if track_core::guard::GUARDED { "AI 連携…（開発用）" } else { "AI 連携…" };
         pop = pop.w(px(220.)).p_1().child(
             div()
                 .flex()

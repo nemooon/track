@@ -203,7 +203,7 @@ impl Render for BackupSettings {
         let can_save = dirty && validation.is_none() && !self.saving;
         let home = dirs::home_dir().unwrap_or_default();
         // The dev build hides iCloud Drive: the real app's backups live there.
-        let suggestions = export_dir_suggestions(&home, crate::ui::integrations_dialog::DEV_NAMES);
+        let suggestions = export_dir_suggestions(&home, crate::ui::integrations_window::DEV_NAMES);
         let default_dir = Config::defaults(&self.state.read(cx).api.data_dir).export_dir;
         let number = |input: &Entity<InputState>, unit: &'static str| div().flex().items_center().gap_2().child(div().w(px(90.)).child(Input::new(input))).child(div().text_sm().text_color(p.text_muted).child(unit));
         let rows = self.snapshots.iter().enumerate().map(|(i, s)| {
