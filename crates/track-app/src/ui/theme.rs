@@ -140,7 +140,7 @@ impl Palette {
             text_faint: c(0x6e7480),
             hover: c(0x353a44),
             selected: c(0x3f4552),
-            accent: c(0x74ade8),
+            accent: c(0x4cc9b8),
             accent_text: c(0x1b1e24),
             danger: c(0xe06c75),
             danger_bg: c(0x3a2a2e),
@@ -187,7 +187,7 @@ impl Palette {
             text_faint: c(0x9a9da3),
             hover: c(0xebebed),
             selected: c(0xe2e4e8),
-            accent: c(0x2563eb),
+            accent: c(0x0f7f74),
             accent_text: c(0xffffff),
             danger: c(0xdc2626),
             danger_bg: c(0xfef2f2),
@@ -317,6 +317,18 @@ mod tests {
         assert!(contrast(p.text, p.surface) >= 7.0, "text on surface");
         assert!(contrast(p.on_color, p.primary) >= 7.0, "button text");
         assert_ne!(p, Palette::light());
+    }
+
+    /// The key colour is a green leaning to blue, readable as text on the background in both themes,
+    /// and no longer the Saturday blue.
+    #[test]
+    fn accent_is_a_readable_blue_green() {
+        for p in [Palette::light(), Palette::dark()] {
+            assert!(contrast(p.accent, p.bg) >= 4.5, "accent text on bg: {:?}", p.accent);
+            let h = p.accent.h * 360.;
+            assert!((160. ..=185.).contains(&h), "a green leaning to blue, hue {h}");
+            assert_ne!(p.accent, p.saturday, "Saturday keeps its blue");
+        }
     }
 
     #[test]
