@@ -65,18 +65,6 @@ pub fn update_resize(s: &DragState, pointer_min: i64) -> DragState {
     DragState::Resizing { id: id.clone(), day_index: *day_index, edge: *edge, start_min, end_min, orig: *orig }
 }
 
-/// Arrow-key nudge. Plain: shift both ends, refused outside 0:00–24:00.
-/// With Shift: move the end only, refused below 15 minutes.
-pub fn nudge(start: i64, end: i64, delta: i64, shift: bool) -> Option<(i64, i64)> {
-    if shift {
-        let e = end + delta;
-        (e - start >= SNAP_MIN).then_some((start, e))
-    } else {
-        let (s, e) = (start + delta, end + delta);
-        (s >= 0 && e <= DAY_MINUTES).then_some((s, e))
-    }
-}
-
 /// The calendar's entry list with optimistic edits and snapshot rollback.
 #[derive(Debug, Clone, Default)]
 pub struct EntryCache {
@@ -165,15 +153,6 @@ mod tests {
         assert_eq!(end_min, 615);
         let DragState::Resizing { end_min, .. } = update_resize(&bottom, 1440) else { panic!() };
         assert_eq!(end_min, 1440);
-    }
-
-    #[test]
-    fn nudge_stays_within_day() {
-        assert_eq!(nudge(0, 60, -15, false), None);
-        assert_eq!(nudge(1380, 1440, 15, false), None);
-        assert_eq!(nudge(600, 660, 15, false), Some((615, 675)));
-        assert_eq!(nudge(600, 615, -15, true), None);
-        assert_eq!(nudge(600, 615, 15, true), Some((600, 630)));
     }
 
     #[test]

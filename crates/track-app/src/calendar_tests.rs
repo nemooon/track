@@ -100,22 +100,6 @@ fn moving_entry_rolls_back_when_saving_fails(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn arrow_keys_nudge_selected_entry(cx: &mut TestAppContext) {
-    let (app, cx, f) = setup(cx);
-    let b = cx.debug_bounds("entry-a").expect("entry block");
-    cx.simulate_click(b.center(), Modifiers::none());
-    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).selected.clone()), vec!["a".to_string()]);
-    cx.simulate_keystrokes("down");
-    wait_io(cx);
-    assert_eq!(stored(&f, "a").unwrap().start, at(12, 10, 15));
-    cx.simulate_keystrokes("shift-down");
-    wait_io(cx);
-    assert_eq!(stored(&f, "a").unwrap().end, at(12, 11, 30));
-    cx.simulate_keystrokes("escape");
-    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).selected.clone()), Vec::<String>::new());
-}
-
-#[gpui::test]
 fn resize_bottom_edge_extends_entry(cx: &mut TestAppContext) {
     let (_app, cx, f) = setup(cx);
     let b = cx.debug_bounds("entry-a").expect("entry block");
@@ -1082,4 +1066,26 @@ fn footer_dots_wrap_after_twenty(cx: &mut TestAppContext) {
     let footer = cx.debug_bounds("day-footer").unwrap();
     let last = cx.debug_bounds("day-dot-2026-11-12-20").unwrap();
     assert!(footer.top() <= first.top() && last.bottom() <= footer.bottom(), "all inside the footer");
+}
+
+/// The arrows move the selection: → / ← to the nearest block beside, ↓ / ↑ in time order. They
+/// no longer move the entry itself.
+#[gpui::test]
+fn arrow_keys_move_the_selection(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup_two(cx);
+    let sel = |cx: &mut gpui::VisualTestContext| app.read_with(cx, |a, cx| a.calendar.read(cx).selected.clone());
+    click(cx, "entry-a");
+    cx.simulate_keystrokes("right");
+    assert_eq!(sel(cx), vec!["b".to_string()], "the 13th's block beside it");
+    cx.simulate_keystrokes("left");
+    assert_eq!(sel(cx), vec!["a".to_string()]);
+    cx.simulate_keystrokes("down");
+    assert_eq!(sel(cx), vec!["b".to_string()], "next in time order");
+    cx.simulate_keystrokes("shift-down");
+    wait_io(cx);
+    assert_eq!((stored(&f, "b").unwrap().start, stored(&f, "b").unwrap().end), (at(13, 10, 30), at(13, 11, 30)), "nothing moved or resized");
+    cx.simulate_keystrokes("escape");
+    assert!(sel(cx).is_empty());
+    cx.simulate_keystrokes("down");
+    assert_eq!(sel(cx), vec!["a".to_string()], "from nothing: the first shown");
 }

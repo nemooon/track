@@ -23,10 +23,11 @@ use gpui::{
     StatefulInteractiveElement, Styled, Subscription, Task, Window, anchored, canvas, deferred, div, point, prelude::FluentBuilder, px,
 };
 use gpui_component::{Icon, IconName, WindowExt, menu::ContextMenuExt};
+use crate::core::navigation::{Dir, NavBlock, move_selection};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-/// A 終日 keeps the work hours it was made with: it is never dragged, resized or nudged.
+/// A 終日 keeps the work hours it was made with: it is never dragged or resized.
 fn is_direct(e: &TimeEntry) -> bool {
     e.kind == track_core::model::EntryKind::Direct
 }
@@ -1110,21 +1111,59 @@ impl CalendarView {
             }
             _ => {}
         }
-        // Moving with the arrows is for a single entry.
-        let [id] = self.selected.as_slice() else { return };
-        let id = id.clone();
-        let Some(e) = self.cache.get(&id).cloned() else { return };
-        match ev.keystroke.key.as_str() {
-            "up" | "down" if !is_direct(&e) => {
-                let delta = if ev.keystroke.key == "up" { -15 } else { 15 };
-                let day = e.start.with_timezone(&Local).date_naive();
-                let (s, en) = entry_span_minutes(&e, day);
-                if let Some((ns, ne)) = interaction::nudge(s, en, delta, ev.keystroke.modifiers.shift) {
-                    self.commit_times(&id, at_minutes(day, ns).to_utc(), at_minutes(day, ne).to_utc(), window, cx);
-                }
+        // The arrows move the selection to a neighbouring entry (see `core::navigation`).
+        let dir = match ev.keystroke.key.as_str() {
+            "up" => Dir::Up,
+            "down" => Dir::Down,
+            "left" => Dir::Left,
+            "right" => Dir::Right,
+            _ => return,
+        };
+        let blocks = self.nav_blocks();
+        let current = self.selected.last().cloned();
+        let today = self.rendered_days.iter().position(|d| *d == Local::now().date_naive());
+        if let Some(id) = move_selection(&blocks, current.as_deref(), dir, today) {
+            if let Some(b) = blocks.iter().find(|b| b.id == id) {
+                self.reveal(b.start, b.end, cx);
             }
-            _ => {}
+            self.selected = vec![id];
+            cx.notify();
         }
+    }
+
+    /// The shown entries as drawn (column, span, lane), for the arrow keys.
+    fn nav_blocks(&self) -> Vec<NavBlock> {
+        let mut out = Vec::new();
+        for (day_index, &day) in self.rendered_days.iter().enumerate() {
+            let entries = crate::core::layout::entries_for_day(self.cache.entries(), day);
+            let spans: Vec<(i64, i64)> = entries.iter().map(|e| entry_span_minutes(e, day)).collect();
+            for l in layout_blocks(&spans, |s| *s) {
+                let (start, end) = spans[l.index];
+                out.push(NavBlock { id: entries[l.index].id.clone(), day: day_index, start, end, lane: l.lane });
+            }
+        }
+        out
+    }
+
+    /// Scrolls just enough for minutes `start`–`end` to be in view.
+    fn reveal(&mut self, start: i64, end: i64, cx: &App) {
+        let hour_px = self.hour_px(cx);
+        let view_h = f32::from(self.scroll.bounds().size.height);
+        if view_h <= 0. {
+            return;
+        }
+        let (top, bottom) = (BUFFER_PX + minutes_to_y(start, hour_px), BUFFER_PX + minutes_to_y(end, hour_px));
+        let shown = -f32::from(self.scroll.offset().y);
+        let margin = 8.;
+        let to = if top < shown + margin {
+            top - margin
+        } else if bottom > shown + view_h - margin {
+            (bottom + margin - view_h).min(top - margin)
+        } else {
+            return;
+        };
+        let max = f32::from(self.scroll.max_offset().y);
+        self.scroll.set_offset(point(px(0.), -px(to.clamp(0., max))));
     }
 }
 
