@@ -124,7 +124,8 @@ pub struct CalendarView {
     window: Option<gpui::AnyWindowHandle>,
     requested: Option<(NaiveDate, NaiveDate)>,
     load_task: Option<Task<()>>,
-    pub selected: Option<String>,
+    /// The selected entries (Shift-click adds and takes out; ⌘A picks every one shown).
+    pub selected: Vec<String>,
     hovered_entry: String,
     hover: Option<(usize, i64)>,
     column_bounds: Rc<RefCell<Vec<Bounds<Pixels>>>>,
@@ -166,7 +167,7 @@ impl CalendarView {
             window: None,
             requested: None,
             load_task: None,
-            selected: None,
+            selected: Vec::new(),
             hovered_entry: String::new(),
             hover: None,
             column_bounds: Rc::default(),
@@ -259,9 +260,12 @@ impl CalendarView {
         days.iter().map(|d| day_total_minutes(self.cache.entries(), *d)).sum()
     }
 
-    /// 「<タイトル> HH:MM–HH:MM（H:MM）」 for the selected entry.
+    /// 「<タイトル> HH:MM–HH:MM（H:MM）」 for the selected entry, 「3件選択中」 for several.
     pub fn selection_label(&self) -> Option<String> {
-        let e = self.selected.as_ref().and_then(|id| self.cache.get(id))?;
+        if self.selected.len() > 1 {
+            return Some(format!("{}件選択中", self.selected.len()));
+        }
+        let e = self.selected.first().and_then(|id| self.cache.get(id))?;
         let (s, t) = (e.start.with_timezone(&Local), e.end.with_timezone(&Local));
         let end = if t.date_naive() > s.date_naive() && t.hour() == 0 && t.minute() == 0 { "24:00".to_string() } else { t.format("%H:%M").to_string() };
         let net = ((e.end - e.start).num_minutes() - e.break_minutes).max(0);
@@ -466,7 +470,7 @@ impl CalendarView {
         }).collect();
         let mut laid = layout_blocks(&spans, |s| *s);
         // GPUI paints in child order: draw the selected block last so it sits on top (z-index: 2).
-        laid.sort_by_key(|l| self.selected.as_deref() == Some(day_entries[l.index].id.as_str()));
+        laid.sort_by_key(|l| self.selected.contains(&day_entries[l.index].id));
         let now = Local::now();
         let style = state.persist.duration_style;
         // The top of the scrolled view in this column's coordinates (the body starts below the buffer).
@@ -522,7 +526,7 @@ impl CalendarView {
                 let width = col_width * g.span.max(1) as f32 / g.lane_count.max(1) as f32 - 6.;
                 let look = BlockLook { style, title_top: sticky_title_offset(block_top, block_h, visible_top), beside: duration_beside_title(width) };
                 let ghost = ghost_id == Some(e.id.as_str());
-                let selected = !ghost && self.selected.as_deref() == Some(e.id.as_str());
+                let selected = !ghost && self.selected.contains(&e.id);
                 let (id_hover, id_down, id_click, id_top, id_bottom) = (e.id.clone(), e.id.clone(), e.id.clone(), e.id.clone(), e.id.clone());
                 let handle = |edge: Edge, id: String| {
                     div()
@@ -549,10 +553,17 @@ impl CalendarView {
                         }))
                         .on_mouse_down(MouseButton::Left, cx.listener(move |this, ev: &MouseDownEvent, w, cx| {
                             cx.stop_propagation();
+                            if ev.modifiers.shift {
+                                this.toggle_selected(&id_down, w, cx);
+                                return;
+                            }
                             this.begin_move(&id_down, ev.position, w, cx);
                         }))
                         .on_click(cx.listener(move |this, ev: &gpui::ClickEvent, w, cx| {
-                            this.selected = Some(id_click.clone());
+                            if ev.modifiers().shift {
+                                return;
+                            }
+                            this.selected = vec![id_click.clone()];
                             if ev.click_count() >= 2 {
                                 this.open_edit(&id_click, w, cx);
                             }
@@ -619,7 +630,7 @@ impl CalendarView {
                 }
             }))
             .on_mouse_down(MouseButton::Left, cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
-                this.selected = None;
+                this.selected.clear();
                 if matches!(this.drag, DragState::Picking { .. }) {
                     this.close_picker(cx);
                     return;
@@ -695,11 +706,37 @@ impl CalendarView {
         self.rendered_days.iter().position(|x| *x == d)
     }
 
+    /// Shift-click: adds the entry to the selection, or takes it out.
+    fn toggle_selected(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.focus.focus(window, cx);
+        if let Some(i) = self.selected.iter().position(|s| s == id) {
+            self.selected.remove(i);
+        } else {
+            self.selected.push(id.to_string());
+        }
+        cx.notify();
+    }
+
+    /// ⌘A: every entry on the shown days.
+    fn select_all(&mut self, cx: &mut Context<Self>) {
+        let shown: Vec<String> = self.cache.entries().iter().filter(|e| self.day_index_of(e).is_some()).map(|e| e.id.clone()).collect();
+        self.selected = shown;
+        cx.notify();
+    }
+
+    /// ⌘Z: brings back the newest deletion that has not been undone (all its entries).
+    fn undo_last_deletion(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(id) = self.state.read(cx).last_undoable_deletion() else { return };
+        if let Some(entries) = self.state.update(cx, |s, cx| s.undo_from_history(id, cx)) {
+            self.restore_deleted(entries, window, cx);
+        }
+    }
+
     fn begin_move(&mut self, id: &str, pos: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
         self.focus.focus(window, cx);
         let Some(e) = self.cache.get(id).cloned() else { return };
         if is_direct(&e) {
-            self.selected = Some(id.to_string());
+            self.selected = vec![id.to_string()];
             cx.notify();
             return;
         }
@@ -707,7 +744,7 @@ impl CalendarView {
         let day = self.rendered_days[di];
         let (s, en) = entry_span_minutes(&e, day);
         let Some(pm) = self.pointer_minutes(di, pos, cx) else { return };
-        self.selected = Some(id.to_string());
+        self.selected = vec![id.to_string()];
         self.drag = DragState::Moving { id: id.into(), day_index: di, start_min: s, duration: en - s, offset_min: pm - s, orig_day_index: di, orig_start_min: s };
         cx.notify();
     }
@@ -720,7 +757,7 @@ impl CalendarView {
         }
         let Some(di) = self.day_index_of(&e) else { return };
         let (s, en) = entry_span_minutes(&e, self.rendered_days[di]);
-        self.selected = Some(id.to_string());
+        self.selected = vec![id.to_string()];
         self.drag = DragState::Resizing { id: id.into(), day_index: di, edge, start_min: s, end_min: en, orig: (s, en) };
         cx.notify();
     }
@@ -857,8 +894,14 @@ impl CalendarView {
         self.state.update(cx, |s, cx| s.set_note(note, cx));
     }
 
-    /// 「元に戻す」 for a deletion: makes the same entry again.
-    pub fn restore_deleted(&mut self, removed: TimeEntry, window: &mut Window, cx: &mut Context<Self>) {
+    /// 「元に戻す」 for a deletion: makes the same entries again.
+    pub fn restore_deleted(&mut self, removed: Vec<TimeEntry>, window: &mut Window, cx: &mut Context<Self>) {
+        for e in removed {
+            self.restore_one(e, window, cx);
+        }
+    }
+
+    fn restore_one(&mut self, removed: TimeEntry, window: &mut Window, cx: &mut Context<Self>) {
         let body = NewEntry {
             project_id: removed.project_id.clone(),
             start: removed.start,
@@ -918,24 +961,38 @@ impl CalendarView {
         .detach();
     }
 
-    /// Delete immediately; the status bar offers 「元に戻す」 which re-creates the same entry.
-    pub fn delete(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+    /// Deletes at once; the notice offers 「元に戻す」 (and ⌘Z), which makes the same entries again.
+    /// Several are one notice and come back together.
+    pub fn delete(&mut self, ids: &[String], window: &mut Window, cx: &mut Context<Self>) {
         self.window = Some(window.window_handle());
         let snapshot = self.cache.snapshot();
-        let Some(removed) = self.cache.remove(id) else { return };
-        if self.selected.as_deref() == Some(id) {
-            self.selected = None;
+        let removed: Vec<TimeEntry> = ids.iter().filter_map(|id| self.cache.remove(id)).collect();
+        if removed.is_empty() {
+            return;
         }
-        let fut = self.state.read(cx).api.delete_entry(id);
+        self.selected.retain(|s| !ids.contains(s));
+        let api = self.state.read(cx).api.clone();
+        let futs: Vec<_> = removed.iter().map(|e| api.delete_entry(&e.id)).collect();
         cx.spawn(async move |this, cx| {
-            let result = fut.await;
+            let mut deleted = Vec::new();
+            let mut failed = false;
+            for (fut, e) in futs.into_iter().zip(removed) {
+                match fut.await {
+                    Ok(_) => deleted.push(e),
+                    Err(_) => failed = true,
+                }
+            }
             let _ = this.update(cx, |this, cx| {
-                match result {
-                    Ok(_) => this.note(StatusNote::Deleted(Box::new(removed)), cx),
-                    Err(_) => {
-                        this.cache.rollback(snapshot);
-                        this.note(StatusNote::Error("削除に失敗しました".into()), cx);
+                if failed {
+                    // Put back what was not deleted: the snapshot, less what was.
+                    this.cache.rollback(snapshot);
+                    for e in &deleted {
+                        this.cache.remove(&e.id);
                     }
+                    this.note(StatusNote::Error("削除に失敗しました".into()), cx);
+                }
+                if !deleted.is_empty() {
+                    this.note(StatusNote::Deleted(deleted), cx);
                 }
                 cx.notify();
             });
@@ -953,14 +1010,24 @@ impl CalendarView {
         if !self.focus.is_focused(window) {
             return;
         }
-        let Some(id) = self.selected.clone() else { return };
+        match ev.keystroke.key.as_str() {
+            "backspace" | "delete" if !self.selected.is_empty() => {
+                let ids = self.selected.clone();
+                self.delete(&ids, window, cx);
+                return;
+            }
+            "escape" if !self.selected.is_empty() => {
+                self.selected.clear();
+                cx.notify();
+                return;
+            }
+            _ => {}
+        }
+        // Moving with the arrows is for a single entry.
+        let [id] = self.selected.as_slice() else { return };
+        let id = id.clone();
         let Some(e) = self.cache.get(&id).cloned() else { return };
         match ev.keystroke.key.as_str() {
-            "backspace" | "delete" => self.delete(&id, window, cx),
-            "escape" => {
-                self.selected = None;
-                cx.notify();
-            }
             "up" | "down" if !is_direct(&e) => {
                 let delta = if ev.keystroke.key == "up" { -15 } else { 15 };
                 let day = e.start.with_timezone(&Local).date_naive();
@@ -1035,7 +1102,7 @@ impl CalendarView {
                     let snapshot = this.cache.snapshot();
                     this.commit_patch(&id, patch, snapshot, window, cx);
                 }
-                EditEvent::Delete(id) => this.delete(&id, window, cx),
+                EditEvent::Delete(id) => this.delete(&[id], window, cx),
                 EditEvent::Cancel => {}
             }
             this.editing = None;
@@ -1111,7 +1178,10 @@ impl Render for CalendarView {
         });
         div()
             .id("calendar-root")
+            .key_context("Calendar")
             .track_focus(&self.focus)
+            .on_action(cx.listener(|this, _: &gpui_component::input::SelectAll, _, cx| this.select_all(cx)))
+            .on_action(cx.listener(|this, _: &gpui_component::input::Undo, w, cx| this.undo_last_deletion(w, cx)))
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, w, cx| this.on_key(ev, w, cx)))
             .on_mouse_down(MouseButton::Left, cx.listener(|this, _, w, cx| this.focus.focus(w, cx)))
             .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _, cx| this.on_drag_move(ev.position, cx)))

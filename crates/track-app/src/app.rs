@@ -73,8 +73,8 @@ pub fn sparkle_every(step: u64) -> std::time::Duration {
 /// already shows them and the header sparkles.
 #[derive(Debug, Clone, PartialEq)]
 pub enum StatusNote {
-    /// 「1件削除しました：<題名>［元に戻す］」, which makes the same entry again.
-    Deleted(Box<track_core::model::TimeEntry>),
+    /// 「1件削除しました：<題名>」 (or 「3件削除しました」); 「元に戻す」 makes the same entries again.
+    Deleted(Vec<track_core::model::TimeEntry>),
     /// A change that could not be saved, in red until closed.
     Error(String),
 }
@@ -83,7 +83,10 @@ impl StatusNote {
     /// The notice as one line of text (also its line in the history).
     pub fn text(&self) -> String {
         match self {
-            StatusNote::Deleted(e) => format!("1件削除しました：{}", e.title.clone().filter(|t| !t.is_empty()).unwrap_or_else(|| "タイトルなし".into())),
+            StatusNote::Deleted(entries) => match entries.as_slice() {
+                [e] => format!("1件削除しました：{}", e.title.clone().filter(|t| !t.is_empty()).unwrap_or_else(|| "タイトルなし".into())),
+                all => format!("{}件削除しました", all.len()),
+            },
             StatusNote::Error(msg) => msg.clone(),
         }
     }
@@ -96,7 +99,7 @@ pub const HISTORY_LIMIT: usize = 10;
 #[derive(Debug, Clone, PartialEq)]
 pub enum HistoryAction {
     /// Makes the deleted entry again.
-    Restore(Box<track_core::model::TimeEntry>),
+    Restore(Vec<track_core::model::TimeEntry>),
     /// Undoes this AI operation alone.
     UndoAi(i64),
     /// Brings these AI tools' Track skills up to date (「更新」).
@@ -332,7 +335,7 @@ impl AppState {
     pub fn set_note(&mut self, note: StatusNote, cx: &mut Context<Self>) {
         let text = note.text();
         match note {
-            StatusNote::Deleted(entry) => self.notice(text, false, Some(HistoryAction::Restore(entry)), cx),
+            StatusNote::Deleted(entries) => self.notice(text, false, Some(HistoryAction::Restore(entries)), cx),
             StatusNote::Error(_) => self.notice(text, true, None, cx),
         }
     }
@@ -362,15 +365,20 @@ impl AppState {
         cx.notify();
     }
 
-    /// 「元に戻す」 on a history row. A deletion's entry is handed back for the calendar to make
+    /// The newest deletion that can still be undone (⌘Z).
+    pub fn last_undoable_deletion(&self) -> Option<u64> {
+        self.history.items.iter().find(|i| matches!(i.action, Some(HistoryAction::Restore(_))) && matches!(i.undo, UndoState::Open | UndoState::Failed(_))).map(|i| i.id)
+    }
+
+    /// 「元に戻す」 on a history row. A deletion's entries are handed back for the calendar to make
     /// again (the row is then done); an AI operation is undone here.
-    pub fn undo_from_history(&mut self, id: u64, cx: &mut Context<Self>) -> Option<track_core::model::TimeEntry> {
+    pub fn undo_from_history(&mut self, id: u64, cx: &mut Context<Self>) -> Option<Vec<track_core::model::TimeEntry>> {
         let item = self.history.get_mut(id).filter(|i| matches!(i.undo, UndoState::Open | UndoState::Failed(_)))?;
         match item.action.clone()? {
-            HistoryAction::Restore(entry) => {
+            HistoryAction::Restore(entries) => {
                 item.undo = UndoState::Done;
                 cx.notify();
-                Some(*entry)
+                Some(entries)
             }
             HistoryAction::UpdateSkills(_) => None,
             HistoryAction::UndoAi(op) => {

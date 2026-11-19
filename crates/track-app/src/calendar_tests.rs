@@ -104,7 +104,7 @@ fn arrow_keys_nudge_selected_entry(cx: &mut TestAppContext) {
     let (app, cx, f) = setup(cx);
     let b = cx.debug_bounds("entry-a").expect("entry block");
     cx.simulate_click(b.center(), Modifiers::none());
-    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).selected.clone()), Some("a".into()));
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).selected.clone()), vec!["a".to_string()]);
     cx.simulate_keystrokes("down");
     wait_io(cx);
     assert_eq!(stored(&f, "a").unwrap().start, at(12, 10, 15));
@@ -112,7 +112,7 @@ fn arrow_keys_nudge_selected_entry(cx: &mut TestAppContext) {
     wait_io(cx);
     assert_eq!(stored(&f, "a").unwrap().end, at(12, 11, 30));
     cx.simulate_keystrokes("escape");
-    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).selected.clone()), None);
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).selected.clone()), Vec::<String>::new());
 }
 
 #[gpui::test]
@@ -138,7 +138,7 @@ fn delete_key_removes_entry(cx: &mut TestAppContext) {
     wait_io(cx);
     assert!(stored(&f, "a").is_none());
     assert!(app.read_with(cx, |a, cx| a.calendar.read(cx).cache.get("a").is_none()));
-    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).selected.clone()), None);
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).selected.clone()), Vec::<String>::new());
 }
 
 #[gpui::test]
@@ -617,7 +617,7 @@ fn saving_an_entry_reshuffles_the_header_dots(cx: &mut TestAppContext) {
 fn deleting_or_changing_leave_sparkles_too(cx: &mut TestAppContext) {
     let (app, cx, _f) = setup(cx);
     let shuffles = |cx: &mut gpui::VisualTestContext| app.read_with(cx, |a, cx| a.state.read(cx).header_shuffles);
-    cx.update(|window, cx| app.update(cx, |a, cx| a.calendar.update(cx, |c, cx| c.delete("a", window, cx))));
+    cx.update(|window, cx| app.update(cx, |a, cx| a.calendar.update(cx, |c, cx| c.delete(&["a".to_string()], window, cx))));
     wait_io(cx);
     sparkle_out(cx);
     assert_eq!(shuffles(cx), crate::app::SPARKLE_STEPS, "deleting");
@@ -771,4 +771,96 @@ fn the_history_panel_does_not_pass_clicks_to_the_calendar(cx: &mut TestAppContex
     cx.simulate_mouse_up(point(at.x, at.y - px(30.)), MouseButton::Left, Modifiers::none());
     assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).drag.clone()), DragState::Idle, "no drag in the calendar");
     assert!(cx.debug_bounds("status-history-list").is_some(), "the history stays open");
+}
+
+/// Two entries in the shown week (12th and 13th), for picking several.
+fn setup_two(cx: &mut TestAppContext) -> (gpui::Entity<crate::app::TrackApp>, &mut gpui::VisualTestContext, Fixture) {
+    let (app, vcx, f) = open_app_db(cx, |db| {
+        insert_entry(db, "a", at(12, 10, 0), at(12, 11, 0), Some("p1"), "作業a");
+        insert_entry(db, "b", at(13, 10, 30), at(13, 11, 30), Some("p1"), "作業b");
+        insert_entry(db, "far", local_day(2, 9), local_day(2, 10), Some("p1"), "別の週");
+    });
+    app.update(vcx, |a, cx| {
+        a.calendar.update(cx, |c, cx| {
+            c.anchor = day(12);
+            cx.notify();
+        })
+    });
+    wait_io(vcx);
+    (app, vcx, f)
+}
+
+fn selection(app: &gpui::Entity<crate::app::TrackApp>, cx: &mut gpui::VisualTestContext) -> Vec<String> {
+    let mut s = app.read_with(cx, |a, cx| a.calendar.read(cx).selected.clone());
+    s.sort();
+    s
+}
+
+fn shift_click(cx: &mut gpui::VisualTestContext, selector: &'static str) {
+    let b = cx.debug_bounds(selector).unwrap_or_else(|| panic!("{selector} not rendered"));
+    cx.simulate_click(b.center(), Modifiers::shift());
+}
+
+/// Shift-click adds an entry to the selection, and takes a selected one out again.
+#[gpui::test]
+fn shift_click_adds_and_removes_entries(cx: &mut TestAppContext) {
+    let (app, cx, _f) = setup_two(cx);
+    click(cx, "entry-a");
+    shift_click(cx, "entry-b");
+    assert_eq!(selection(&app, cx), vec!["a".to_string(), "b".to_string()]);
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).selection_label()), Some("2件選択中".into()));
+    shift_click(cx, "entry-a");
+    assert_eq!(selection(&app, cx), vec!["b".to_string()], "a second shift-click takes it out");
+    click(cx, "entry-a");
+    assert_eq!(selection(&app, cx), vec!["a".to_string()], "a plain click selects just that one");
+}
+
+/// ⌘A selects every entry shown (not those of other weeks).
+#[gpui::test]
+fn cmd_a_selects_the_shown_entries(cx: &mut TestAppContext) {
+    let (app, cx, _f) = setup_two(cx);
+    click(cx, "entry-a");
+    cx.simulate_keystrokes("cmd-a");
+    assert_eq!(selection(&app, cx), vec!["a".to_string(), "b".to_string()]);
+}
+
+/// Delete removes all the selected entries as one notice; its 「元に戻す」 brings them all back.
+#[gpui::test]
+fn deleting_several_is_one_notice_undone_together(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup_two(cx);
+    click(cx, "entry-a");
+    shift_click(cx, "entry-b");
+    cx.simulate_keystrokes("backspace");
+    wait_io(cx);
+    assert!(stored(&f, "a").is_none() && stored(&f, "b").is_none(), "both deleted");
+    assert!(stored(&f, "far").is_some());
+    let items = app.read_with(cx, |a, cx| a.state.read(cx).history.items.clone());
+    assert_eq!(items.len(), 1, "one notice");
+    assert_eq!(items[0].text, "2件削除しました");
+    click(cx, "status-history-undo-0");
+    wait_io(cx);
+    let titles = |f: &Fixture| {
+        let mut t: Vec<_> = f.db().entries(at(12, 0, 0), at(14, 0, 0)).unwrap().into_iter().filter_map(|e| e.title).collect();
+        t.sort();
+        t
+    };
+    assert_eq!(titles(&f), vec!["作業a".to_string(), "作業b".to_string()], "both made again");
+}
+
+/// ⌘Z brings back the last deletion, however many entries it took.
+#[gpui::test]
+fn cmd_z_undoes_the_last_deletion(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup_two(cx);
+    click(cx, "entry-a");
+    cx.simulate_keystrokes("cmd-a");
+    cx.simulate_keystrokes("backspace");
+    wait_io(cx);
+    assert_eq!(f.db().entries(at(12, 0, 0), at(14, 0, 0)).unwrap().len(), 0);
+    cx.simulate_keystrokes("cmd-z");
+    wait_io(cx);
+    assert_eq!(f.db().entries(at(12, 0, 0), at(14, 0, 0)).unwrap().len(), 2, "both back");
+    assert!(app.read_with(cx, |a, cx| a.state.read(cx).history.items[0].undo == crate::app::UndoState::Done), "the notice says it was undone");
+    cx.simulate_keystrokes("cmd-z");
+    wait_io(cx);
+    assert_eq!(f.db().entries(at(12, 0, 0), at(14, 0, 0)).unwrap().len(), 2, "nothing more to undo");
 }

@@ -162,8 +162,8 @@ fn history_row(i: usize, item: &HistoryItem, p: Palette, cx: &mut Context<TrackA
                             this.update_skills(id, kinds, cx);
                             return;
                         }
-                        if let Some(entry) = this.state.update(cx, |s, cx| s.undo_from_history(id, cx)) {
-                            this.calendar.update(cx, |c, cx| c.restore_deleted(entry, window, cx));
+                        if let Some(entries) = this.state.update(cx, |s, cx| s.undo_from_history(id, cx)) {
+                            this.calendar.update(cx, |c, cx| c.restore_deleted(entries, window, cx));
                         }
                     }))
                     .into_any_element(),
