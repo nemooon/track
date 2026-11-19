@@ -2,10 +2,10 @@
 //! integration and about. It opens from the button (a popover), like every menu in the app.
 use crate::app::TrackApp;
 use crate::settings::popover::Trigger;
-use crate::ui::{controls, theme::*};
+use crate::ui::theme::*;
 use gpui::{AnyElement, Context, InteractiveElement, IntoElement, MouseButton, ParentElement, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px};
 use gpui_component::popover::Popover;
-use gpui_component::{Icon, IconName, WindowExt as _};
+use gpui_component::WindowExt as _;
 
 /// The shortcuts listed in 「キーボードショートカット」, grouped as in the Tauri version.
 pub const SHORTCUTS: [(&str, &[(&str, &str)]); 3] = [
@@ -16,8 +16,18 @@ pub const SHORTCUTS: [(&str, &[(&str, &str)]); 3] = [
 
 pub fn render(app: &TrackApp, cx: &mut Context<TrackApp>) -> AnyElement {
     let p = palette(cx);
-    let button = controls::icon_button_sized(&p, "app-menu", crate::ui::icons::ellipsis_vertical(), crate::app::HEADER_ICON, "")
-        .debug_selector(|| "app-menu".into());
+    // Hover and an open menu darken the dots instead of lighting a background.
+    let open = app.app_menu_open;
+    let size = crate::app::HEADER_ICON;
+    let button = div()
+        .id("app-menu")
+        .debug_selector(|| "app-menu".into())
+        .flex_shrink_0()
+        .p_1()
+        .cursor_pointer()
+        .text_color(if open { p.text } else { p.text_muted })
+        .hover(move |s| s.text_color(p.text))
+        .child(div().debug_selector(|| "app-menu-icon".into()).size(size).child(crate::ui::icons::ellipsis_vertical().size(size)));
     let this = cx.entity().downgrade();
     let mut pop = Popover::new("app-menu-pop")
         .anchor(gpui::Anchor::TopRight)
@@ -32,17 +42,17 @@ pub fn render(app: &TrackApp, cx: &mut Context<TrackApp>) -> AnyElement {
         .trigger(Trigger::new(button));
     if app.app_menu_open {
         let integrations = if track_core::guard::GUARDED { "AI 連携をインストール…（開発用）" } else { "AI 連携をインストール…" };
-        pop = pop.w(px(240.)).child(
+        pop = pop.w(px(220.)).p_1().child(
             div()
                 .flex()
                 .flex_col()
                 .text_size(px(13.))
-                .child(item("app-menu-shortcuts", crate::ui::icons::keyboard(), "キーボードショートカット", None, p, cx, open_shortcuts))
-                .child(div().my_1().h(px(1.)).bg(p.border_subtle))
-                .child(item("app-menu-settings", Icon::new(IconName::Settings), "設定…", Some("⌘,"), p, cx, |this, _, cx| crate::settings::open_settings(this.state.clone(), cx)))
-                .child(item("app-menu-integrations", Icon::new(IconName::Bot), integrations, None, p, cx, |this, window, cx| this.open_integrations(window, cx)))
-                .child(div().my_1().h(px(1.)).bg(p.border_subtle))
-                .child(item("app-menu-about", crate::ui::icons::info(), "Track について", None, p, cx, open_about)),
+                .child(item("app-menu-shortcuts", "キーボードショートカット", None, p, cx, open_shortcuts))
+                .child(div().my(px(3.)).mx_1().h(px(1.)).bg(p.border_subtle))
+                .child(item("app-menu-settings", "設定…", Some("⌘,"), p, cx, |this, _, cx| crate::settings::open_settings(this.state.clone(), cx)))
+                .child(item("app-menu-integrations", integrations, None, p, cx, |this, window, cx| this.open_integrations(window, cx)))
+                .child(div().my(px(3.)).mx_1().h(px(1.)).bg(p.border_subtle))
+                .child(item("app-menu-about", "Track について", None, p, cx, open_about)),
         );
     }
     // The header moves the window on a press: keep presses on the menu (after the popover saw them).
@@ -52,7 +62,6 @@ pub fn render(app: &TrackApp, cx: &mut Context<TrackApp>) -> AnyElement {
 /// A menu row: it closes the menu, then does `run`.
 fn item(
     id: &'static str,
-    icon: Icon,
     label: &'static str,
     shortcut: Option<&'static str>,
     p: Palette,
@@ -66,12 +75,11 @@ fn item(
         .items_center()
         .gap_2()
         .px_2()
-        .py_1p5()
-        .rounded_md()
+        .py_1()
+        .rounded(RADIUS_SM)
         .cursor_pointer()
         .text_color(p.text)
         .hover(move |s| s.bg(p.hover))
-        .child(icon.size(px(14.)).text_color(p.text_muted))
         .child(div().flex_1().child(label))
         .when_some(shortcut, |d, s| d.child(div().text_color(p.text_muted).font_family(MONO).child(s)))
         .on_click(cx.listener(move |this, _, window, cx| {

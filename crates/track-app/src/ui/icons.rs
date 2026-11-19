@@ -1,7 +1,7 @@
 //! Icons beyond gpui-component's built-in set, served next to its assets.
 use gpui::{AssetSource, SharedString};
 
-gpui_kit_assets::icon_assets!(ExtraIcons, [Pipette, Archive, ArchiveRestore, Trash, CalendarCog, ClipboardList, Bell, EllipsisVertical, Keyboard, Info]);
+gpui_kit_assets::icon_assets!(ExtraIcons, [Pipette, Archive, ArchiveRestore, Trash, CalendarCog, ClipboardList, Bell, EllipsisVertical]);
 
 /// gpui-component's assets plus the extra Lucide icons this app uses.
 pub struct AppAssets(pub gpui_kit_assets::Assets);
@@ -51,16 +51,6 @@ pub fn calendar_cog() -> gpui_component::Icon {
 /// The header's app menu (Lucide `ellipsis-vertical`).
 pub fn ellipsis_vertical() -> gpui_component::Icon {
     gpui_component::Icon::empty().path(gpui_kit_assets::IconName::EllipsisVertical.path())
-}
-
-/// Keyboard shortcuts (Lucide `keyboard`).
-pub fn keyboard() -> gpui_component::Icon {
-    gpui_component::Icon::empty().path(gpui_kit_assets::IconName::Keyboard.path())
-}
-
-/// About Track (Lucide `info`).
-pub fn info() -> gpui_component::Icon {
-    gpui_component::Icon::empty().path(gpui_kit_assets::IconName::Info.path())
 }
 
 /// The notice history in the status bar (Lucide `bell`).
