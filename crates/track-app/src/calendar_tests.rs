@@ -970,3 +970,86 @@ fn the_day_menu_is_a_narrow_checked_list(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("day-allday").is_none(), "already has one");
     assert!(cx.debug_bounds("day-direct-remove").is_some(), "the day's 終日 with 外す");
 }
+
+fn right_click(cx: &mut gpui::VisualTestContext, selector: &str) {
+    let sel: &'static str = Box::leak(selector.to_string().into_boxed_str());
+    let b = cx.debug_bounds(sel).unwrap_or_else(|| panic!("{sel} not rendered"));
+    cx.simulate_mouse_move(b.center(), None, Modifiers::none());
+    cx.simulate_mouse_down(b.center(), MouseButton::Right, Modifiers::none());
+    cx.simulate_mouse_up(b.center(), MouseButton::Right, Modifiers::none());
+}
+
+/// Right-clicking an entry selects it and opens 編集… / 複製 / 削除 there.
+#[gpui::test]
+fn right_click_opens_the_entry_menu(cx: &mut TestAppContext) {
+    let (app, cx, _f) = setup(cx);
+    let entry = cx.debug_bounds("entry-a").unwrap();
+    right_click(cx, "entry-a");
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).selected.clone()), vec!["a".to_string()]);
+    let (edit, dup, del) = (cx.debug_bounds("entry-menu-edit").expect("編集…"), cx.debug_bounds("entry-menu-duplicate").expect("複製"), cx.debug_bounds("entry-menu-delete").expect("削除"));
+    assert!(edit.top() < dup.top() && dup.top() < del.top(), "in that order");
+    assert!(entry.contains(&edit.origin) || (edit.left() - entry.center().x).abs() < px(4.), "at the pointer");
+    click(cx, "entry-menu-edit");
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).editing.clone()), Some("a".into()), "the edit dialog");
+}
+
+/// 複製 makes the same entry right after it, the same length, and selects the copy.
+#[gpui::test]
+fn duplicate_goes_right_after(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
+    right_click(cx, "entry-a");
+    click(cx, "entry-menu-duplicate");
+    wait_io(cx);
+    let copies = created_on_12th(&f);
+    assert_eq!(copies.len(), 1);
+    let (c, a) = (&copies[0], stored(&f, "a").unwrap());
+    assert_eq!((c.start, c.end), (at(12, 11, 0), at(12, 12, 0)));
+    assert_eq!((c.title.clone(), c.project_id.clone(), c.break_minutes), (a.title.clone(), a.project_id.clone(), a.break_minutes));
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).selected.clone()), vec![c.id.clone()], "the copy is selected");
+    assert!(cx.debug_bounds("entry-menu-duplicate").is_none(), "the menu closes");
+}
+
+/// A copy that would run past midnight ends at 24:00 instead.
+#[test]
+fn a_late_copy_ends_at_midnight() {
+    use crate::calendar::duplicate_span;
+    assert_eq!(duplicate_span(600, 660), (660, 720));
+    assert_eq!(duplicate_span(22 * 60, 23 * 60 + 30), (24 * 60 - 90, 24 * 60), "clamped to end at 24:00");
+}
+
+/// 削除 deletes like the Delete key (undoable from the notice).
+#[gpui::test]
+fn delete_from_the_menu(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
+    right_click(cx, "entry-a");
+    click(cx, "entry-menu-delete");
+    wait_io(cx);
+    assert!(stored(&f, "a").is_none());
+    assert!(app.read_with(cx, |a, cx| a.state.read(cx).last_undoable_deletion().is_some()), "undoable");
+}
+
+/// With several selected, the menu only deletes them all.
+#[gpui::test]
+fn several_selected_only_delete(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup_two(cx);
+    click(cx, "entry-a");
+    shift_click(cx, "entry-b");
+    right_click(cx, "entry-b");
+    assert_eq!(selection(&app, cx), vec!["a".to_string(), "b".to_string()], "the selection stays");
+    assert!(cx.debug_bounds("entry-menu-edit").is_none() && cx.debug_bounds("entry-menu-duplicate").is_none());
+    click(cx, "entry-menu-delete");
+    wait_io(cx);
+    assert!(stored(&f, "a").is_none() && stored(&f, "b").is_none());
+}
+
+/// A 終日 has no 複製 (one per day).
+#[gpui::test]
+fn all_day_has_no_duplicate(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
+    let (_e, sel) = direct_block(&f, cx);
+    app.update(cx, |a, cx| a.calendar.update(cx, |c, cx| c.reload(cx)));
+    wait_io(cx);
+    right_click(cx, sel);
+    assert!(cx.debug_bounds("entry-menu-edit").is_some());
+    assert!(cx.debug_bounds("entry-menu-duplicate").is_none());
+}

@@ -22,7 +22,7 @@ use gpui::{
     MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollHandle,
     StatefulInteractiveElement, Styled, Subscription, Task, Window, anchored, canvas, deferred, div, point, prelude::FluentBuilder, px,
 };
-use gpui_component::{Icon, IconName, WindowExt};
+use gpui_component::{Icon, IconName, WindowExt, menu::ContextMenuExt};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -532,6 +532,8 @@ impl CalendarView {
                 let ghost = ghost_id == Some(e.id.as_str());
                 let selected = !ghost && self.selected.contains(&e.id);
                 let (id_hover, id_down, id_click, id_top, id_bottom) = (e.id.clone(), e.id.clone(), e.id.clone(), e.id.clone(), e.id.clone());
+                let (id_right, id_menu, direct) = (e.id.clone(), e.id.clone(), is_direct(e));
+                let view = cx.entity().downgrade();
                 let handle = |edge: Edge, id: String| {
                     div()
                         .absolute()
@@ -573,7 +575,17 @@ impl CalendarView {
                             }
                             cx.notify();
                         }))
-                        .when(!ghost && !is_direct(e), |d| d.child(handle(Edge::Top, id_top)).child(handle(Edge::Bottom, id_bottom))),
+                        // Right-click selects the entry (keeping a selection it is part of)…
+                        .on_mouse_down(MouseButton::Right, cx.listener(move |this, _: &MouseDownEvent, w, cx| {
+                            this.focus.focus(w, cx);
+                            if !this.selected.contains(&id_right) {
+                                this.selected = vec![id_right.clone()];
+                            }
+                            cx.notify();
+                        }))
+                        .when(!ghost && !is_direct(e), |d| d.child(handle(Edge::Top, id_top)).child(handle(Edge::Bottom, id_bottom)))
+                        // …and opens 編集… / 複製 / 削除 there.
+                        .context_menu(move |menu, _, cx| entry_menu(menu, view.clone(), id_menu.clone(), direct, cx)),
                 )
             }))
             .map(|d| match &self.drag {
@@ -726,6 +738,32 @@ impl CalendarView {
         let shown: Vec<String> = self.cache.entries().iter().filter(|e| self.day_index_of(e).is_some()).map(|e| e.id.clone()).collect();
         self.selected = shown;
         cx.notify();
+    }
+
+    /// 複製: the same entry right after it, the same length (see `duplicate_span`); the copy is
+    /// selected once made.
+    pub fn duplicate(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.window = Some(window.window_handle());
+        let Some(e) = self.cache.get(id).cloned() else { return };
+        let day = e.start.with_timezone(&Local).date_naive();
+        let (s, en) = entry_span_minutes(&e, day);
+        let (ns, ne) = duplicate_span(s, en);
+        let body = NewEntry { start: at_minutes(day, ns).to_utc(), end: at_minutes(day, ne).to_utc(), ..Self::recreate(e) };
+        let fut = self.state.read(cx).api.create_entry(body);
+        cx.spawn(async move |this, cx| {
+            let result = fut.await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(made) => {
+                        this.selected = vec![made.id.clone()];
+                        this.cache.insert(made);
+                    }
+                    Err(_) => this.note(StatusNote::Error("複製できませんでした".into()), cx),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     /// ⌘⇧Z: deletes again what the last undo brought back.
@@ -1263,4 +1301,37 @@ impl Render for CalendarView {
             .child(self.render_day_footer(&days, cx))
             .children(picker_overlay)
     }
+}
+
+/// Where 複製 puts a copy of an entry spanning `start`–`end` (minutes into its day): right after
+/// it, the same length; one that would run past 24:00 ends there instead.
+pub fn duplicate_span(start: i64, end: i64) -> (i64, i64) {
+    let len = (end - start).max(0);
+    if end + len > DAY_MINUTES { (DAY_MINUTES - len, DAY_MINUTES) } else { (end, end + len) }
+}
+
+/// The entry's right-click menu. Several selected (this one among them): only 「N件を削除」.
+fn entry_menu(menu: gpui_component::menu::PopupMenu, view: gpui::WeakEntity<CalendarView>, id: String, direct: bool, cx: &mut Context<gpui_component::menu::PopupMenu>) -> gpui_component::menu::PopupMenu {
+    use gpui_component::menu::PopupMenuItem;
+    let selected = view.upgrade().map(|v| v.read(cx).selected.clone()).unwrap_or_default();
+    let several = selected.len() > 1 && selected.contains(&id);
+    let item = |sel: &'static str, label: String| PopupMenuItem::element(move |_, _| div().debug_selector(move || sel.into()).child(label.clone()));
+    let act = |f: fn(&mut CalendarView, &str, &mut Window, &mut Context<CalendarView>)| {
+        let (view, id) = (view.clone(), id.clone());
+        move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
+            let _ = view.update(cx, |c, cx| f(c, &id, window, cx));
+        }
+    };
+    if several {
+        let view = view.clone();
+        return menu.item(item("entry-menu-delete", format!("{}件を削除", selected.len())).on_click(move |_, window, cx| {
+            let _ = view.update(cx, |c, cx| {
+                let ids = c.selected.clone();
+                c.delete(&ids, window, cx);
+            });
+        }));
+    }
+    let menu = menu.item(item("entry-menu-edit", "編集…".into()).on_click(act(|c, id, w, cx| c.open_edit(id, w, cx))));
+    let menu = if direct { menu } else { menu.item(item("entry-menu-duplicate", "複製".into()).on_click(act(|c, id, w, cx| c.duplicate(id, w, cx)))) };
+    menu.separator().item(item("entry-menu-delete", "削除".into()).on_click(act(|c, id, w, cx| c.delete(&[id.to_string()], w, cx))))
 }
