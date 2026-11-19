@@ -6716,7 +6716,7 @@ dependencies = [
 
 [[package]]
 name = "track-app"
-version = "0.8.0-alpha.1"
+version = "0.8.0"
 dependencies = [
  "async-channel",
  "chrono",
@@ -6737,7 +6737,7 @@ dependencies = [
 
 [[package]]
 name = "track-cli"
-version = "0.8.0-alpha.1"
+version = "0.8.0"
 dependencies = [
  "chrono",
  "serde_json",
@@ -6747,7 +6747,7 @@ dependencies = [
 
 [[package]]
 name = "track-core"
-version = "0.8.0-alpha.1"
+version = "0.8.0"
 dependencies = [
  "chrono",
  "dirs 6.0.0",

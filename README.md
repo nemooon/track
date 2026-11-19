@@ -39,9 +39,10 @@ CLI はアプリを起動していなくても使えるので、終了時にも�
 
 ```bash
 scripts/package.sh    # target/package/Track.app と Track_<版>.dmg を作る（その場の署名。この Mac 用）
+scripts/release.sh notes.md   # Track-<版>.zip を作って GitHub Release v<版> を公開（cask は bump-cask.yml が更新）
 ```
 
-- 版は `Cargo.toml` の `[workspace.package] version`（今は `0.8.0-alpha.1`）。名前と ID は Tauri 版と同じ `Track` / `com.nemooon.track` で、置き換えて使う
+- 版は `Cargo.toml` の `[workspace.package] version`（今は `0.8.0`）。名前と ID は Tauri 版と同じ `Track` / `com.nemooon.track` で、置き換えて使う
 - `track-core` の `real-data` を付けてビルドするので、開発用ガードが外れて本物の `~/.track` を開く。普段のビルドとテストは付けないので、コピー DB しか触れない
 - `Contents/MacOS/` にアプリと `track-cli`、`Contents/Resources/` に Apple Intelligence ヘルパー（macOS 26 SDK が要る）とアイコン（`packaging/`）
 - 初回起動で本物の DB に移行 0016（AI の操作履歴）・0017（休暇・直行直帰）が当たる。Tauri 版は知らない移行を無視するので、戻しても開ける

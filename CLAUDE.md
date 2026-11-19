@@ -27,6 +27,7 @@
 - `cargo test --workspace` — テスト。`cargo test` だけではアプリのバイナリは作り直されないので、実画面で確かめる前に `cargo build -p track-app`
 - `cargo clippy --workspace --all-targets` — 警告ゼロを保つ（`--features track-core/real-data` を付けた形でも）
 - `scripts/package.sh` — アルファ版の `Track.app` と DMG を `target/package/` に作る。これだけが開発用ガードを外して本物の `~/.track` を開く
+- `scripts/release.sh [ノート.md]` — `package.sh` で作った `Track.app` を `Track-<版>.zip` にして GitHub Release `v<版>` を公開する（zip と DMG）。公開すると `.github/workflows/bump-cask.yml` が Homebrew tap の cask を更新する。公開は必ず確認してから
 
 ## 守ること
 
