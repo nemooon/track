@@ -35,7 +35,14 @@ scripts/package.sh
 rm -f "$ZIP"
 ditto -c -k --sequesterRsrc --keepParent "$OUT/Track.app" "$ZIP"
 
-NOTES=(--generate-notes)
-[[ -n "$NOTES_FILE" ]] && NOTES=(--notes-file "$NOTES_FILE")
+# Every release ends with where to read how to install and update.
+FOOTER="インストールとアップデートの方法は [README](https://github.com/nemooon/track#インストール) にあります。"
+NOTES=(--generate-notes --notes "$FOOTER")
+if [[ -n "$NOTES_FILE" ]]; then
+  BODY=$(mktemp)
+  trap 'rm -f "$BODY"' EXIT
+  printf '%s\n\n---\n\n%s\n' "$(cat "$NOTES_FILE")" "$FOOTER" > "$BODY"
+  NOTES=(--notes-file "$BODY")
+fi
 gh release create "$TAG" "$ZIP" "$DMG" --target "$(git rev-parse HEAD)" --title "Track ${VERSION}" "${NOTES[@]}"
 echo "公開しました: ${TAG}"
