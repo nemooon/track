@@ -1,6 +1,6 @@
 use gpui::{App, KeyBinding, Menu, MenuItem, OsAction, SystemMenuType, actions};
 
-actions!(track, [ShowCalendar, ShowReports, PrevPeriod, NextPeriod, Today, ZoomIn, ZoomOut, InstallIntegrations, OpenSettings, ShowAbout, Quit]);
+actions!(track, [ShowCalendar, ShowReports, PrevPeriod, NextPeriod, Today, ZoomIn, ZoomOut, InstallIntegrations, OpenSettings, ShowAbout, CheckForUpdates, Quit]);
 
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
@@ -22,6 +22,7 @@ pub fn set_menus(cx: &mut App) {
     cx.set_menus([
         Menu::new("Track").items([
             MenuItem::action("Track について", ShowAbout),
+            MenuItem::action("アップデートを確認…", CheckForUpdates),
             MenuItem::separator(),
             MenuItem::action("設定…", OpenSettings),
             MenuItem::separator(),

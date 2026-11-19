@@ -21,9 +21,12 @@ pub mod reports;
 pub mod runtime;
 pub mod validate;
 pub mod time;
+pub mod update;
 
 pub use db::Db;
 pub use error::CoreError;
+#[cfg(test)]
+mod update_tests;
 #[cfg(test)]
 mod db_tests;
 #[cfg(test)]

@@ -772,6 +772,7 @@ impl Render for TrackApp {
             .on_action(cx.listener(|this, _: &InstallIntegrations, w, cx| this.open_integrations(w, cx)))
             .on_action(cx.listener(|this, _: &OpenSettings, _, cx| crate::settings::open_settings(this.state.clone(), cx)))
             .on_action(cx.listener(|_, _: &ShowAbout, _, cx| crate::ui::about::open_about(cx)))
+            .on_action(cx.listener(|_, _: &CheckForUpdates, _, cx| crate::ui::update::open_update(cx)))
             .on_action(cx.listener(|this, _: &ShowReports, _, cx| this.show(Page::Reports, cx)))
             .on_action(cx.listener(|this, _: &PrevPeriod, w, cx| this.forward(crate::ui::date_nav::NavEvent::Prev, w, cx)))
             .on_action(cx.listener(|this, _: &NextPeriod, w, cx| this.forward(crate::ui::date_nav::NavEvent::Next, w, cx)))

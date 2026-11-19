@@ -52,6 +52,7 @@ pub fn render(app: &TrackApp, cx: &mut Context<TrackApp>) -> AnyElement {
                 .child(item("app-menu-settings", "設定…", Some("⌘,"), p, cx, |this, _, cx| crate::settings::open_settings(this.state.clone(), cx)))
                 .child(item("app-menu-integrations", integrations, None, p, cx, |this, window, cx| this.open_integrations(window, cx)))
                 .child(div().my(px(3.)).mx_1().h(px(1.)).bg(p.border_subtle))
+                .child(item("app-menu-update", "アップデートを確認…", None, p, cx, |_, _, cx| crate::ui::update::open_update(cx)))
                 .child(item("app-menu-about", "Track について", None, p, cx, open_about)),
         );
     }

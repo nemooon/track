@@ -481,7 +481,7 @@ fn the_app_menu_lists_its_items(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("open-settings").is_none(), "no gear any more");
     click_sel(cx, "app-menu");
     let button = cx.debug_bounds("app-menu").unwrap();
-    let items = ["app-menu-shortcuts", "app-menu-settings", "app-menu-integrations", "app-menu-about"];
+    let items = ["app-menu-shortcuts", "app-menu-settings", "app-menu-integrations", "app-menu-update", "app-menu-about"];
     let mut last = button.bottom();
     for id in items {
         let b = cx.debug_bounds(id).unwrap_or_else(|| panic!("{id}"));
@@ -531,4 +531,65 @@ fn the_copyright_matches_the_app_bundle() {
     assert_eq!(crate::ui::about::COPYRIGHT, "© nemooon");
     let plist = include_str!("../../../packaging/Info.plist");
     assert!(plist.contains(&format!("<key>NSHumanReadableCopyright</key>\n  <string>{}</string>", crate::ui::about::COPYRIGHT)), "Info.plist carries it");
+}
+
+/// Opens 「アップデートを確認…」 with a stand-in for GitHub and Homebrew; returns the window's context.
+fn open_update(cx: &mut gpui::VisualTestContext, latest: Result<&'static str, &'static str>, install: Result<(), &'static str>) -> (gpui::VisualTestContext, std::rc::Rc<std::cell::Cell<u32>>) {
+    use crate::ui::update::{UpdateSource, set_source};
+    use track_core::update::Release;
+    let installs = std::rc::Rc::new(std::cell::Cell::new(0));
+    cx.update(|_, cx| {
+        set_source(
+            UpdateSource {
+                fetch: std::sync::Arc::new(move || latest.map(|v| Release { version: v.into(), notes: "## 変更\n- 速くなった".into(), url: "https://example.invalid".into() }).map_err(str::to_string)),
+                install: std::sync::Arc::new(move |_| install.map_err(str::to_string)),
+            },
+            cx,
+        )
+    });
+    click_sel(cx, "app-menu");
+    click_sel(cx, "app-menu-update");
+    let (handle, _) = cx.update(|_, cx| crate::ui::update::update_window(cx)).expect("update window");
+    let ucx = gpui::VisualTestContext::from_window(handle, cx);
+    ucx.run_until_parked();
+    (ucx, installs)
+}
+
+#[gpui::test]
+fn update_window_says_when_track_is_current(cx: &mut TestAppContext) {
+    let (_app, cx) = open_app(cx);
+    let (mut ucx, _) = open_update(cx, Ok("0.7.4"), Ok(()));
+    assert!(ucx.debug_bounds("update-current").is_some(), "最新版です");
+    assert!(ucx.debug_bounds("update-install").is_none());
+}
+
+#[gpui::test]
+fn update_window_shows_the_notes_and_updates(cx: &mut TestAppContext) {
+    let (_app, cx) = open_app(cx);
+    let (mut ucx, _) = open_update(cx, Ok("9.0.0"), Ok(()));
+    assert!(ucx.debug_bounds("update-notes").is_some(), "the release notes");
+    let b = ucx.debug_bounds("update-install").expect("アップデート");
+    ucx.simulate_click(b.center(), gpui::Modifiers::none());
+    ucx.run_until_parked();
+    assert!(ucx.debug_bounds("update-done").is_some(), "done");
+    assert!(ucx.debug_bounds("update-restart").is_some(), "offers a restart");
+}
+
+#[gpui::test]
+fn update_window_explains_a_failure(cx: &mut TestAppContext) {
+    let (_app, cx) = open_app(cx);
+    let (mut ucx, _) = open_update(cx, Ok("9.0.0"), Err("TrackはHomebrewでインストールされていません。"));
+    let b = ucx.debug_bounds("update-install").unwrap();
+    ucx.simulate_click(b.center(), gpui::Modifiers::none());
+    ucx.run_until_parked();
+    assert!(ucx.debug_bounds("update-error").is_some(), "the reason");
+    assert!(ucx.debug_bounds("update-install").is_some(), "and a retry");
+}
+
+#[gpui::test]
+fn update_window_retries_a_failed_check(cx: &mut TestAppContext) {
+    let (_app, cx) = open_app(cx);
+    let (mut ucx, _) = open_update(cx, Err("アップデートを確認できませんでした。"), Ok(()));
+    assert!(ucx.debug_bounds("update-error").is_some());
+    assert!(ucx.debug_bounds("update-retry").is_some());
 }
