@@ -85,84 +85,101 @@ impl CalendarView {
             })
             .trigger(Trigger::new(button));
         if open {
-            pop = pop.w(px(super::PICKER_WIDTH)).child(self.menu_content(d, p, cx));
+            pop = pop.p_1().child(self.menu_content(d, p, cx));
         }
         pop.into_any_element()
     }
 
+    /// A narrow list like a Mac menu: the leave kinds (a check on the current one), a line, then
+    /// 「終日の予定を入れる…」 or the day's 終日 with 「外す」.
     fn menu_content(&self, d: NaiveDate, p: Palette, cx: &mut Context<Self>) -> impl IntoElement {
         let current = self.leaves.get(&d).copied();
         let holiday = self.auto_leave(d, cx);
         let direct = self.direct_on(d).cloned();
-        let heading = |t: &'static str| div().text_xs().font_weight(gpui::FontWeight::SEMIBOLD).text_color(p.text_muted).child(t);
-        let leave_chip = |id: &'static str, label: &'static str, kind: Option<LeaveKind>, on: bool, cx: &mut Context<Self>| {
-            controls::chip(&p, id, on).debug_selector(move || id.into()).child(label).on_click(cx.listener(move |this, _, _, cx| {
+        let row = |id: &'static str| {
+            div()
+                .id(id)
+                .debug_selector(move || id.into())
+                .flex()
+                .items_center()
+                .gap_2()
+                .h(px(26.))
+                .px_2()
+                .rounded(RADIUS_SM)
+                .text_size(px(13.))
+                .text_color(p.text)
+                .cursor_pointer()
+                .hover(move |s| s.bg(p.hover))
+        };
+        let mark = |id: &'static str, on: bool| {
+            div().w(px(14.)).flex_none().text_color(p.accent).when(on, |d| d.debug_selector(move || format!("{id}-check")).child(gpui_component::Icon::new(gpui_component::IconName::Check).size(px(13.))))
+        };
+        let leave_row = |id: &'static str, label: &'static str, kind: Option<LeaveKind>, on: bool, cx: &mut Context<Self>| {
+            row(id).child(mark(id, on)).child(label).on_click(cx.listener(move |this, _, _, cx| {
                 let fut = this.state.read(cx).api.set_leave(d, kind);
                 this.save_day(fut, cx);
             }))
         };
         let none_label = if holiday { "休暇にしない" } else { "なし" };
-        let none_on = direct.is_none() && match current {
-            Some(LeaveKind::None) => true,
-            None => !holiday,
-            _ => false,
-        };
+        let none_on = direct.is_none()
+            && match current {
+                Some(LeaveKind::None) => true,
+                None => !holiday,
+                _ => false,
+            };
+        let full_on = direct.is_none() && (current == Some(LeaveKind::Full) || (current.is_none() && holiday));
         div()
+            .debug_selector(|| "day-menu-list".into())
+            .w(px(MENU_WIDTH))
             .flex()
             .flex_col()
-            .gap_3()
-            .p_1()
-            .child(heading("休暇"))
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_1()
-                    .child(leave_chip("day-leave-full", "全日", Some(LeaveKind::Full), direct.is_none() && (current == Some(LeaveKind::Full) || (current.is_none() && holiday)), cx))
-                    .child(leave_chip("day-leave-am", "前半", Some(LeaveKind::Am), current == Some(LeaveKind::Am), cx))
-                    .child(leave_chip("day-leave-pm", "後半", Some(LeaveKind::Pm), current == Some(LeaveKind::Pm), cx))
-                    .child(leave_chip("day-leave-none", none_label, None, none_on, cx)),
-            )
-            .child(heading("予定"))
-            .when(direct.is_none(), |c| {
-                c.child(
-                    div().flex().child(
-                        controls::chip(&p, "day-allday", false)
-                            .debug_selector(|| "day-allday".into())
-                            .child("終日")
-                            .on_click(cx.listener(move |this, _, window, cx| this.start_all_day(d, window, cx))),
-                    ),
-                )
-            })
-            .when_some(direct, |c, e| {
-                let (name, color) = e.project.as_ref().map(|p| (format!("{} · {}", p.client.name, p.name), p.color.clone())).unwrap_or_else(|| ("プロジェクトなし".into(), String::new()));
-                c.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .text_sm()
-                        .child(div().size(px(10.)).flex_none().rounded_full().bg(hex(if color.is_empty() { NO_PROJECT } else { &color })))
-                        .child(div().flex_1().min_w_0().truncate().child(name))
-                        .child(
-                            div()
-                                .id("day-direct-remove")
-                                .debug_selector(|| "day-direct-remove".into())
-                                .flex_none()
-                                .px_2()
-                                .py_1()
-                                .rounded_md()
-                                .cursor_pointer()
-                                .text_xs()
-                                .text_color(p.danger)
-                                .hover(move |s| s.bg(p.hover))
-                                .child("外す")
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    let fut = this.state.read(cx).api.remove_direct(d);
-                                    this.save_day(fut, cx);
-                                })),
-                        ),
-                )
+            .child(div().px_2().pt_1().pb(px(2.)).text_size(px(11.)).text_color(p.text_muted).child("休暇"))
+            .child(leave_row("day-leave-none", none_label, None, none_on, cx))
+            .child(leave_row("day-leave-full", "休暇（1 日）", Some(LeaveKind::Full), full_on, cx))
+            .child(leave_row("day-leave-am", "前半休", Some(LeaveKind::Am), current == Some(LeaveKind::Am), cx))
+            .child(leave_row("day-leave-pm", "後半休", Some(LeaveKind::Pm), current == Some(LeaveKind::Pm), cx))
+            .child(div().my_1().h(px(1.)).bg(p.border_subtle))
+            .map(|c| match direct {
+                None => c.child(
+                    row("day-allday")
+                        .child(div().w(px(14.)).flex_none().text_color(p.text_muted).child(gpui_component::Icon::new(gpui_component::IconName::Plus).size(px(13.))))
+                        .child("終日の予定を入れる…")
+                        .on_click(cx.listener(move |this, _, window, cx| this.start_all_day(d, window, cx))),
+                ),
+                Some(e) => {
+                    let (name, color) = e.project.as_ref().map(|p| (p.name.clone(), p.color.clone())).unwrap_or_else(|| ("プロジェクトなし".into(), String::new()));
+                    c.child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .h(px(26.))
+                            .px_2()
+                            .text_size(px(13.))
+                            .child(div().w(px(14.)).flex_none().flex().justify_center().child(div().size(px(8.)).rounded_full().bg(hex(if color.is_empty() { NO_PROJECT } else { &color }))))
+                            .child(div().flex_1().min_w_0().truncate().child(format!("終日：{name}")))
+                            .child(
+                                div()
+                                    .id("day-direct-remove")
+                                    .debug_selector(|| "day-direct-remove".into())
+                                    .flex_none()
+                                    .px_1p5()
+                                    .rounded(RADIUS_SM)
+                                    .cursor_pointer()
+                                    .text_size(px(12.))
+                                    .text_color(p.danger)
+                                    .hover(move |s| s.bg(p.hover))
+                                    .child("外す")
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        let fut = this.state.read(cx).api.remove_direct(d);
+                                        this.save_day(fut, cx);
+                                    })),
+                            ),
+                    )
+                }
             })
     }
 }
+
+/// The day menu's width: enough for 「終日の予定を入れる…」 and a project name.
+const MENU_WIDTH: f32 = 216.;

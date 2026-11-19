@@ -946,3 +946,27 @@ fn a_new_deletion_clears_the_redo(cx: &mut TestAppContext) {
     wait_io(cx);
     assert_eq!(shown_count(&f), 1, "the restored a stays");
 }
+
+/// The day menu is a narrow list like a Mac menu: leave rows with a check on the current one,
+/// a line, then 「終日の予定を入れる…」 (or the day's 終日 with 「外す」).
+#[gpui::test]
+fn the_day_menu_is_a_narrow_checked_list(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
+    click_id(cx, "day-menu-2026-11-12".into());
+    let menu = cx.debug_bounds("day-menu-list").expect("the menu");
+    assert!(menu.size.width <= px(240.), "narrow: {:?}", menu.size.width);
+    assert!(cx.debug_bounds("day-leave-none-check").is_some(), "no leave yet: なし is checked");
+    assert!(cx.debug_bounds("day-leave-full-check").is_none());
+    let (full, allday) = (cx.debug_bounds("day-leave-full").unwrap(), cx.debug_bounds("day-allday").unwrap());
+    assert!(full.bottom() < allday.top(), "終日 comes after the leave rows");
+    assert_eq!(full.size.width, allday.size.width, "rows span the menu");
+    cx.simulate_keystrokes("escape");
+
+    f.db().set_direct(day(12), Some("p1")).unwrap();
+    app.update(cx, |a, cx| a.calendar.update(cx, |c, cx| c.reload(cx)));
+    wait_io(cx);
+    click_id(cx, "day-menu-2026-11-12".into());
+    wait_io(cx);
+    assert!(cx.debug_bounds("day-allday").is_none(), "already has one");
+    assert!(cx.debug_bounds("day-direct-remove").is_some(), "the day's 終日 with 外す");
+}
