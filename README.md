@@ -72,10 +72,16 @@ xattr -dr com.apple.quarantine /Applications/Track.app
 
 ## アップデート
 
-右上の「…」メニュー →「アップデートを確認…」で、新しい版があればその場で更新できます。ターミナルからなら次のとおりです。
+右上の「…」メニュー →「アップデートを確認…」で、新しい版があればその場で更新できます（隔離属性も Track が外します）。
+
+ターミナルから更新するときは、インストールのときと同じく隔離属性が付き直すので、続けて外してください。
 
 ```bash
 brew upgrade --cask nemooon/tap/track
+```
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Track.app
 ```
 
 ### 0.7 以前（Tauri 版）から上げた方へ
