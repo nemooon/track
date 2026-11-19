@@ -1,4 +1,5 @@
 pub mod status_bar;
+pub mod app_menu;
 pub mod controls;
 pub mod date_nav;
 pub mod header_dots;

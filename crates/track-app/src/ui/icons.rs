@@ -1,7 +1,7 @@
 //! Icons beyond gpui-component's built-in set, served next to its assets.
 use gpui::{AssetSource, SharedString};
 
-gpui_kit_assets::icon_assets!(ExtraIcons, [Pipette, Archive, ArchiveRestore, Trash, CalendarCog, ClipboardList, Bell]);
+gpui_kit_assets::icon_assets!(ExtraIcons, [Pipette, Archive, ArchiveRestore, Trash, CalendarCog, ClipboardList, Bell, Ellipsis, Keyboard, Info]);
 
 /// gpui-component's assets plus the extra Lucide icons this app uses.
 pub struct AppAssets(pub gpui_kit_assets::Assets);
@@ -46,6 +46,21 @@ pub fn trash() -> gpui_component::Icon {
 /// The day menu: 休暇・直行直帰 (Lucide `calendar-cog`).
 pub fn calendar_cog() -> gpui_component::Icon {
     gpui_component::Icon::empty().path(gpui_kit_assets::IconName::CalendarCog.path())
+}
+
+/// The header's app menu (Lucide `ellipsis`).
+pub fn ellipsis() -> gpui_component::Icon {
+    gpui_component::Icon::empty().path(gpui_kit_assets::IconName::Ellipsis.path())
+}
+
+/// Keyboard shortcuts (Lucide `keyboard`).
+pub fn keyboard() -> gpui_component::Icon {
+    gpui_component::Icon::empty().path(gpui_kit_assets::IconName::Keyboard.path())
+}
+
+/// About Track (Lucide `info`).
+pub fn info() -> gpui_component::Icon {
+    gpui_component::Icon::empty().path(gpui_kit_assets::IconName::Info.path())
 }
 
 /// The notice history in the status bar (Lucide `bell`).

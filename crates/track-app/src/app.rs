@@ -442,6 +442,8 @@ pub struct TrackApp {
     pub integrations: Option<Entity<crate::ui::integrations_dialog::IntegrationsDialog>>,
     /// The notice history list is open above the status bar's bell.
     pub history_open: bool,
+    /// The header's 「…」 menu is open.
+    pub app_menu_open: bool,
     /// Where the bell is, so a press on it is left to the bell (which toggles) instead of
     /// closing the list as a press outside it.
     pub bell_bounds: std::rc::Rc<std::cell::Cell<gpui::Bounds<gpui::Pixels>>>,
@@ -552,6 +554,7 @@ impl TrackApp {
             integrations_home: dirs::home_dir().unwrap_or_default(),
             integrations: None,
             history_open: false,
+            app_menu_open: false,
             bell_bounds: Default::default(),
             _watcher: watcher,
             _backups: backups,
@@ -701,13 +704,7 @@ impl TrackApp {
                     .child(tab("tab-calendar", "カレンダー", calendar_day_icon(chrono::Datelike::day(&chrono::Local::now()), f32::from(HEADER_ICON)), Page::Calendar, self.page == Page::Calendar))
                     .child(tab("tab-reports", "レポート", div().debug_selector(|| "tab-reports-icon".into()).size(HEADER_ICON).child(crate::ui::icons::clipboard_list().size(HEADER_ICON)).into_any_element(), Page::Reports, self.page == Page::Reports)),
             )
-            .child(
-                crate::ui::controls::icon_button_sized(&p, "open-settings", Icon::new(IconName::Settings), HEADER_ICON, "設定（⌘,）")
-                    .debug_selector(|| "open-settings".into())
-                    .ml_auto()
-                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .on_click(cx.listener(|this, _, _, cx| crate::settings::open_settings(this.state.clone(), cx))),
-            )
+            .child(crate::ui::app_menu::render(self, cx))
     }
 
     fn render_body(&self, cx: &mut Context<Self>) -> gpui::AnyElement {

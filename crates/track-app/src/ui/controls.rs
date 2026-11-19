@@ -58,7 +58,7 @@ pub fn icon_button(p: &Palette, id: impl Into<ElementId>, icon: gpui_component::
 }
 
 /// `icon_button` with an icon of `size` (the header's are larger). The icon's box carries the
-/// debug selector `<id>-icon`.
+/// debug selector `<id>-icon`. An empty `tooltip` shows none.
 pub fn icon_button_sized(p: &Palette, id: impl Into<ElementId>, icon: gpui_component::Icon, size: gpui::Pixels, tooltip: &'static str) -> Stateful<Div> {
     use gpui::StatefulInteractiveElement;
     let p = *p;
@@ -73,7 +73,7 @@ pub fn icon_button_sized(p: &Palette, id: impl Into<ElementId>, icon: gpui_compo
         .cursor_pointer()
         .hover(move |s| s.bg(p.hover).text_color(p.text))
         .child(div().debug_selector(move || sel.clone()).size(size).child(icon.size(size)))
-        .tooltip(move |window, cx| gpui_component::tooltip::Tooltip::new(tooltip).build(window, cx))
+        .when(!tooltip.is_empty(), |d| d.tooltip(move |window, cx| gpui_component::tooltip::Tooltip::new(tooltip).build(window, cx)))
 }
 
 pub fn button(p: &Palette, id: impl Into<ElementId>, active: bool, icon_only: bool) -> Stateful<Div> {

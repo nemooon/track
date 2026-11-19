@@ -1,0 +1,117 @@
+//! The header's 「…」 menu, as in the Tauri version: keyboard shortcuts, settings, the AI
+//! integration and about. It opens from the button (a popover), like every menu in the app.
+use crate::app::TrackApp;
+use crate::settings::popover::Trigger;
+use crate::ui::{controls, theme::*};
+use gpui::{AnyElement, Context, InteractiveElement, IntoElement, MouseButton, ParentElement, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px};
+use gpui_component::popover::Popover;
+use gpui_component::{Icon, IconName, WindowExt as _};
+
+/// The shortcuts listed in 「キーボードショートカット」, grouped as in the Tauri version.
+pub const SHORTCUTS: [(&str, &[(&str, &str)]); 3] = [
+    ("画面", &[("カレンダーを開く", "⌘1"), ("レポートを開く", "⌘2"), ("設定を開く", "⌘,")]),
+    ("日付", &[("前の期間へ移動", "⌘["), ("次の期間へ移動", "⌘]"), ("今日へ移動", "⌘T")]),
+    ("カレンダー", &[("表示を拡大", "⌘+"), ("表示を縮小", "⌘−")]),
+];
+
+pub fn render(app: &TrackApp, cx: &mut Context<TrackApp>) -> AnyElement {
+    let p = palette(cx);
+    let button = controls::icon_button_sized(&p, "app-menu", crate::ui::icons::ellipsis(), crate::app::HEADER_ICON, "")
+        .debug_selector(|| "app-menu".into());
+    let this = cx.entity().downgrade();
+    let mut pop = Popover::new("app-menu-pop")
+        .anchor(gpui::Anchor::TopRight)
+        .open(app.app_menu_open)
+        .on_open_change(move |open: &bool, _, cx| {
+            let open = *open;
+            let _ = this.update(cx, |this, cx| {
+                this.app_menu_open = open;
+                cx.notify();
+            });
+        })
+        .trigger(Trigger::new(button));
+    if app.app_menu_open {
+        let integrations = if track_core::guard::GUARDED { "AI 連携をインストール…（開発用）" } else { "AI 連携をインストール…" };
+        pop = pop.w(px(240.)).child(
+            div()
+                .flex()
+                .flex_col()
+                .text_size(px(13.))
+                .child(item("app-menu-shortcuts", crate::ui::icons::keyboard(), "キーボードショートカット", None, p, cx, open_shortcuts))
+                .child(div().my_1().h(px(1.)).bg(p.border_subtle))
+                .child(item("app-menu-settings", Icon::new(IconName::Settings), "設定…", Some("⌘,"), p, cx, |this, _, cx| crate::settings::open_settings(this.state.clone(), cx)))
+                .child(item("app-menu-integrations", Icon::new(IconName::Bot), integrations, None, p, cx, |this, window, cx| this.open_integrations(window, cx)))
+                .child(div().my_1().h(px(1.)).bg(p.border_subtle))
+                .child(item("app-menu-about", crate::ui::icons::info(), "Track について", None, p, cx, open_about)),
+        );
+    }
+    // The header moves the window on a press: keep presses on the menu (after the popover saw them).
+    div().ml_auto().on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()).child(pop).into_any_element()
+}
+
+/// A menu row: it closes the menu, then does `run`.
+fn item(
+    id: &'static str,
+    icon: Icon,
+    label: &'static str,
+    shortcut: Option<&'static str>,
+    p: Palette,
+    cx: &mut Context<TrackApp>,
+    run: impl Fn(&mut TrackApp, &mut Window, &mut Context<TrackApp>) + 'static,
+) -> impl IntoElement {
+    div()
+        .id(id)
+        .debug_selector(move || id.into())
+        .flex()
+        .items_center()
+        .gap_2()
+        .px_2()
+        .py_1p5()
+        .rounded_md()
+        .cursor_pointer()
+        .text_color(p.text)
+        .hover(move |s| s.bg(p.hover))
+        .child(icon.size(px(14.)).text_color(p.text_muted))
+        .child(div().flex_1().child(label))
+        .when_some(shortcut, |d, s| d.child(div().text_color(p.text_muted).font_family(MONO).child(s)))
+        .on_click(cx.listener(move |this, _, window, cx| {
+            this.app_menu_open = false;
+            run(this, window, cx);
+            cx.notify();
+        }))
+}
+
+fn open_shortcuts(_: &mut TrackApp, window: &mut Window, cx: &mut Context<TrackApp>) {
+    let p = palette(cx);
+    window.open_dialog(cx, move |dialog, _, _| {
+        dialog.title("キーボードショートカット").w(px(400.)).child(
+            div().debug_selector(|| "shortcuts-dialog".into()).flex().flex_col().gap_4().children(SHORTCUTS.iter().map(|(group, items)| {
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(div().text_xs().font_weight(gpui::FontWeight::SEMIBOLD).text_color(p.text_muted).child(*group))
+                    .children(items.iter().map(|(label, keys)| {
+                        div().flex().justify_between().text_size(px(13.)).child(div().text_color(p.text).child(*label)).child(div().font_family(MONO).text_color(p.text_muted).child(*keys))
+                    }))
+            })),
+        )
+    });
+}
+
+fn open_about(_: &mut TrackApp, window: &mut Window, cx: &mut Context<TrackApp>) {
+    let p = palette(cx);
+    window.open_dialog(cx, move |dialog, _, _| {
+        dialog.title("Track について").w(px(360.)).child(
+            div()
+                .debug_selector(|| "about-dialog".into())
+                .flex()
+                .flex_col()
+                .gap_1()
+                .text_size(px(13.))
+                .child(div().text_color(p.text).font_weight(gpui::FontWeight::SEMIBOLD).child("Track"))
+                .child(div().debug_selector(|| "about-version".into()).text_color(p.text_muted).child(format!("バージョン {}", env!("CARGO_PKG_VERSION"))))
+                .child(div().text_color(p.text_muted).child("ローカルで動く工数記録アプリ")),
+        )
+    });
+}

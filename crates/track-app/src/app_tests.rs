@@ -306,7 +306,7 @@ fn each_ai_operation_is_its_own_row(cx: &mut TestAppContext) {
 fn header_has_only_tabs_and_settings(cx: &mut TestAppContext) {
     let (_app, cx) = open_app(cx);
     let header = cx.debug_bounds("app-header").expect("header");
-    for id in ["tab-calendar", "tab-reports", "open-settings"] {
+    for id in ["tab-calendar", "tab-reports", "app-menu"] {
         let b = cx.debug_bounds(id).unwrap_or_else(|| panic!("{id}"));
         assert!(header.contains(&b.center()), "{id} sits in the header");
     }
@@ -350,7 +350,7 @@ fn a_segment_keeps_its_size_when_it_turns_off(cx: &mut TestAppContext) {
 #[gpui::test]
 fn header_tab_labels_sit_on_the_header_midline(cx: &mut TestAppContext) {
     let (_app, cx) = open_app(cx);
-    let settings = cx.debug_bounds("open-settings").unwrap().center().y;
+    let settings = cx.debug_bounds("app-menu").unwrap().center().y;
     for id in ["tab-calendar-label", "tab-reports-label"] {
         let y = cx.debug_bounds(id).unwrap().center().y;
         assert!((y - settings).abs() < gpui::px(0.5), "{id}: {y:?} vs the settings button {settings:?}");
@@ -378,7 +378,7 @@ fn the_header_redraws_just_after_midnight() {
 #[gpui::test]
 fn header_icons_are_one_size(cx: &mut TestAppContext) {
     let (_app, cx) = open_app(cx);
-    for id in ["tab-calendar-icon", "tab-reports-icon", "open-settings-icon"] {
+    for id in ["tab-calendar-icon", "tab-reports-icon", "app-menu-icon"] {
         let b = cx.debug_bounds(id).unwrap_or_else(|| panic!("{id}"));
         assert_eq!((b.size.width, b.size.height), (crate::app::HEADER_ICON, crate::app::HEADER_ICON), "{id}");
     }
@@ -471,4 +471,39 @@ fn the_bell_toggles_the_history(cx: &mut TestAppContext) {
     cx.simulate_click(b.center(), gpui::Modifiers::none());
     settle(cx);
     assert!(cx.debug_bounds("status-history-list").is_none(), "closes");
+}
+
+
+/// The header's 「…」 opens the app menu (as in the Tauri version) from the button.
+#[gpui::test]
+fn the_app_menu_lists_its_items(cx: &mut TestAppContext) {
+    let (_app, cx) = open_app(cx);
+    assert!(cx.debug_bounds("open-settings").is_none(), "no gear any more");
+    click_sel(cx, "app-menu");
+    let button = cx.debug_bounds("app-menu").unwrap();
+    let items = ["app-menu-shortcuts", "app-menu-settings", "app-menu-integrations", "app-menu-about"];
+    let mut last = button.bottom();
+    for id in items {
+        let b = cx.debug_bounds(id).unwrap_or_else(|| panic!("{id}"));
+        assert!(b.top() >= last, "{id} comes below the button, in order");
+        last = b.top();
+    }
+}
+
+#[gpui::test]
+fn the_app_menu_shows_the_shortcuts(cx: &mut TestAppContext) {
+    let (_app, cx) = open_app(cx);
+    click_sel(cx, "app-menu");
+    click_sel(cx, "app-menu-shortcuts");
+    assert!(cx.debug_bounds("shortcuts-dialog").is_some());
+    assert!(cx.debug_bounds("app-menu-shortcuts").is_none(), "the menu closes");
+}
+
+#[gpui::test]
+fn the_app_menu_shows_about(cx: &mut TestAppContext) {
+    let (_app, cx) = open_app(cx);
+    click_sel(cx, "app-menu");
+    click_sel(cx, "app-menu-about");
+    assert!(cx.debug_bounds("about-dialog").is_some());
+    assert!(cx.debug_bounds("about-version").is_some(), "with the version");
 }

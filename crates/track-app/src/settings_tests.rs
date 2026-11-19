@@ -44,9 +44,10 @@ fn cmd_comma_opens_single_settings_window(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn header_button_opens_settings(cx: &mut TestAppContext) {
+fn header_menu_opens_settings(cx: &mut TestAppContext) {
     let (_app, cx) = open_app(cx);
-    click(cx, "open-settings");
+    click(cx, "app-menu");
+    click(cx, "app-menu-settings");
     cx.run_until_parked();
     assert_eq!(window_count(cx), 2);
 }
