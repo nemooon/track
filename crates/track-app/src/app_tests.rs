@@ -514,6 +514,7 @@ fn about_opens_its_own_window(cx: &mut TestAppContext) {
     let icon = acx.debug_bounds("about-icon").expect("the app icon");
     assert_eq!(icon.size.width, gpui::px(96.));
     assert!(acx.debug_bounds("about-github").is_some(), "the GitHub link");
+    assert!(acx.debug_bounds("about-copyright").is_some(), "the copyright");
     cx.dispatch_action(crate::actions::ShowAbout);
     settle(cx);
     assert_eq!(cx.update(|_, cx| cx.windows().len()), 2, "the app menu's item brings the same window forward");
@@ -522,4 +523,12 @@ fn about_opens_its_own_window(cx: &mut TestAppContext) {
 #[test]
 fn about_links_to_the_repository() {
     assert_eq!(crate::ui::about::GITHUB_URL, "https://github.com/nemooon/track");
+}
+
+/// The copyright shows in 「Track について」 and, the same words, in Finder's Get Info.
+#[test]
+fn the_copyright_matches_the_app_bundle() {
+    assert_eq!(crate::ui::about::COPYRIGHT, "© 2026 nemooon");
+    let plist = include_str!("../../../packaging/Info.plist");
+    assert!(plist.contains(&format!("<key>NSHumanReadableCopyright</key>\n  <string>{}</string>", crate::ui::about::COPYRIGHT)), "Info.plist carries it");
 }

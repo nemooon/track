@@ -26,5 +26,7 @@
   <string>public.app-category.productivity</string>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>NSHumanReadableCopyright</key>
+  <string>© 2026 nemooon</string>
 </dict>
 </plist>

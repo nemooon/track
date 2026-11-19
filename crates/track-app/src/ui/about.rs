@@ -1,5 +1,5 @@
 //! 「Track について」: a small window of its own, like a Mac app's About panel — the icon, the
-//! name, the version and a link to the repository. Opened from the header's menu and the Track menu.
+//! name, the version, a link to the repository and the copyright. Opened from the header's menu and the Track menu.
 use crate::ui::theme::*;
 use gpui::{
     AnyWindowHandle, App, AppContext, Context, Global, InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled, TitlebarOptions,
@@ -8,6 +8,8 @@ use gpui::{
 use gpui_component::Root;
 
 pub const GITHUB_URL: &str = "https://github.com/nemooon/track";
+/// Also in packaging/Info.plist (NSHumanReadableCopyright), for Finder's Get Info.
+pub const COPYRIGHT: &str = "© 2026 nemooon";
 
 /// The app icon (rendered by scripts/build-icon.sh).
 const ICON_PNG: &[u8] = include_bytes!("../../../../packaging/icon-256.png");
@@ -36,7 +38,7 @@ pub fn open_about(cx: &mut App) {
         let _ = window.update(cx, |_, window, _| window.activate_window());
         return;
     }
-    let bounds = gpui::Bounds::centered(None, size(px(320.), px(280.)), cx);
+    let bounds = gpui::Bounds::centered(None, size(px(320.), px(300.)), cx);
     let opened = cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -87,5 +89,6 @@ impl Render for AboutWindow {
                     .child("GitHub")
                     .on_click(|_, _, cx| cx.open_url(GITHUB_URL)),
             )
+            .child(div().debug_selector(|| "about-copyright".into()).mt_3().text_size(px(11.)).text_color(p.text_faint).child(COPYRIGHT))
     }
 }
