@@ -67,6 +67,36 @@ pub fn day_total_minutes(entries: &[TimeEntry], day: NaiveDate) -> i64 {
     entries_for_day(entries, day).iter().map(|e| ((e.end - e.start).num_minutes() - e.break_minutes).max(0)).sum()
 }
 
+/// The footer's dots for `day`: `dots` of them stand for `scheduled` minutes (the work hours),
+/// so the day's recorded time fills round(total / scheduled × dots) — more than `dots` on a day of
+/// overtime. Each filled dot carries the project (id, `None` for no project) its time went to,
+/// shared out by largest remainder, the projects in the order they first appear in the day.
+pub fn day_dots(entries: &[TimeEntry], day: NaiveDate, scheduled: i64, dots: usize) -> Vec<Option<String>> {
+    let total = day_total_minutes(entries, day);
+    if scheduled <= 0 || total <= 0 {
+        return Vec::new();
+    }
+    let filled = ((total * dots as i64) as f64 / scheduled as f64).round() as i64;
+    let mut day_entries = entries_for_day(entries, day);
+    day_entries.sort_by_key(|e| e.start);
+    let mut groups: Vec<(Option<String>, i64)> = Vec::new();
+    for e in day_entries {
+        let m = ((e.end - e.start).num_minutes() - e.break_minutes).max(0);
+        match groups.iter_mut().find(|(p, _)| *p == e.project_id) {
+            Some(g) => g.1 += m,
+            None => groups.push((e.project_id.clone(), m)),
+        }
+    }
+    // Whole shares first, then the dots left over to the largest remainders (earlier first on a tie).
+    let mut counts: Vec<i64> = groups.iter().map(|(_, m)| m * filled / total).collect();
+    let mut order: Vec<usize> = (0..groups.len()).collect();
+    order.sort_by_key(|&i| std::cmp::Reverse(groups[i].1 * filled % total));
+    for &i in order.iter().take((filled - counts.iter().sum::<i64>()).max(0) as usize) {
+        counts[i] += 1;
+    }
+    groups.into_iter().zip(counts).flat_map(|((p, _), n)| std::iter::repeat_n(p, n.max(0) as usize)).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -124,4 +154,27 @@ mod tests {
         let all = vec![entry("a", (12, 9, 0), (12, 9, 15), 60), entry("b", (12, 10, 0), (12, 11, 0), 0)];
         assert_eq!(day_total_minutes(&all, NaiveDate::from_ymd_opt(2026, 11, 12).unwrap()), 60);
     }
+
+    fn on(p: &str, s: (u32, u32, u32), e: (u32, u32, u32)) -> TimeEntry {
+        TimeEntry { project_id: Some(p.into()), ..entry(p, s, e, 0) }
+    }
+
+    /// Ten dots stand for the day's work hours (450 minutes here; overtime adds more); each
+    /// filled dot takes the project its time went to, in proportion, in the order the projects
+    /// first appear.
+    #[test]
+    fn dots_fill_by_project_share() {
+        let d = NaiveDate::from_ymd_opt(2026, 11, 12).unwrap();
+        let p = |x: &str| Some(x.to_string());
+        assert_eq!(day_dots(&[], d, 450, 10), Vec::<Option<String>>::new(), "nothing recorded: no dots");
+        assert_eq!(day_dots(&[on("a", (12, 9, 0), (12, 12, 45))], d, 450, 10), vec![p("a"); 5], "half the day: five dots");
+        // b 9:00–12:00 (180), a 13:00–14:30 (90): 270 of 450 → 6 dots, b 4 and a 2.
+        let two = [on("a", (12, 13, 0), (12, 14, 30)), on("b", (12, 9, 0), (12, 12, 0))];
+        assert_eq!(day_dots(&two, d, 450, 10), vec![p("b"), p("b"), p("b"), p("b"), p("a"), p("a")], "b came first");
+        assert_eq!(day_dots(&[on("a", (12, 8, 0), (12, 20, 0))], d, 450, 10).len(), 16, "overtime adds dots past ten (720 of 450)");
+        let none = [entry("x", (12, 9, 0), (12, 10, 30), 0)];
+        assert_eq!(day_dots(&none, d, 450, 10), vec![None, None], "no project");
+        assert_eq!(day_dots(&none, d, 0, 10), Vec::<Option<String>>::new(), "no work hours: no dots");
+    }
 }
+

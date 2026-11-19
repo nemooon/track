@@ -404,6 +404,7 @@ impl CalendarView {
     /// One row under the grid with each day's total, in line with the day columns.
     fn render_day_footer(&self, days: &[NaiveDate], cx: &mut Context<Self>) -> impl IntoElement {
         let p = palette(cx);
+        let scheduled = self.state.read(cx).data.as_ref().map(|data| track_core::repo::scheduled_minutes(&data.settings)).unwrap_or(0);
         div()
             .debug_selector(|| "day-footer".into())
             .flex()
@@ -413,27 +414,38 @@ impl CalendarView {
             .child(div().w(px(GUTTER_PX)).flex_shrink_0())
             .children(days.iter().map(|&d| {
                 let total = day_total_minutes(self.cache.entries(), d);
+                // Ten dots for the work hours (more on a day of overtime), in the colours of the
+                // projects the time went to; the rest are not drawn.
+                let colors: HashMap<String, String> = self.cache.entries().iter().filter_map(|e| Some((e.project_id.clone()?, e.project.as_ref()?.color.clone()))).collect();
+                let dots = crate::core::layout::day_dots(self.cache.entries(), d, scheduled, FOOTER_DOTS);
                 div()
                     .flex_1()
                     .min_w_0()
                     .h(px(28.))
                     .flex()
                     .items_center()
-                    .justify_end()
+                    .gap_2()
                     .border_l_1()
                     .border_color(p.border)
                     .px_2()
                     .text_xs()
-                    .when(total > 0, |c| {
-                        c.child(
-                            div()
-                                .debug_selector(move || format!("day-total-{d}"))
-                                .flex_shrink_0()
-                                .text_color(p.text_muted)
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .child(self.duration(total, cx)),
-                        )
-                    })
+                    .child(div().flex_1().min_w_0().overflow_hidden().flex().items_center().gap(px(3.)).children(dots.into_iter().enumerate().map(|(i, project)| {
+                        let color = project.and_then(|id| colors.get(&id).cloned()).filter(|c| !c.is_empty());
+                        div()
+                            .debug_selector(move || format!("day-dot-{d}-{i}"))
+                            .flex_none()
+                            .size(px(6.))
+                            .rounded_full()
+                            .bg(hex(color.as_deref().unwrap_or(NO_PROJECT)))
+                    })))
+                    .child(
+                        div()
+                            .debug_selector(move || format!("day-total-{d}"))
+                            .flex_shrink_0()
+                            .text_color(p.text_muted)
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(self.duration(total, cx)),
+                    )
             }))
     }
 
@@ -1302,6 +1314,9 @@ impl Render for CalendarView {
             .children(picker_overlay)
     }
 }
+
+/// How many dots in the footer stand for a day's work hours.
+const FOOTER_DOTS: usize = 10;
 
 /// Where 複製 puts a copy of an entry spanning `start`–`end` (minutes into its day): right after
 /// it, the same length; one that would run past 24:00 ends there instead.

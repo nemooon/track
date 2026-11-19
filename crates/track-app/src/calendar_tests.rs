@@ -714,7 +714,13 @@ fn day_totals_sit_in_a_footer_under_their_columns(cx: &mut TestAppContext) {
     let entry = cx.debug_bounds("entry-a").expect("entry block");
     assert!(footer.top() <= total.top() && total.bottom() <= footer.bottom(), "in the footer");
     assert!(total.left() < entry.right() && entry.left() < total.right(), "under the 12th's column");
-    assert!(cx.debug_bounds("day-total-2026-11-11").is_none(), "no total on an empty day");
+    let empty = cx.debug_bounds("day-total-2026-11-11").expect("an empty day says 0 too");
+    assert!(empty.size.width > px(0.));
+    // 「a」 is an hour of the 12th's 7h30m: one dot, at the left of the column.
+    let dot = cx.debug_bounds("day-dot-2026-11-12-0").expect("a filled dot");
+    assert!(dot.left() < total.left(), "the dots sit left of the total");
+    assert!(cx.debug_bounds("day-dot-2026-11-12-1").is_none(), "only one");
+    assert!(cx.debug_bounds("day-dot-2026-11-11-0").is_none(), "none on an empty day");
 }
 
 /// A move that saves says nothing: the calendar already shows it and the header sparkles.
