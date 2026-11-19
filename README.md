@@ -1,252 +1,117 @@
-# Track — 工数管理アプリ
+# Track
 
-React の画面と Bun のローカル API を Tauri にまとめた、macOS 向けの工数管理アプリです。SQLite データベースは利用者のホームディレクトリに保存します。
+工数を記録する macOS アプリ。GPUI（Zed の Rust UI フレームワーク）で作っている。サーバーを持たず、
+アプリと CLI が共通の `track-core` で SQLite を直接読み書きする。
+設計: `docs/superpowers/specs/2026-11-12-gpui-native-design.md`
 
-## ディレクトリ構成
+以前の Tauri 版（Vite + React + Bun）は `tauri` ブランチとタグ `v0.7.4` に残っている。作り直しの経緯と計測は `NOTES.md`。
 
-```text
-track/
-├── src/
-│   ├── client/       # React SPA（画面・コンポーネント・ブラウザ側処理）
-│   ├── server/       # Bun + Hono API（ルート・DB・外部予定表）
-│   └── shared/       # client/server 共通の型・日付処理・入力検証
-├── database/
-│   ├── migrations/   # 起動時に順番に適用する手書き SQL
-│   └── schema.prisma # Prisma スキーマ
-└── src-tauri/        # Tauri の Rustコード・設定・sidecarビルド処理
-```
+## 構成
 
-## セットアップ
+- `crates/track-core` — DB・集計・AI 登録・`prepare`・AI 生成プロバイダ・連携のインストール
+- `crates/track-cli` — `track-cli`（`src/cli/index.ts` と同じサブコマンドと JSON）
+- `crates/track-app` — GPUI アプリ（`track-gpui`）
 
-必要なものは Node.js、Bun、Rust です。
+## 必要なもの
 
-```bash
-npm install
-```
+- Rust 1.98.1（`rust-toolchain.toml` で固定。rustup が自動で入れる）
+- Xcode 本体は不要（`runtime_shaders` でシェーダーを実行時にコンパイルする）
+- `sqlite3` と `python3`（`prepare-db.sh` が使う。macOS の Command Line Tools に含まれる）
+- Bun や API サーバーは不要
 
-Prisma CLI を使う場合は、プロジェクトルートに `.env` を作成します。
+## 起動
 
-```env
-DATABASE_URL=file:./database/dev.db
-```
-
-その後、クライアントを生成します。
+開発版はコピーした DB（`$HOME/.track-gpui`）だけを扱う。アプリも CLI も、ほかの場所を指定するとエラーで止まる。
 
 ```bash
-npx prisma generate
+scripts/prepare-db.sh                 # ~/.track-gpui に DB と config.json をコピー（--force で作り直し）
+cargo build --workspace               # アプリと track-cli を同じフォルダにビルド
+TRACK_DATA_DIR="$HOME/.track-gpui" cargo run
 ```
 
-## 開発
+`TRACK_DATA_DIR=~/...` と書くと zsh では `env` の引数の `~` が展開されない。必ず `$HOME` を使う。
 
-ブラウザで開発するときは、ターミナルを2つ使います。
+アプリは起動時に `~/.track-gpui/runtime.json` へ `cliPath`（アプリと同じフォルダの `track-cli`）を書く。
+CLI はアプリを起動していなくても使えるので、終了時にも消さない。
+別の接続（CLI や AI）が DB に書き込むと、アプリは 1 秒以内に検知して表示を読み直す。
+
+## アルファ版のパッケージ
 
 ```bash
-# Bun API（http://127.0.0.1:8787）
-npm run local
-
-# Vite（http://localhost:5173）
-npm run dev
+scripts/package.sh    # target/package/Track.app と Track_<版>.dmg を作る（その場の署名。この Mac 用）
 ```
 
-Vite は `/api` を Bun API にプロキシします。ローカル実行時のデータは既定で `~/.track/track.db` に保存されます。
+- 版は `Cargo.toml` の `[workspace.package] version`（今は `0.8.0-alpha.1`）。名前と ID は Tauri 版と同じ `Track` / `com.nemooon.track` で、置き換えて使う
+- `track-core` の `real-data` を付けてビルドするので、開発用ガードが外れて本物の `~/.track` を開く。普段のビルドとテストは付けないので、コピー DB しか触れない
+- `Contents/MacOS/` にアプリと `track-cli`、`Contents/Resources/` に Apple Intelligence ヘルパー（macOS 26 SDK が要る）とアイコン（`packaging/`）
+- 初回起動で本物の DB に移行 0016（AI の操作履歴）・0017（休暇・直行直帰）が当たる。Tauri 版は知らない移行を無視するので、戻しても開ける
+- 「スキルのインストール…」は本来の `track` の名前で入れる
 
-アップデート画面は、開発サーバーで次のURLを開くと実際の更新を行わずに確認できます。
-アップデート中・完了・再起動の各状態も画面上で再現されます。この指定は本番ビルドでは
-無視されます。
+## スキルのインストール（開発用）
 
-```text
-http://127.0.0.1:5173/calendar?trackUpdateVersion=0.4.0
-```
+メニューの「Track → スキルのインストール…（開発用）」（右上の縦3点メニューからも）で専用のウインドウが開く。Codex と Claude Code のそれぞれで、今の状態を見て、インストール・更新・アンインストールができる。
+本物の `track` スキルを上書きしないよう、開発中は別名で入る。
 
-デスクトップアプリとして開発する場合は次を使います。
+- Codex: `~/.codex/skills/track-dev/`（`$track-dev` で呼ぶ）
+- Claude Code: `~/.claude/commands/track-dev.md`（`/track-dev` で呼ぶ）
+
+文面は `integrations/` のものを元に、`$HOME/.track-gpui/runtime.json` を読み、`TRACK_DATA_DIR="$HOME/.track-gpui"` を付けて CLI を呼ぶよう書き換えてある。
+本採用時は `ui/integrations_dialog.rs` の `DEV_NAMES` を外し、本来の名前に戻す。
+
+### AI からの編集と取り消し
+
+スキルには記録に加えて、登録済み工数の修正・付け替え・削除と、クライアント・プロジェクト・タグの作成・変更の手順が入る（GPUI 版だけの節。共有の `integrations/` は変えない）。
 
 ```bash
-npm run tauri:dev
+track-cli search --project-id <ID> --from <ISO> --to <ISO>      # 対象を集める
+track-cli update --id <ID> --id <ID> --project-id <ID> --source codex
+track-cli history                                               # AI の操作一覧
+track-cli undo --id <操作ID>                                    # 取り消し
 ```
 
-APIとViteも同時に起動し、フロントエンドの変更はTauriウィンドウへ
-ホットリロードされます。別途`npm run local`や`npm run dev`を起動する必要はありません。
+- 確認が要る操作（`--confirmed` が無いと `confirmation_required`）: 工数 10 件以上の変更、工数の削除、クライアント・プロジェクトの作成、タグの削除
+- 書き込みは 1 コマンドごとに `AiOperation` テーブル（`database/migrations/0016_ai_operation.sql`）へ変更前後の行と一緒に残る。直近 100 件・30 日を保持
+- 取り消しは、その操作のあとで行が変わっていれば `undo_conflict` で止まる（部分的には戻さない）
+- アプリは AI の操作を検知すると本体の上に「AI が N 件変更しました［元に戻す］」を出す。表示中に続けて届いた操作（プロジェクト作成と複数件の記録など）はまとめられ、［元に戻す］で新しい順に全部戻す（戻せない操作があればそこで止まる）。×で閉じるとまとまりが区切られる
 
-## ビルド
+## 設定
 
-```bash
-# Bun sidecar を同梱した macOS .app
-npm run tauri:build
+`⌘,`、メニュー「Track → 設定…」、ヘッダー右の歯車で別ウインドウの設定を開く。項目は Tauri 版と同じ
+（外観／カレンダー／レポート（出力フォーマット・週報テンプレート）／プロジェクト／タグ／AI／バックアップと復元。メモは無し）。
+プロジェクトは、左にクライアントでまとめた一覧、右に選んだプロジェクトの編集フォーム（名前・クライアント（選択式）・色・タグ・アーカイブ・削除。削除は確認してから行う。工数があるプロジェクトは削除ボタンが押せない）を出し、変更はすぐ保存する（名前は Enter か入力欄を離れたとき）。クライアントは一覧の見出しをダブルクリックして名前を変え（Enter で保存、Esc や他の場所のクリックで取り消し）、＋の左のアイコンでアーカイブ（配下のプロジェクトも）、ゴミ箱アイコンで削除する（確認あり。工数のないプロジェクトも一緒に消え、工数のあるプロジェクトがあればアイコンが押せない）。
+タグは 1 行 1 タグの一覧で、名前はダブルクリックで変更（Enter で保存、Esc や他の場所のクリックで取り消し）、色は丸を押して開くポップオーバーで選び、ゴミ箱（ホバーで表示）から出る確認で削除する。削除の確認はプロジェクト・クライアントも押したボタンから出るポップオーバーで、行の下には何も開かない。各行に使っているプロジェクト数とエントリー数を出す。
+勤務設定・出力フォーマットは DB の `Settings`、AI・バックアップ・外観は GPUI 版専用の `gpui-config.json`（データフォルダ）に保存する。
+`gpui-config.json` が無いときは、初回だけ Tauri 版の `config.json` から AI とバックアップの値を写す（以後 `config.json` は読み書きしない）。
+開発中は写すバックアップ先が `~/.track-gpui` の外なら既定の `exports` にする。`prepare-db.sh --force` は `gpui-config.json` も消して移行をやり直す。
 
-# 配布用 DMG
-npm run tauri:dmg
-```
+自動バックアップはアプリが起動時と 1 時間ごとに確認し、`backupIntervalHours` 経っていれば `VACUUM INTO` で
+`track-auto-*.db` を保存先へ書く。開発版では保存先・復元元を `~/.track-gpui` の中に限り、iCloud Drive の候補も出さない
+（本物のバックアップがそこにあるため）。
 
-`.app` は `src-tauri/target/release/bundle/macos/Track.app` に生成されます。Bun の実行環境、React のビルド成果物、SQLite マイグレーションを同梱するため、利用端末への Node.js や Bun のインストールは不要です。
+AI 生成（週報・カスタム出力）は `config.json` の `aiProvider` に従い、Codex CLI・カスタムコマンド・
+Apple Intelligence ヘルパーをアプリから直接起動する。
+ヘルパーのソースは `helpers/apple-intelligence/`、ビルドは `scripts/build-ai-helper.sh`（アプリと同じ `target/debug/` に置く。`release` を付けると `target/release/`。macOS 26 SDK が要る）。
+アプリはまず自分の隣、次に `.app` の `Contents/Resources/`、最後にインストール済みの `/Applications/Track.app` の中を探す。
 
-現在のsidecarは`aarch64-apple-darwin`向けで最低動作環境がmacOS 13.0のため、配布対象はmacOS Ventura以降のApple Silicon Macです。Tauri側の`LSMinimumSystemVersion`もsidecarに合わせて13.0に設定しています。
+## 休暇と終日
 
-本番アプリは空いているlocalhostポートを起動時に選びます。二度起動した場合は新しいプロセスを増やさず、既存ウィンドウを前面へ戻します。sidecarやDBの起動に失敗した場合は、macOSのエラーダイアログに原因を表示します。
+カレンダーの日付の見出しのボタン（休暇・予定）から設定する。休暇は選ぶとすぐ保存する。
 
-バックアップ先は設定画面の「選択」ボタンからmacOS標準のフォルダ選択ダイアログで指定できます。ブラウザ開発時は従来どおりパスを直接入力します。
+- 休暇: なし・休暇（1 日）・前半休・後半休（今の種類にチェックが付く）。1 日分は勤務時間から休憩 1 時間を引いた時間（10:00〜18:30 なら 7h30m）、半休はその半分。勤務日の祝日は自動で全日休暇で、メニューの「休暇にしない」で打ち消せる。見出しに「休暇」「前半休」「後半休」と出る。
+- 終日（以前の直行直帰）: メニューの「終日の予定を入れる…」を押すと、その日の勤務時間に作成予定の枠が出て、新しいエントリーと同じピッカー（プロジェクト・タイトル・タグ・メモ）が開く。作成すると、勤務開始〜終了・休憩 1 時間のエントリーを作る（1 日 1 件、作り直すと置き換え）。時間の枠にプロジェクトの色の斜線のブロックで出て（ドラッグ・リサイズはできない。編集ではタイトル・プロジェクト・タグ・メモだけ変えられる）、見出しにも「終日 プロジェクト」と出る。合計やレポートにはそのプロジェクトの時間として入る。
+- 休暇と終日は同じ日に両方持てない（後から選んだ方が残る）。
+- レポートのツールバーの「休暇を含める」で、明細に「休暇」の行を足し、合計・割合・草グラフにも入れる。絞り込み中と週の合計のコピーには入れない。「休暇」の行を開くと日ごとの内訳（休暇・前半休・後半休・祝日）が出て、「同じタイトルでまとめる」では種類ごとにまとまる。
+- 休暇の日はカレンダーの勤務時間の明るい背景を出さない（半休は休憩なしで働く半日分＝ 1 日分の半分だけを残す。10:00〜18:30 なら後半休は 10:00〜13:45、前半休は 14:45〜18:30）。
 
-カレンダー、レポート、メモはヘッダー左側、または `⌘1`（カレンダー）・`⌘2`（レポート）・`⌘3`（メモ）で切り替えます。メモ画面は左側の一覧と右側の編集ペインに分かれ、任意のプロジェクトに関連付けられます。本文にはMilkdown Crepeを使用し、見出しや太字、リンク、チェックリストなどをツールバーやMarkdownショートカットから編集して自動保存できます。ヘッダー中央には画面固有の操作、右側には日付選択とアプリメニューを表示します。表示期間は `⌘[`・`⌘]` で前後へ移動し、`⌘T` で今日へ戻れます。表示中の期間に今日が含まれる場合は「今日」ボタンを強調します。カレンダーの時間軸は `⌘+`・`⌘-` で拡大縮小できます。macOSのメニューバーは「ファイル」「編集」「表示」「ウインドウ」「ヘルプ」を含めて日本語で表示します。設定は「Track」メニューにある「設定…」または `⌘,` でオーバーレイ表示し、共通のプロジェクト設定、ビュー別設定、バックアップをまとめて管理します。データ移行は右上のアプリメニュー、またはmacOSの「ファイル」メニューから開けます。
+## 見た目
 
-週表示のレポートでは「週報を生成」から、表示中の絞り込みに一致する工数を
-設定したAIで週報にできます。出力形式は設定の「レポート」で編集でき、
-`{{期間}}`と`{{合計時間}}`をプレースホルダーとして使えます。生成結果は
-ダイアログ内で編集してからコピーできます。
+色は `crates/track-app/src/ui/theme.rs` の `Palette` を意味の名前で引く（`palette(cx)`）。生の色は書かない（テストで確かめている）。
+明るい配色（`Palette::light`）と暗い配色（`Palette::dark`）があり、設定の「外観」（自動／明るい／暗い）で選ぶ。自動は macOS の外観に従い、起動中の切り替えにも追従する。数字は等幅（`MONO`）。
 
-設定の「AI」では、メモタイトルと週報に共通で使う次のAIプロバイダーを切り替えられます。
+## 開発用
 
-- Apple Intelligence: macOS 26以降の端末内モデル。APIキーや通信は不要
-- Codex: TypeScript SDK経由。モデルIDを指定でき、インストール済みの`codex`と既存のCodexログインを再利用
-- カスタムコマンド: 利用者が指定した実行ファイルへプロンプトを標準入力で渡す
-
-Codexのモデル候補は、AI設定を開いたときに`codex app-server`の`model/list`から取得し、
-表示中は5分ごとに自動更新します。「一覧を更新」でも再取得できます。取得に失敗した
-場合はローカルキャッシュ、次に組み込み候補を表示し、画面にその状態を案内します。
-空欄はCodexの既定モデルを使用し、任意のモデルIDも入力できます。
-Codex実行ファイルの自動検出は、通常インストールされたCLIとデスクトップアプリを
-`node_modules`内のCLIより優先し、PATHのCLIとアプリ同梱版では新しいバージョンを選びます。
-実行ファイルを明示した場合はその指定を使用します。
-
-TrackはCodexのAPIキーや、カスタムコマンド側の認証情報を保存しません。Codexを
-使う場合は、あらかじめ`codex login`を完了してください。カスタムコマンドは
-シェルを介さず、実行ファイルと引数を分離して起動します。利用するサービスの規約と
-ライセンスは利用者自身で確認してください。
-
-ヘッダーの操作部品以外の空白は、ウインドウを移動するドラッグ領域として動作します。
-ヘッダーは緑がかったチャコールグレーを基調にし、操作グループは半透明、選択中の項目は明るい面で表示します。
-
-macOSアプリの開発言語は`src-tauri/Info.plist`で日本語に設定し、OSが「ウインドウ」メニューへ自動追加するタイル表示やディスプレイ移動などの項目も日本語で表示します。
-
-## Homebrewでの配布
-
-配布開始後は、`hako`・`neruna`と同じtapからインストールできます。
-
-```bash
-brew install --cask nemooon/tap/track
-```
-
-現時点のアプリはApple Developer IDではなくad-hoc署名です。macOSに初回起動を止められた場合は、次のコマンドで隔離属性を削除します。
-
-```bash
-xattr -dr com.apple.quarantine /Applications/Track.app
-```
-
-リリースの流れは次のとおりです。
-
-1. `npm run version:set -- 0.3.0`で`package.json`、Tauri、Cargoのバージョンをまとめて更新する
-2. `npm run version:check`でバージョンの一致を確認する
-3. 変更をコミットし、GitHubへpushする
-4. `npm run release`でApple Silicon向け`.app`をビルドし、`Track-<version>.zip`をGitHub Releaseへ公開する
-5. `.github/workflows/bump-cask.yml`がsha256を計算し、`nemooon/homebrew-tap`の`Casks/track.rb`を更新する
-
-リリースノートを指定する場合は`npm run release -- path/to/notes.md`を使います。省略時はGitHubが前回のタグとの差分からリリースノートを生成します。zipだけをローカルで確認するときは`npm run release:package`を使います。
-
-初回リリース前に、次の準備が必要です。
-
-- `nemooon/track`をpublicリポジトリにする（通常のHomebrew CaskはprivateなGitHub Releaseを取得できません）
-- TrackリポジトリのActions secret `TAP_GITHUB_TOKEN`に、`nemooon/homebrew-tap`へ書き込めるfine-grained PATを登録する
-- GitHub Actionsを有効にする
-
-Homebrew Caskの原型は`packaging/homebrew/track.rb.template`に置いてあります。release workflowは実際のバージョンとsha256を埋め、tap側のCaskを新規作成または更新します。
-
-デスクトップアプリは起動時と24時間ごとにGitHub Releasesを確認します。新しい
-バージョンがある場合はヘッダー右側のアプリメニューに表示され、案内画面から
-Homebrewによるアップデートを実行できます。更新中は起動中のTrackを終了せず、
-インストール完了後に「再起動」を選ぶと新しいバージョンへ切り替わります。
-手動確認はmacOSの「Track」メニューとヘッダー右側のアプリメニューにある
-「アップデートを確認…」から実行できます。
-
-アプリメニューの「リリースノート」から、現在のバージョンのGitHub Release本文を
-Markdownで表示できます。アップデート画面にも更新先の変更内容を表示します。
-リリースノートが未公開の場合や取得に失敗した場合は案内を表示し、GitHubへの
-リンクからリリースを確認できます。
-
-## コマンド
-
-| コマンド | 内容 |
-|---|---|
-| `npm run dev` | Vite 開発サーバーを起動 |
-| `npm run dev:desktop` | Tauri開発用にAPIとViteを同時起動 |
-| `npm run local` | Bun API を起動 |
-| `npm run cli -- <command>` | 開発中のAI連携CLIを実行 |
-| `npm test` | テストを実行 |
-| `npm run build` | React SPA をビルド |
-| `npm run build:ai-helper` | Apple Intelligence用のmacOSヘルパーをビルド |
-| `npm run build:cli` | AIツール連携CLIをビルド |
-| `npm run build:sidecar` | Bun API をTauri用の単一実行ファイルへコンパイル |
-| `npm run build:desktop` | SPA と sidecar をビルド |
-| `npm run tauri:dev` | Tauri アプリを開発起動 |
-| `npm run tauri:build` | macOS `.app` をビルド |
-| `npm run tauri:dmg` | DMG をビルド |
-| `npm run version:check` | 配布に関係する全ファイルのバージョン一致を確認 |
-| `npm run version:set -- <version>` | 配布に関係する全ファイルのバージョンを更新 |
-| `npm run release:package` | Homebrew配布用のzipをローカル生成 |
-| `npm run release` | zipをビルドし、GitHub Releaseとして公開 |
-
-## Codex / Claude Codeから工数を記録
-
-TrackにはAIツール連携専用のCLIを`Track.app/Contents/MacOS/track-cli`として
-同梱します。ユーザー向けコマンドとしてPATHへインストールはしません。
-Trackの起動中はローカルAPIと同梱CLIの実体パスを`~/.track/runtime.json`へ
-自動的に書き出します。ファイルのパーミッションは所有者のみ読み書き可能な
-`0600`です。
-
-Codex用スキルとClaude Code用コマンドもTrack.appへ同梱します。macOSの「Track」
-メニューから「AI連携をインストール…」を選ぶと、次の場所へインストールします。
-
-- Codex: `~/.codex/skills/track`
-- Claude Code: `~/.claude/commands/track.md`
-
-再実行するとTrackの連携ファイルだけを最新版へ更新します。同名の無関係なスキルや
-コマンドは上書きしません。インストール後、新しいCodexまたはClaude Codeセッション
-から利用できます。
-
-どちらも`runtime.json`から同梱CLIを特定して直接実行し、日本時間の当日に活動した全会話から
-作業時間帯を推定します。プロジェクト・タイトル・既存エントリとの重複を提示し、
-登録案を表で一覧表示し、確認ダイアログ内にも全件の日時・所要時間・プロジェクト・タイトルと
-件数・合計時間を表示します。途中の出力が折りたたまれても登録内容を確認でき、
-利用者がOKを選んだ後にだけ登録します。
-その日の工数の集計・登録作業自体は、明示的な指定がなければ「プロジェクトなし」とします。
-
-- Codex: 「`$track`で今の作業を記録して」
-- Claude Code: 「`/track`」
-
-AIツールが内部で同梱CLIを取得する例です。通常、利用者がこのコマンドを直接
-実行する必要はありません。
-
-```bash
-TRACK_CLI=$(/usr/bin/plutil -extract cliPath raw ~/.track/runtime.json)
-"$TRACK_CLI" prepare --source codex
-```
-
-開発時は`npm run cli -- <command>`で直接実行できます。
-
-### AI連携の時間推定と再試行
-
-`prepare`の基本動作は、日本時間の当日に活動したCodex・Claude Codeの全会話から
-未記録の工数を提案することです。作業フォルダを問わずローカルの会話ログを読み、
-30分以上の空白で区間を分け、開始を切り下げ・終了を切り上げて15分単位にします。
-指定日は`--date YYYY-MM-DD`、対象AIは`--source codex|claude`で絞れます。
-Codexのアーカイブ済み会話も対象に含め、子エージェントのログは個別計上しません。
-
-候補の`segments`には時間帯、要求ID、AIツール名、セッションIDが含まれます。
-`sessions`には当日の会話内容の抜粋と作業フォルダがあり、AIがタイトルとプロジェクトを
-判断します。既存工数とセッションごとの登録履歴を区間として候補から除外するため、
-後の時間帯を先に登録しても、前の未記録区間は候補に残ります。重なる会話は
-`parallelWith`で示し、`totalCandidateMinutes`には重複を除いた合計を返します。
-重なる時間をどの作業へ配分するかは確認時に決めます。
-ログから得られる時間は実作業時間の推定であり、確認時に15分単位で修正できます。
-ログが存在しない会話は対象にできません。
-
-現在の会話だけを対象にする場合は`--scope session --source codex|claude`を指定します。
-`--session-id <ID>`または`--session-file <path>`も指定できます（明示指定時は会話単位に
-切り替わります）。Codexの会話単位モードは`CODEX_THREAD_ID`を優先し、対象が見つからない
-場合や複数候補がある場合に別の会話を自動選択しません。Claude Codeのフックからは
-`session_id`と`transcript_path`をこの2つの引数へ渡せます。
-
-各登録で`--source`、`--session-id`、`--request-id`を渡すと、工数と登録履歴を同時に
-保存します。通信エラーの再試行は同じ要求ID・同じ内容で行ってください。
-同じ要求の再送は保存済みの工数を返し、内容が違う要求や、元の工数が削除済みの要求は
-拒否します。旧版で記録した工数にもセッション情報がある場合は履歴を引き継ぎます。
-
-既存のインストール済みスキル／コマンドは、新しいアプリで「AI連携をインストール…」を
-実行して更新してください。
+- `scripts/winshot.sh out.png` — アプリのウインドウだけをスクリーンショットする
+- `TRACK_GPUI_PAGE=reports cargo run` — レポート画面から起動する
+- `TRACK_GPUI_WINDOW=1440x900` — 起動時のウインドウサイズ
+- `TRACK_GPUI_APPEARANCE=light|dark` — 外観の設定と macOS の外観より優先して明暗を決める（撮影用）
+- `TRACK_GPUI_SETTINGS=<appearance|calendar|reports|projects|ai|backup>` — 起動時に設定ウインドウをその項目で開く（`winshot.sh` はどちらかのウインドウを撮るので、設定だけ撮るときはウインドウ ID を指定する）
