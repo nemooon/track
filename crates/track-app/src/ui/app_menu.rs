@@ -16,7 +16,7 @@ pub const SHORTCUTS: [(&str, &[(&str, &str)]); 3] = [
 
 pub fn render(app: &TrackApp, cx: &mut Context<TrackApp>) -> AnyElement {
     let p = palette(cx);
-    let button = controls::icon_button_sized(&p, "app-menu", crate::ui::icons::ellipsis(), crate::app::HEADER_ICON, "")
+    let button = controls::icon_button_sized(&p, "app-menu", crate::ui::icons::ellipsis_vertical(), crate::app::HEADER_ICON, "")
         .debug_selector(|| "app-menu".into());
     let this = cx.entity().downgrade();
     let mut pop = Popover::new("app-menu-pop")

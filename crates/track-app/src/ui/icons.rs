@@ -1,7 +1,7 @@
 //! Icons beyond gpui-component's built-in set, served next to its assets.
 use gpui::{AssetSource, SharedString};
 
-gpui_kit_assets::icon_assets!(ExtraIcons, [Pipette, Archive, ArchiveRestore, Trash, CalendarCog, ClipboardList, Bell, Ellipsis, Keyboard, Info]);
+gpui_kit_assets::icon_assets!(ExtraIcons, [Pipette, Archive, ArchiveRestore, Trash, CalendarCog, ClipboardList, Bell, EllipsisVertical, Keyboard, Info]);
 
 /// gpui-component's assets plus the extra Lucide icons this app uses.
 pub struct AppAssets(pub gpui_kit_assets::Assets);
@@ -48,9 +48,9 @@ pub fn calendar_cog() -> gpui_component::Icon {
     gpui_component::Icon::empty().path(gpui_kit_assets::IconName::CalendarCog.path())
 }
 
-/// The header's app menu (Lucide `ellipsis`).
-pub fn ellipsis() -> gpui_component::Icon {
-    gpui_component::Icon::empty().path(gpui_kit_assets::IconName::Ellipsis.path())
+/// The header's app menu (Lucide `ellipsis-vertical`).
+pub fn ellipsis_vertical() -> gpui_component::Icon {
+    gpui_component::Icon::empty().path(gpui_kit_assets::IconName::EllipsisVertical.path())
 }
 
 /// Keyboard shortcuts (Lucide `keyboard`).
