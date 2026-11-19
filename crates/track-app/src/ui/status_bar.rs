@@ -30,6 +30,11 @@ pub fn render(app: &TrackApp, left: Vec<AnyElement>, cx: &mut Context<TrackApp>)
         .child(history_bell(&history, open, p, cx))
 }
 
+/// The status bar's side padding (`px_3`), so the history panel can reach the window edge.
+const STATUS_BAR_PAD: f32 = 12.;
+/// From the bell's bottom to the status bar's top edge: the 18px bell sits centred in the 24px bar.
+const BELL_TO_BAR_TOP: f32 = 21.;
+
 fn toggle_history(this: &mut TrackApp, open: bool, cx: &mut Context<TrackApp>) {
     this.history_open = open;
     cx.notify();
@@ -89,23 +94,31 @@ fn history_list(history: &NoticeHistory, p: Palette, cx: &mut Context<TrackApp>)
         div()
             .id("status-history-list")
             .debug_selector(|| "status-history-list".into())
+            // A solid panel standing on the status bar at the window's right edge: square, no
+            // shadow, a title strip, rows split by lines.
             .absolute()
-            .bottom(px(24.))
-            .right_0()
+            .bottom(px(BELL_TO_BAR_TOP))
+            .right(px(-STATUS_BAR_PAD))
             .w(px(360.))
             .max_h(px(320.))
             .overflow_y_scroll()
-            .py_1()
-            .rounded_lg()
-            .border_1()
+            .border_l_1()
+            .border_t_1()
             .border_color(p.border)
-            .bg(p.elevated)
-            .shadow_md()
+            .bg(p.bg)
             .text_size(px(12.))
-            .when(history.items.is_empty(), |d| d.child(div().px_2().py_1().text_color(p.text_muted).child("通知はまだありません")))
-            .when(!history.items.is_empty(), |d| {
-                d.child(
-                    div().flex().justify_end().px_2().pb_1().border_b_1().border_color(p.border_subtle).mb_1().child(
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .h(px(28.))
+                    .px_3()
+                    .bg(p.surface)
+                    .border_b_1()
+                    .border_color(p.border)
+                    .child(div().flex_1().font_weight(gpui::FontWeight::SEMIBOLD).text_color(p.text).child("通知"))
+                    .when(!history.items.is_empty(), |d| {
+                        d.child(
                         div()
                             .id("status-history-clear")
                             .debug_selector(|| "status-history-clear".into())
@@ -116,9 +129,10 @@ fn history_list(history: &NoticeHistory, p: Palette, cx: &mut Context<TrackApp>)
                             .hover(move |s| s.text_color(p.text).bg(p.hover))
                             .child("履歴を消す")
                             .on_click(cx.listener(|this, _, _, cx| this.state.update(cx, |s, cx| s.clear_history(cx)))),
-                    ),
-                )
-            })
+                        )
+                    }),
+            )
+            .when(history.items.is_empty(), |d| d.child(div().px_3().py_2().text_color(p.text_muted).child("通知はまだありません")))
             .children(rows)
             .on_mouse_down_out(cx.listener(|this, _, _, cx| {
                 this.history_open = false;
@@ -137,8 +151,10 @@ fn history_row(i: usize, item: &HistoryItem, p: Palette, cx: &mut Context<TrackA
         .flex()
         .items_start()
         .gap_2()
-        .px_2()
-        .py_1()
+        .px_3()
+        .py_2()
+        .border_b_1()
+        .border_color(p.border_subtle)
         .child(
             div()
                 .flex_1()
