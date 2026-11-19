@@ -707,3 +707,19 @@ fn cmd_w_closes_the_other_windows(cx: &mut TestAppContext) {
     assert_eq!(page, crate::app::Page::Reports, "on the asked page");
     assert!(app_cx.update(|cx| reopened.read(cx).state == state), "the same data");
 }
+
+/// ⌘0 brings the main window back (the Window menu's 「Track」), as Mac apps do.
+#[gpui::test]
+fn cmd_0_shows_the_main_window(cx: &mut TestAppContext) {
+    let (_app, cx) = open_app(cx);
+    let keys = cx.update(|window, _| window.bindings_for_action(&crate::actions::ShowMainWindow).into_iter().map(|b| format!("{:?}", b.keystrokes())).collect::<Vec<_>>());
+    assert!(keys.iter().any(|k| k.contains("platform: true") && k.contains("key: \"0\"")), "bound to ⌘0: {keys:?}");
+    cx.update(|window, _| window.activate_window());
+    cx.simulate_keystrokes("cmd-w");
+    let app_cx: &mut TestAppContext = &mut cx.cx;
+    app_cx.run_until_parked();
+    assert_eq!(app_cx.update(|cx| cx.windows().len()), 0);
+    app_cx.update(|cx| crate::app::show_main_window(None, cx));
+    app_cx.run_until_parked();
+    assert_eq!(app_cx.update(|cx| cx.windows().len()), 1, "back");
+}

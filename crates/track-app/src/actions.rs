@@ -1,6 +1,6 @@
 use gpui::{App, KeyBinding, Menu, MenuItem, OsAction, SystemMenuType, actions};
 
-actions!(track, [ShowCalendar, ShowReports, PrevPeriod, NextPeriod, Today, ZoomIn, ZoomOut, InstallIntegrations, OpenSettings, ShowAbout, CheckForUpdates, CloseWindow, Quit]);
+actions!(track, [ShowCalendar, ShowReports, PrevPeriod, NextPeriod, Today, ZoomIn, ZoomOut, InstallIntegrations, OpenSettings, ShowAbout, CheckForUpdates, CloseWindow, ShowMainWindow, Quit]);
 
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
@@ -16,6 +16,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-,", OpenSettings, None),
         // Closes the window in front when it handles it (the skills window); the main window doesn't.
         KeyBinding::new("cmd-w", CloseWindow, None),
+        KeyBinding::new("cmd-0", ShowMainWindow, None),
     ]);
     // ⌘W closes the window in front, the main window included.
     cx.on_action(|_: &CloseWindow, cx| {
@@ -29,6 +30,8 @@ pub fn bind_keys(cx: &mut App) {
     // ⌘1・⌘2 from another window, or with the main window closed: bring it (back) on that page.
     cx.on_action(|_: &ShowCalendar, cx| crate::app::show_main_window(Some(crate::app::Page::Calendar), cx));
     cx.on_action(|_: &ShowReports, cx| crate::app::show_main_window(Some(crate::app::Page::Reports), cx));
+    // ⌘0: the main window as it was (the Window menu's 「Track」).
+    cx.on_action(|_: &ShowMainWindow, cx| crate::app::show_main_window(None, cx));
 }
 
 /// Japanese native menus (the standard ones plus 「表示」 for pages, periods and zoom).
@@ -66,5 +69,6 @@ pub fn set_menus(cx: &mut App) {
             MenuItem::action("カレンダーを拡大", ZoomIn),
             MenuItem::action("カレンダーを縮小", ZoomOut),
         ]),
+        Menu::new("ウインドウ").items([MenuItem::action("Track", ShowMainWindow)]),
     ]);
 }
