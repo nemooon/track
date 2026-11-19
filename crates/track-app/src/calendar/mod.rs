@@ -429,13 +429,12 @@ impl CalendarView {
                     .border_color(p.border)
                     .px_2()
                     .text_xs()
-                    .child(div().flex_1().min_w_0().overflow_hidden().flex().items_center().gap(px(3.)).children(dots.into_iter().enumerate().map(|(i, project)| {
+                    .child(div().flex_1().min_w_0().overflow_hidden().flex().items_center().gap(px(2.)).children(dots.into_iter().enumerate().map(|(i, project)| {
                         let color = project.and_then(|id| colors.get(&id).cloned()).filter(|c| !c.is_empty());
                         div()
                             .debug_selector(move || format!("day-dot-{d}-{i}"))
                             .flex_none()
-                            .size(px(6.))
-                            .rounded_full()
+                            .size(px(4.))
                             .bg(hex(color.as_deref().unwrap_or(NO_PROJECT)))
                     })))
                     .child(
