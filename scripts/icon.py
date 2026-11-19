@@ -9,7 +9,9 @@ import random
 import sys
 
 CX, CY = 512, 512  # the watch's centre: the middle of the icon
-R = 292  # the watch's outer radius
+R = 292  # the watch's outer radius (before WATCH_SCALE)
+# The whole watch (with its buttons and shadow) is drawn this much smaller, about the centre.
+WATCH_SCALE = 0.9
 # The button on top (crown) and its stem, from the top of the watch up.
 STEM_W, STEM_H = 48, 56
 CROWN_W, CROWN_H = 120, 50
@@ -78,6 +80,7 @@ def svg():
 <rect x="{x0}" y="{y0}" width="{side}" height="{side}" rx="{rx}" fill="url(#tile)"/>
 <g clip-path="url(#tileclip)" transform="rotate(-2 512 512)">{dots()}</g>
 <rect x="{x0 + 1.5}" y="{y0 + 1.5}" width="{side - 3}" height="{side - 3}" rx="{rx - 1.5}" fill="none" stroke="#fff" stroke-opacity="0.10" stroke-width="3"/>
+<g transform="translate({CX} {CY}) scale({WATCH_SCALE}) translate({-CX} {-CY})">
 {crown_shadow}
 <rect x="{CX - STEM_W / 2}" y="{stem_top}" width="{STEM_W}" height="{STEM_H}" rx="9" fill="url(#metaldark)"/>
 <rect x="{crown_x}" y="{crown_top}" width="{CROWN_W}" height="{CROWN_H}" rx="{CROWN_H / 2}" fill="url(#metal)"/>
@@ -93,6 +96,7 @@ def svg():
 <line x1="{hand_tail[0]:.1f}" y1="{hand_tail[1]:.1f}" x2="{hand_end[0]:.1f}" y2="{hand_end[1]:.1f}" stroke="#ffffff" stroke-width="15" stroke-linecap="round"/>
 <circle cx="{CX}" cy="{CY}" r="26" fill="#ffffff"/>
 <circle cx="{CX}" cy="{CY}" r="11" fill="#3b82f6"/>
+</g>
 </svg>
 '''
 
