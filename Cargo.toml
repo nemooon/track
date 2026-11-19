@@ -6,7 +6,7 @@ default-members = ["crates/track-app"]
 
 [workspace.package]
 edition = "2024"
-version = "0.8.1"
+version = "0.8.2"
 publish = false
 
 [workspace.dependencies]
