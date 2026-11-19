@@ -126,6 +126,9 @@ pub struct CalendarView {
     load_task: Option<Task<()>>,
     /// The selected entries (Shift-click adds and takes out; ⌘A picks every one shown).
     pub selected: Vec<String>,
+    /// The entries the last undo made again (their new ids): ⌘⇧Z deletes them again. A new
+    /// deletion empties it.
+    redo: Vec<String>,
     hovered_entry: String,
     hover: Option<(usize, i64)>,
     column_bounds: Rc<RefCell<Vec<Bounds<Pixels>>>>,
@@ -168,6 +171,7 @@ impl CalendarView {
             requested: None,
             load_task: None,
             selected: Vec::new(),
+            redo: Vec::new(),
             hovered_entry: String::new(),
             hover: None,
             column_bounds: Rc::default(),
@@ -724,6 +728,14 @@ impl CalendarView {
         cx.notify();
     }
 
+    /// ⌘⇧Z: deletes again what the last undo brought back.
+    fn redo_deletion(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let ids = std::mem::take(&mut self.redo);
+        if !ids.is_empty() {
+            self.delete(&ids, window, cx);
+        }
+    }
+
     /// ⌘Z: brings back the newest deletion that has not been undone (all its entries).
     fn undo_last_deletion(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(id) = self.state.read(cx).last_undoable_deletion() else { return };
@@ -895,14 +907,38 @@ impl CalendarView {
     }
 
     /// 「元に戻す」 for a deletion: makes the same entries again.
+    /// Remembers the new entries' ids, so ⌘⇧Z can delete them again.
     pub fn restore_deleted(&mut self, removed: Vec<TimeEntry>, window: &mut Window, cx: &mut Context<Self>) {
-        for e in removed {
-            self.restore_one(e, window, cx);
-        }
+        self.window = Some(window.window_handle());
+        self.redo.clear();
+        let api = self.state.read(cx).api.clone();
+        let futs: Vec<_> = removed.into_iter().map(|e| api.create_entry(Self::recreate(e))).collect();
+        cx.spawn(async move |this, cx| {
+            let mut made = Vec::new();
+            let mut failed = false;
+            for fut in futs {
+                match fut.await {
+                    Ok(e) => made.push(e),
+                    Err(_) => failed = true,
+                }
+            }
+            let _ = this.update(cx, |this, cx| {
+                this.redo = made.iter().map(|e| e.id.clone()).collect();
+                for e in made {
+                    this.cache.insert(e);
+                }
+                if failed {
+                    this.note(StatusNote::Error("記録の作成に失敗しました".into()), cx);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
-    fn restore_one(&mut self, removed: TimeEntry, window: &mut Window, cx: &mut Context<Self>) {
-        let body = NewEntry {
+    /// The same entry, to be made again.
+    fn recreate(removed: TimeEntry) -> NewEntry {
+        NewEntry {
             project_id: removed.project_id.clone(),
             start: removed.start,
             end: removed.end,
@@ -912,8 +948,7 @@ impl CalendarView {
             external_event_id: removed.external_event_id.clone(),
             external_event_source: removed.external_event_source.clone(),
             break_minutes: removed.break_minutes,
-        };
-        self.create(body, window, cx);
+        }
     }
 
     /// Saves new start/end, showing them at once and rolling back if the save fails.
@@ -971,6 +1006,7 @@ impl CalendarView {
             return;
         }
         self.selected.retain(|s| !ids.contains(s));
+        self.redo.clear();
         let api = self.state.read(cx).api.clone();
         let futs: Vec<_> = removed.iter().map(|e| api.delete_entry(&e.id)).collect();
         cx.spawn(async move |this, cx| {
@@ -1182,6 +1218,7 @@ impl Render for CalendarView {
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &gpui_component::input::SelectAll, _, cx| this.select_all(cx)))
             .on_action(cx.listener(|this, _: &gpui_component::input::Undo, w, cx| this.undo_last_deletion(w, cx)))
+            .on_action(cx.listener(|this, _: &gpui_component::input::Redo, w, cx| this.redo_deletion(w, cx)))
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, w, cx| this.on_key(ev, w, cx)))
             .on_mouse_down(MouseButton::Left, cx.listener(|this, _, w, cx| this.focus.focus(w, cx)))
             .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _, cx| this.on_drag_move(ev.position, cx)))

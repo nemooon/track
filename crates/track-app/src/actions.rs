@@ -19,9 +19,11 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-0", ShowMainWindow, None),
         KeyBinding::new("cmd-m", Minimize, None),
         KeyBinding::new("ctrl-cmd-f", ToggleFullScreen, None),
-        // In the calendar: ⌘A selects the shown entries, ⌘Z brings back the last deletion.
+        // In the calendar: ⌘A selects the shown entries, ⌘Z brings back the last deletion, ⌘⇧Z
+        // deletes it again.
         KeyBinding::new("cmd-a", gpui_component::input::SelectAll, Some("Calendar")),
         KeyBinding::new("cmd-z", gpui_component::input::Undo, Some("Calendar")),
+        KeyBinding::new("cmd-shift-z", gpui_component::input::Redo, Some("Calendar")),
     ]);
     // ⌘W closes the window in front, the main window included.
     cx.on_action(|_: &CloseWindow, cx| {

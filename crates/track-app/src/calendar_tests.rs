@@ -864,3 +864,65 @@ fn cmd_z_undoes_the_last_deletion(cx: &mut TestAppContext) {
     wait_io(cx);
     assert_eq!(f.db().entries(at(12, 0, 0), at(14, 0, 0)).unwrap().len(), 2, "nothing more to undo");
 }
+
+fn shown_count(f: &Fixture) -> usize {
+    f.db().entries(at(12, 0, 0), at(14, 0, 0)).unwrap().len()
+}
+
+/// ⌘⇧Z deletes again what ⌘Z brought back; ⌘Z then brings it back once more.
+#[gpui::test]
+fn cmd_shift_z_redoes_the_deletion(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup_two(cx);
+    click(cx, "entry-a");
+    cx.simulate_keystrokes("cmd-a");
+    cx.simulate_keystrokes("backspace");
+    wait_io(cx);
+    cx.simulate_keystrokes("cmd-z");
+    wait_io(cx);
+    assert_eq!(shown_count(&f), 2);
+    cx.simulate_keystrokes("cmd-shift-z");
+    wait_io(cx);
+    assert_eq!(shown_count(&f), 0, "deleted again");
+    assert_eq!(app.read_with(cx, |a, cx| a.state.read(cx).history.items[0].text.clone()), "2件削除しました", "a new notice");
+    cx.simulate_keystrokes("cmd-shift-z");
+    wait_io(cx);
+    cx.simulate_keystrokes("cmd-z");
+    wait_io(cx);
+    assert_eq!(shown_count(&f), 2, "back once more");
+}
+
+/// 「元に戻す」 in the notice panel can be redone too.
+#[gpui::test]
+fn undo_from_the_panel_can_be_redone(cx: &mut TestAppContext) {
+    let (_app, cx, f) = setup_two(cx);
+    click(cx, "entry-a");
+    cx.simulate_keystrokes("backspace");
+    wait_io(cx);
+    click(cx, "status-history-undo-0");
+    wait_io(cx);
+    assert_eq!(shown_count(&f), 2);
+    let b = cx.debug_bounds("entry-b").unwrap();
+    cx.simulate_click(b.center(), Modifiers::none());
+    cx.simulate_keystrokes("escape");
+    cx.simulate_keystrokes("cmd-shift-z");
+    wait_io(cx);
+    assert_eq!(shown_count(&f), 1, "a deleted again");
+    assert!(f.db().entries(at(12, 0, 0), at(14, 0, 0)).unwrap().iter().all(|e| e.title.as_deref() == Some("作業b")));
+}
+
+/// A new deletion after an undo leaves nothing to redo.
+#[gpui::test]
+fn a_new_deletion_clears_the_redo(cx: &mut TestAppContext) {
+    let (_app, cx, f) = setup_two(cx);
+    click(cx, "entry-a");
+    cx.simulate_keystrokes("backspace");
+    wait_io(cx);
+    cx.simulate_keystrokes("cmd-z");
+    wait_io(cx);
+    click(cx, "entry-b");
+    cx.simulate_keystrokes("backspace");
+    wait_io(cx);
+    cx.simulate_keystrokes("cmd-shift-z");
+    wait_io(cx);
+    assert_eq!(shown_count(&f), 1, "the restored a stays");
+}
