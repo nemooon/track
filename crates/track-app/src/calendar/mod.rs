@@ -39,11 +39,13 @@ pub fn work_band(s: &track_core::model::Settings, day: NaiveDate, leave: Option<
     if !s.work_days.contains(&day.weekday().num_days_from_sunday()) {
         return None;
     }
-    let mid = s.work_start + (s.work_end - s.work_start) / 2;
+    // A half day is half the scheduled work (the hours less the break), taken without a break:
+    // 10:00–18:30 → 後半休 works 10:00–13:45, 前半休 works 14:45–18:30.
+    let half = track_core::repo::scheduled_minutes(s) / 2;
     match leave {
         Some(LeaveKind::Full) => None,
-        Some(LeaveKind::Am) => Some((mid, s.work_end)),
-        Some(LeaveKind::Pm) => Some((s.work_start, mid)),
+        Some(LeaveKind::Am) => Some((s.work_end - half, s.work_end)),
+        Some(LeaveKind::Pm) => Some((s.work_start, s.work_start + half)),
         Some(LeaveKind::None) => Some((s.work_start, s.work_end)),
         None if holiday_name(day).is_some() => None,
         None => Some((s.work_start, s.work_end)),

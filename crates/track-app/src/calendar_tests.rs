@@ -451,8 +451,9 @@ fn work_band_leaves_out_leave() {
     assert_eq!(work_band(&s, d(11, 12), None), Some((600, 1110)), "a plain work day");
     assert_eq!(work_band(&s, d(11, 15), None), None, "Sunday");
     assert_eq!(work_band(&s, d(11, 12), Some(LeaveKind::Full)), None, "full leave");
-    assert_eq!(work_band(&s, d(11, 12), Some(LeaveKind::Am)), Some((855, 1110)), "前半休: the second half");
-    assert_eq!(work_band(&s, d(11, 12), Some(LeaveKind::Pm)), Some((600, 855)), "後半休: the first half");
+    // Half a day of work is half of 7h30m (no break): 3h45m.
+    assert_eq!(work_band(&s, d(11, 12), Some(LeaveKind::Am)), Some((885, 1110)), "前半休: 14:45–18:30");
+    assert_eq!(work_band(&s, d(11, 12), Some(LeaveKind::Pm)), Some((600, 825)), "後半休: 10:00–13:45");
     assert_eq!(work_band(&s, d(11, 3), None), None, "a holiday is leave");
     assert_eq!(work_band(&s, d(11, 3), Some(LeaveKind::None)), Some((600, 1110)), "「休暇にしない」 on a holiday");
 }
