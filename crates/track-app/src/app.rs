@@ -442,6 +442,9 @@ pub struct TrackApp {
     pub integrations: Option<Entity<crate::ui::integrations_dialog::IntegrationsDialog>>,
     /// The notice history list is open above the status bar's bell.
     pub history_open: bool,
+    /// Where the bell is, so a press on it is left to the bell (which toggles) instead of
+    /// closing the list as a press outside it.
+    pub bell_bounds: std::rc::Rc<std::cell::Cell<gpui::Bounds<gpui::Pixels>>>,
     _watcher: gpui::Task<()>,
     _backups: gpui::Task<()>,
     _new_day: gpui::Task<()>,
@@ -549,6 +552,7 @@ impl TrackApp {
             integrations_home: dirs::home_dir().unwrap_or_default(),
             integrations: None,
             history_open: false,
+            bell_bounds: Default::default(),
             _watcher: watcher,
             _backups: backups,
             _new_day: new_day,

@@ -457,3 +457,18 @@ fn status_bar_is_as_tall_as_zeds(cx: &mut TestAppContext) {
     let list = cx.debug_bounds("status-history-list").expect("history");
     assert_eq!(list.bottom(), bar.top(), "the panel stands on the status bar");
 }
+
+/// The bell toggles the history: a second press closes it.
+#[gpui::test]
+fn the_bell_toggles_the_history(cx: &mut TestAppContext) {
+    let (_app, cx) = open_app(cx);
+    settle(cx);
+    let b = cx.debug_bounds("status-history").unwrap();
+    cx.simulate_click(b.center(), gpui::Modifiers::none());
+    settle(cx);
+    assert!(cx.debug_bounds("status-history-list").is_some(), "opens");
+    assert_eq!(cx.debug_bounds("status-history"), Some(b), "the bell stays put");
+    cx.simulate_click(b.center(), gpui::Modifiers::none());
+    settle(cx);
+    assert!(cx.debug_bounds("status-history-list").is_none(), "closes");
+}

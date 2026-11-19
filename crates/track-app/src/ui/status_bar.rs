@@ -28,7 +28,7 @@ pub fn render(app: &TrackApp, left: Vec<AnyElement>, cx: &mut Context<TrackApp>)
         .children(left)
         .child(div().flex_1())
         .when_some(flash, |d, item| d.child(flash_notice(&item, p, cx)))
-        .child(history_bell(open, p, cx))
+        .child(history_bell(app.bell_bounds.clone(), open, p, cx))
         .when(open, |d| d.child(history_list(&history, p, cx)))
 }
 
@@ -68,7 +68,7 @@ fn flash_notice(item: &HistoryItem, p: Palette, cx: &mut Context<TrackApp>) -> i
 }
 
 /// The bell at the right end; it opens the list above it.
-fn history_bell(open: bool, p: Palette, cx: &mut Context<TrackApp>) -> impl IntoElement {
+fn history_bell(bounds: std::rc::Rc<std::cell::Cell<gpui::Bounds<gpui::Pixels>>>, open: bool, p: Palette, cx: &mut Context<TrackApp>) -> impl IntoElement {
     div()
         .id("status-history")
         .debug_selector(|| "status-history".into())
@@ -81,6 +81,7 @@ fn history_bell(open: bool, p: Palette, cx: &mut Context<TrackApp>) -> impl Into
         .when(open, |d| d.bg(p.hover))
         .hover(move |s| s.text_color(p.text).bg(p.hover))
         .child(crate::ui::icons::bell().size(px(12.)))
+        .child(gpui::canvas(move |b, _, _| bounds.set(b), |_, _, _, _| ()).absolute().top_0().left_0().size_full())
         .on_click(cx.listener(|this, _, _, cx| {
             let open = !this.history_open;
             toggle_history(this, open, cx);
@@ -133,7 +134,11 @@ fn history_list(history: &NoticeHistory, p: Palette, cx: &mut Context<TrackApp>)
             )
             .when(history.items.is_empty(), |d| d.child(div().px_3().py_2().text_color(p.text_muted).child("通知はまだありません")))
             .children(rows)
-            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+            .on_mouse_down_out(cx.listener(|this, ev: &gpui::MouseDownEvent, _, cx| {
+                // A press on the bell is the bell's: it closes the list itself.
+                if this.bell_bounds.get().contains(&ev.position) {
+                    return;
+                }
                 this.history_open = false;
                 cx.notify();
             })),
