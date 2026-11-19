@@ -1,10 +1,12 @@
-"""Fills an empty demo home with made-up clients, projects, tags and a week of entries
-(2026-11-16 to 19), for the README's screenshots. No real data.
+"""Fills an empty demo home with made-up clients, projects, tags and entries, for the README's
+screenshots: the week of 2026-11-16 to 19 by hand, and a year before it (from 2025-11-17) made up
+with a fixed random seed so the report's heatmap is filled. No real data.
 
     cargo build --workspace
     python3 scripts/seed-demo.py /tmp/demohome
     HOME=/tmp/demohome TRACK_DATA_DIR=/tmp/demohome/.track-gpui TRACK_GPUI_WINDOW=1440x900 \
       TRACK_GPUI_APPEARANCE=light ./target/debug/track-gpui        # then scripts/winshot.sh
+For the report, go back 26 weeks (the \"<\" button) so the heatmap's 53 weeks are all in the past.
 """
 import json, os, subprocess, sys
 D = sys.argv[1]
@@ -62,4 +64,33 @@ for day, s, e, p, title, tag in E:
     args = ["create", "--start", f"2026-11-{day}T{s}:00+09:00", "--end", f"2026-11-{day}T{e}:00+09:00", "--title", title, "--project-id", projects[p], "--confirmed"]
     if tag: args += ["--tag-id", tags[tag]]
     cli(*args)
+# A year of made-up weekdays before that week, so the heatmap is filled.
+import datetime, random
+rng = random.Random(7)
+TITLES = {
+    "web": [("ページのコーディング", "開発"), ("デザインレビュー", "打合せ"), ("画像の書き出し", "デザイン")],
+    "sys": [("問い合わせ対応", None), ("不具合の調査", "開発"), ("帳票の修正", "開発")],
+    "rec": [("ページのデザイン", "デザイン"), ("原稿の確認", "打合せ")],
+    "in": [("社内定例", "打合せ"), ("経費精算", "事務")],
+}
+day = datetime.date(2025, 11, 17)
+while day < datetime.date(2026, 11, 16):
+    weekend = day.weekday() >= 5
+    if weekend:
+        minutes = rng.choice([60, 90, 120]) if rng.random() < 0.06 else 0
+    else:
+        minutes = rng.choices([0, 90, 210, 300, 420, 480], [6, 6, 12, 20, 30, 26])[0]
+    t = 10 * 60
+    while minutes > 0:
+        length = min(minutes, rng.choice([60, 90, 120, 150]))
+        p = rng.choices(["web", "sys", "rec", "in"], [4, 4, 2, 1])[0]
+        title, tag = rng.choice(TITLES[p])
+        if t == 12 * 60:
+            t += 60  # lunch
+        s, e = t, t + length
+        args = ["create", "--start", f"{day}T{s // 60:02}:{s % 60:02}:00+09:00", "--end", f"{day}T{e // 60:02}:{e % 60:02}:00+09:00", "--title", title, "--project-id", projects[p], "--confirmed"]
+        if tag: args += ["--tag-id", tags[tag]]
+        cli(*args)
+        t, minutes = e, minutes - length
+    day += datetime.timedelta(days=1)
 print(cli("status"))
