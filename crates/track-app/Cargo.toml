@@ -20,6 +20,12 @@ chrono.workspace = true
 async-channel = "2"
 dirs.workspace = true
 
+# Registers the Japanese 「ウインドウ」「ヘルプ」 menus with macOS (GPUI only does it for "Window").
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSThread"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSMenu", "NSMenuItem", "NSResponder"] }
+
 [dev-dependencies]
 tempfile.workspace = true
 rusqlite.workspace = true

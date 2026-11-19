@@ -87,9 +87,10 @@ pub fn set_menus(cx: &mut App) {
         Menu::new("ウインドウ").items([
             MenuItem::action("しまう", Minimize),
             MenuItem::action("拡大／縮小", Zoom),
-            MenuItem::action("フルスクリーンにする", ToggleFullScreen),
+            // macOS adds 「フルスクリーンにする」, tiling and the window list to this menu itself
+            // (register_system_menus); ⌃⌘F still works.
             MenuItem::separator(),
-            MenuItem::action("Track", ShowMainWindow),
+            MenuItem::action("メインウインドウ", ShowMainWindow),
             MenuItem::separator(),
             MenuItem::action("すべてを手前に移動", BringAllToFront),
         ]),
@@ -122,4 +123,23 @@ fn macos_version() -> String {
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|v| format!("macOS {}", v.trim()))
         .unwrap_or_else(|| "macOS".into())
+}
+
+/// Tells macOS which of our (Japanese) menus are the Window and Help menus, so it adds the window
+/// list and tiling to 「ウインドウ」 and the search field to 「ヘルプ」. GPUI does this only for a
+/// menu named "Window". Call right after `set_menus`.
+#[cfg(target_os = "macos")]
+pub fn register_system_menus() {
+    use objc2_app_kit::NSApplication;
+    use objc2_foundation::{MainThreadMarker, NSString};
+    let Some(mtm) = MainThreadMarker::new() else { return };
+    let app = NSApplication::sharedApplication(mtm);
+    let Some(main) = app.mainMenu() else { return };
+    let submenu = |title: &str| main.itemWithTitle(&NSString::from_str(title)).and_then(|item| item.submenu());
+    if let Some(menu) = submenu("ウインドウ") {
+        app.setWindowsMenu(Some(&menu));
+    }
+    if let Some(menu) = submenu("ヘルプ") {
+        app.setHelpMenu(Some(&menu));
+    }
 }

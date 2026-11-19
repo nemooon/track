@@ -31,6 +31,8 @@ fn main() {
         crate::ui::theme::apply_setting(setting, crate::ui::theme::is_dark(cx.window_appearance()), cx);
         actions::bind_keys(cx);
         actions::set_menus(cx);
+        #[cfg(target_os = "macos")]
+        actions::register_system_menus();
         cx.on_action(|_: &actions::Quit, cx| cx.quit());
         // From the Track menu even while another window (settings, about) is in front.
         cx.on_action(|_: &actions::ShowAbout, cx| crate::ui::about::open_about(cx));

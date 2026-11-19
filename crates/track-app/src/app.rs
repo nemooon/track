@@ -456,7 +456,7 @@ pub fn main_window_options(cx: &App) -> gpui::WindowOptions {
         .unwrap_or((1200., 800.));
     gpui::WindowOptions {
         window_bounds: Some(gpui::WindowBounds::Windowed(gpui::Bounds::centered(None, gpui::size(px(w), px(h)), cx))),
-        titlebar: Some(gpui::TitlebarOptions { title: Some("Track (GPUI)".into()), appears_transparent: true, traffic_light_position: Some(app_traffic_light_position()) }),
+        titlebar: Some(gpui::TitlebarOptions { title: Some("Track".into()), appears_transparent: true, traffic_light_position: Some(app_traffic_light_position()) }),
         window_min_size: Some(gpui::size(px(360.), px(480.))),
         ..Default::default()
     }
