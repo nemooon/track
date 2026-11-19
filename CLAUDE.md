@@ -23,6 +23,7 @@
 - `scripts/prepare-db.sh` — `~/.track` の DB を `~/.track-gpui` にコピーする（`--force` で作り直し）
 - `cargo build --workspace` — アプリと `track-cli` を同じフォルダにビルド
 - `TRACK_DATA_DIR="$HOME/.track-gpui" cargo run` — アプリを起動（`~` ではなく `$HOME` を使う）
+- `TRACK_GPUI_UPDATE_PREVIEW=9.9.9` を付けて起動すると、更新ウインドウが見本の新しい版を出す（開発版だけ。アップデートは何もせず成功にする）
 - `cargo test --workspace` — テスト。`cargo test` だけではアプリのバイナリは作り直されないので、実画面で確かめる前に `cargo build -p track-app`
 - `cargo clippy --workspace --all-targets` — 警告ゼロを保つ（`--features track-core/real-data` を付けた形でも）
 - `scripts/package.sh` — アルファ版の `Track.app` と DMG を `target/package/` に作る。これだけが開発用ガードを外して本物の `~/.track` を開く

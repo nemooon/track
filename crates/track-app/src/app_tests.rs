@@ -593,3 +593,14 @@ fn update_window_retries_a_failed_check(cx: &mut TestAppContext) {
     assert!(ucx.debug_bounds("update-error").is_some());
     assert!(ucx.debug_bounds("update-retry").is_some());
 }
+
+/// TRACK_GPUI_UPDATE_PREVIEW (development builds only) stands in a sample newer release whose
+/// update pretends to succeed, to look at the window without a real release.
+#[test]
+fn the_update_preview_offers_a_sample_release() {
+    let source = crate::ui::update::preview_source("9.9.9");
+    let release = (source.fetch)().unwrap();
+    assert_eq!(release.version, "9.9.9");
+    assert!(!release.notes.is_empty(), "with sample notes");
+    assert!((source.install)(&release).is_ok(), "the update pretends to succeed");
+}

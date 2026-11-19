@@ -49,8 +49,35 @@ pub fn set_source(source: UpdateSource, cx: &mut App) {
     cx.set_global(source);
 }
 
+/// A sample newer release whose update pretends to succeed (after a moment), to look at the
+/// window without a real release. Used by development builds started with
+/// `TRACK_GPUI_UPDATE_PREVIEW=<version>`.
+pub fn preview_source(version: &str) -> UpdateSource {
+    let version = version.to_string();
+    UpdateSource {
+        fetch: Arc::new(move || {
+            Ok(Release {
+                version: version.clone(),
+                notes: "## 新しくなったこと\n\n- これは確認用の見本のリリースノートです\n- **太字**や`コード`、[リンク](https://github.com/nemooon/track)も表示できます\n\n## 直したこと\n\n- 実際のリリースでは、GitHub に書いた内容がここに出ます".into(),
+                url: "https://github.com/nemooon/track/releases".into(),
+            })
+        }),
+        install: Arc::new(|_| {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            Ok(())
+        }),
+    }
+}
+
 fn source(cx: &App) -> UpdateSource {
-    cx.try_global::<UpdateSource>().cloned().unwrap_or_else(UpdateSource::real)
+    if let Some(s) = cx.try_global::<UpdateSource>() {
+        return s.clone();
+    }
+    // Development builds only: the preview never reaches a packaged app.
+    match std::env::var("TRACK_GPUI_UPDATE_PREVIEW") {
+        Ok(v) if track_core::guard::GUARDED && !cfg!(test) && !v.is_empty() => preview_source(&v),
+        _ => UpdateSource::real(),
+    }
 }
 
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
