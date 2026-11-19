@@ -172,7 +172,7 @@ impl Render for ReportSettings {
         div()
             .child(formats_card)
             .child(
-                form::section(p, "reports-section-template", "週報テンプレート", "AIが週の工数をまとめる際の出力構成を設定します。", false).child(form::field(p, 
+                form::section(p, "reports-section-template", "週報テンプレート", "AIが週の稼働をまとめる際の出力構成を設定します。", false).child(form::field(p, 
                     "reports-field-template",
                     "出力テンプレート",
                     "Markdownの見出しや固定文を利用できます。",

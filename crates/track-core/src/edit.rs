@@ -76,7 +76,7 @@ impl Db {
     pub fn edit_entries(&mut self, source: &str, ids: &[String], patch: EntryPatch) -> Result<(Vec<TimeEntry>, Operation)> {
         let ids = unique(ids);
         if ids.is_empty() {
-            return Err(invalid("変更する工数を指定してください。"));
+            return Err(invalid("変更する稼働を指定してください。"));
         }
         if ids.len() > 1 && (patch.start.is_some() || patch.end.is_some()) {
             return Err(invalid("開始・終了は1件ずつ変更してください。"));
@@ -97,14 +97,14 @@ impl Db {
                 out.push(db.update_entry(id, patch.clone())?);
             }
             let n = out.len() as i64;
-            Ok((out, format!("{n}件の工数の{fields}を変更{to_project}"), n))
+            Ok((out, format!("{n}件の稼働の{fields}を変更{to_project}"), n))
         })
     }
 
     pub fn remove_entries(&mut self, source: &str, ids: &[String]) -> Result<((), Operation)> {
         let ids = unique(ids);
         if ids.is_empty() {
-            return Err(invalid("削除する工数を指定してください。"));
+            return Err(invalid("削除する稼働を指定してください。"));
         }
         self.with_operation(source, move |db, rec| {
             for id in &ids {
@@ -121,7 +121,7 @@ impl Db {
                 db.delete_entry(id)?;
             }
             let n = ids.len() as i64;
-            Ok(((), format!("{n}件の工数を削除"), n))
+            Ok(((), format!("{n}件の稼働を削除"), n))
         })
     }
 
@@ -130,7 +130,7 @@ impl Db {
             let e = db.create_entry(input)?;
             rec.created(Table::TimeEntry, "id", &e.id);
             rec.created(Table::TagOnEntry, "entryId", &e.id);
-            let summary = format!("工数を記録（{}）", e.title.clone().unwrap_or_default());
+            let summary = format!("稼働を記録（{}）", e.title.clone().unwrap_or_default());
             Ok((e, summary, 1))
         })
     }
@@ -147,7 +147,7 @@ impl Db {
             rec.created(Table::TimeEntry, "id", &e.id);
             rec.created(Table::TagOnEntry, "entryId", &e.id);
             rec.created(Table::AiRegistration, "requestId", &request_id);
-            let summary = format!("工数を記録（{}）", e.title.clone().unwrap_or_default());
+            let summary = format!("稼働を記録（{}）", e.title.clone().unwrap_or_default());
             Ok(((e, replay), summary, 1))
         })?;
         Ok((e, replay, op))

@@ -56,7 +56,7 @@ impl WeeklyReport {
             let result: Result<String, String> = async {
                 let entries = api.report_entries(&q).await.map_err(|e| e.message)?;
                 if entries.entries.is_empty() {
-                    return Err("この週には週報に含める工数がありません。".into());
+                    return Err("この週には週報に含める稼働がありません。".into());
                 }
                 let (prompt, main_work) = build_weekly_report_prompt(&template, &period, &entries);
                 let rx = api.generate_stream(track_core::ai::AiMode::WeeklyReport, prompt);

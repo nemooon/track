@@ -159,7 +159,7 @@ impl CustomOutput {
         self.started = Some(Instant::now());
         if self.ctx.rows.is_empty() {
             self.generating = false;
-            self.error = Some("この期間には出力する工数がありません。".into());
+            self.error = Some("この期間には出力する稼働がありません。".into());
             cx.notify();
             return;
         }
@@ -457,7 +457,7 @@ impl Render for CustomOutput {
                                         .map(|d| if uses_ai { d.bg(p.ai_bg).text_color(p.ai) } else { d.bg(p.hover).text_color(p.text_muted) })
                                         .child(if uses_ai { "AI使用" } else { "AIなし" }),
                                 )
-                                .child(if uses_ai { "設定した指示で工数を再分類して出力します。" } else { "現在の集計結果を指定した列順で出力します。" }),
+                                .child(if uses_ai { "設定した指示で稼働を再分類して出力します。" } else { "現在の集計結果を指定した列順で出力します。" }),
                         )
                     }),
             )

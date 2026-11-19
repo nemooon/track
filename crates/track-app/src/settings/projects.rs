@@ -538,7 +538,7 @@ impl ProjectSettings {
                         .child({
                             // Deletable only when none of its projects has entries.
                             let deletable = !self.projects.iter().any(|pj| pj.client_id == c.id && self.with_entries.contains(&pj.id));
-                            let tip = if deletable { "削除する" } else { "工数のあるプロジェクトがあるため削除できません" };
+                            let tip = if deletable { "削除する" } else { "稼働のあるプロジェクトがあるため削除できません" };
                             let shown = if deletable { 1. } else { 0.35 };
                             let icon = tree_icon(format!("tree-client-delete-{}", c.id), crate::ui::icons::trash(), tip)
                                 .text_color(p.text_muted)
@@ -560,7 +560,7 @@ impl ProjectSettings {
                                         });
                                     },
                                     super::popover::Confirm {
-                                        message: format!("「{}」を削除しますか？工数のないプロジェクトも一緒に削除されます。元に戻せません。", c.name),
+                                        message: format!("「{}」を削除しますか？稼働のないプロジェクトも一緒に削除されます。元に戻せません。", c.name),
                                         cancel_id: "tree-client-delete-cancel",
                                         confirm_id: "tree-client-delete-confirm",
                                         confirm_label: "削除",
@@ -763,7 +763,7 @@ impl ProjectSettings {
                                 }
                             })
                             .when(self.with_entries.contains(&pj.id), |d| {
-                                d.child(div().debug_selector(|| "detail-delete-disabled".into()).text_xs().text_color(p.text_faint).child("工数があるため削除できません"))
+                                d.child(div().debug_selector(|| "detail-delete-disabled".into()).text_xs().text_color(p.text_faint).child("稼働があるため削除できません"))
                             }),
                     )
                     .children(error)

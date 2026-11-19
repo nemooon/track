@@ -183,7 +183,7 @@ impl Render for IntegrationsWindow {
             .bg(p.bg)
             .text_color(p.text)
             .child(div().text_size(px(18.)).font_weight(FontWeight::BOLD).child("スキルのインストール"))
-            .child(div().mt_1().text_size(px(12.)).text_color(p.text_muted).child("AI ツールから Track に工数を記録するためのスキルを入れます。"))
+            .child(div().mt_1().text_size(px(12.)).text_color(p.text_muted).child("AI ツールから Track に稼働を記録するためのスキルを入れます。"))
             .when(DEV_NAMES, |d| d.child(div().mt_1().text_size(px(11.)).text_color(p.text_faint).child("開発版のため track-dev の名前で入れ、コピー DB（~/.track-gpui）を使います。")))
             .child(div().mt_3().h(px(1.)).bg(p.border_subtle))
             .child(self.area(IntegrationKind::Codex, p, cx))

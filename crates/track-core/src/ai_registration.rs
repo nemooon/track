@@ -105,9 +105,9 @@ impl Db {
                 return Err(CoreError::code_msg("request_id_conflict", "同じ要求IDで別の内容が登録されています。"));
             }
             let Some(entry_id) = entry_id else {
-                return Err(CoreError::code_msg("registered_entry_deleted", "この要求で登録した工数は削除されています。"));
+                return Err(CoreError::code_msg("registered_entry_deleted", "この要求で登録した稼働は削除されています。"));
             };
-            let entry = self.entry(&entry_id)?.ok_or_else(|| CoreError::code_msg("registered_entry_deleted", "この要求で登録した工数は削除されています。"))?;
+            let entry = self.entry(&entry_id)?.ok_or_else(|| CoreError::code_msg("registered_entry_deleted", "この要求で登録した稼働は削除されています。"))?;
             return Ok((entry, true));
         }
         let overlap_ids: Vec<(String, String, String, Option<String>)> = tx
@@ -121,7 +121,7 @@ impl Db {
             drop(tx);
             let overlaps: Vec<TimeEntry> = overlap_ids.iter().filter_map(|(id, ..)| self.entry(id).ok().flatten()).collect();
             let code = if exact { "exact_duplicate" } else { "overlap_requires_confirmation" };
-            let message = if exact { "同じ時間帯・タイトルの工数が既にあります。" } else { "既存の工数と時間が重なっています。" };
+            let message = if exact { "同じ時間帯・タイトルの稼働が既にあります。" } else { "既存の稼働と時間が重なっています。" };
             return Err(CoreError::with_details(code, message, serde_json::json!({ "error": code, "overlaps": overlaps })));
         }
         let id = insert_entry(&tx, &input, start, end)?;

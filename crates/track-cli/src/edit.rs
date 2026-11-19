@@ -113,7 +113,7 @@ pub fn update(db: &mut Db, args: &[String]) -> Result<Value> {
     let src = source(args)?;
     if ids.len() >= CONFIRM_FROM && !flag(args, "--confirmed") {
         let n = ids.len();
-        confirm_entries(db, &ids, format!("{n}件の工数を変更します。一覧を利用者に示して許可を得てから--confirmedを付けてください。"))?;
+        confirm_entries(db, &ids, format!("{n}件の稼働を変更します。一覧を利用者に示して許可を得てから--confirmedを付けてください。"))?;
     }
     let (entries, op) = db.edit_entries(src, &ids, patch)?;
     Ok(json!({ "updated": entries.iter().map(entry_detail).collect::<Vec<_>>(), "operation": op }))
@@ -127,7 +127,7 @@ pub fn delete(db: &mut Db, args: &[String]) -> Result<Value> {
     let src = source(args)?;
     if !flag(args, "--confirmed") {
         let n = ids.len();
-        confirm_entries(db, &ids, format!("{n}件の工数を削除します。一覧を利用者に示して許可を得てから--confirmedを付けてください。"))?;
+        confirm_entries(db, &ids, format!("{n}件の稼働を削除します。一覧を利用者に示して許可を得てから--confirmedを付けてください。"))?;
     }
     let ((), op) = db.remove_entries(src, &ids)?;
     Ok(json!({ "deleted": ids.len(), "operation": op }))
@@ -219,7 +219,7 @@ pub fn tag(db: &mut Db, args: &[String]) -> Result<Value> {
                 let name = db.tags()?.into_iter().find(|t| t.id == id).map(|t| t.name).unwrap_or_default();
                 return Err(CoreError::with_details(
                     "confirmation_required",
-                    format!("タグ「{name}」を削除します（付いている工数・プロジェクトからも外れます）。利用者に確認してから--confirmedを付けてください。"),
+                    format!("タグ「{name}」を削除します（付いている稼働・プロジェクトからも外れます）。利用者に確認してから--confirmedを付けてください。"),
                     json!({ "name": name }),
                 ));
             }
