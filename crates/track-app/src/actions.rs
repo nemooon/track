@@ -1,6 +1,6 @@
 use gpui::{App, KeyBinding, Menu, MenuItem, OsAction, SystemMenuType, actions};
 
-actions!(track, [ShowCalendar, ShowReports, PrevPeriod, NextPeriod, Today, ZoomIn, ZoomOut, InstallIntegrations, OpenSettings, ShowAbout, CheckForUpdates, CloseWindow, ShowMainWindow, Quit]);
+actions!(track, [ShowCalendar, ShowReports, PrevPeriod, NextPeriod, Today, ZoomIn, ZoomOut, InstallIntegrations, OpenSettings, ShowAbout, CheckForUpdates, CloseWindow, ShowMainWindow, Minimize, Zoom, ToggleFullScreen, BringAllToFront, ReportIssue, Quit]);
 
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
@@ -17,6 +17,8 @@ pub fn bind_keys(cx: &mut App) {
         // Closes the window in front when it handles it (the skills window); the main window doesn't.
         KeyBinding::new("cmd-w", CloseWindow, None),
         KeyBinding::new("cmd-0", ShowMainWindow, None),
+        KeyBinding::new("cmd-m", Minimize, None),
+        KeyBinding::new("ctrl-cmd-f", ToggleFullScreen, None),
     ]);
     // ⌘W closes the window in front, the main window included.
     cx.on_action(|_: &CloseWindow, cx| {
@@ -30,6 +32,19 @@ pub fn bind_keys(cx: &mut App) {
     // ⌘1・⌘2 from another window, or with the main window closed: bring it (back) on that page.
     cx.on_action(|_: &ShowCalendar, cx| crate::app::show_main_window(Some(crate::app::Page::Calendar), cx));
     cx.on_action(|_: &ShowReports, cx| crate::app::show_main_window(Some(crate::app::Page::Reports), cx));
+    // The Window menu acts on the window in front (after the key or menu is done with it).
+    fn on_front(cx: &mut App, f: impl FnOnce(&mut gpui::Window) + 'static) {
+        if let Some(window) = cx.active_window() {
+            cx.defer(move |cx| {
+                let _ = window.update(cx, |_, window, _| f(window));
+            });
+        }
+    }
+    cx.on_action(|_: &Minimize, cx| on_front(cx, |w| w.minimize_window()));
+    cx.on_action(|_: &Zoom, cx| on_front(cx, |w| w.zoom_window()));
+    cx.on_action(|_: &ToggleFullScreen, cx| on_front(cx, |w| w.toggle_fullscreen()));
+    cx.on_action(|_: &BringAllToFront, cx| cx.activate(true));
+    cx.on_action(|_: &ReportIssue, cx| cx.open_url(&issue_url(env!("CARGO_PKG_VERSION"), &macos_version())));
     // ⌘0: the main window as it was (the Window menu's 「Track」).
     cx.on_action(|_: &ShowMainWindow, cx| crate::app::show_main_window(None, cx));
 }
@@ -69,6 +84,42 @@ pub fn set_menus(cx: &mut App) {
             MenuItem::action("カレンダーを拡大", ZoomIn),
             MenuItem::action("カレンダーを縮小", ZoomOut),
         ]),
-        Menu::new("ウインドウ").items([MenuItem::action("Track", ShowMainWindow)]),
+        Menu::new("ウインドウ").items([
+            MenuItem::action("しまう", Minimize),
+            MenuItem::action("拡大／縮小", Zoom),
+            MenuItem::action("フルスクリーンにする", ToggleFullScreen),
+            MenuItem::separator(),
+            MenuItem::action("Track", ShowMainWindow),
+            MenuItem::separator(),
+            MenuItem::action("すべてを手前に移動", BringAllToFront),
+        ]),
+        Menu::new("ヘルプ").items([MenuItem::action("問題を報告…", ReportIssue)]),
     ]);
+}
+
+/// A new GitHub issue for Track, with the app and macOS versions filled in (nothing else).
+pub fn issue_url(version: &str, os: &str) -> String {
+    let body = format!("## 起きたこと\n\n\n## 手順\n\n1. \n\n## 環境\n\n- Track {version}\n- {os}\n");
+    format!("https://github.com/nemooon/track/issues/new?body={}", encode(&body))
+}
+
+/// Percent-encodes everything but unreserved characters.
+fn encode(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+/// 「macOS 15.1」 from sw_vers, or just 「macOS」.
+fn macos_version() -> String {
+    std::process::Command::new("/usr/bin/sw_vers")
+        .arg("-productVersion")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|v| format!("macOS {}", v.trim()))
+        .unwrap_or_else(|| "macOS".into())
 }

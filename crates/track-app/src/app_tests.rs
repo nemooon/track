@@ -723,3 +723,25 @@ fn cmd_0_shows_the_main_window(cx: &mut TestAppContext) {
     app_cx.run_until_parked();
     assert_eq!(app_cx.update(|cx| cx.windows().len()), 1, "back");
 }
+
+/// The Window menu's usual keys: ⌘M しまう, ⌃⌘F フルスクリーン.
+#[gpui::test]
+fn window_menu_keys_are_the_usual_ones(cx: &mut TestAppContext) {
+    let (_app, cx) = open_app(cx);
+    let keys = |cx: &mut gpui::VisualTestContext, action: &dyn gpui::Action| cx.update(|window, _| window.bindings_for_action(action).into_iter().map(|b| format!("{:?}", b.keystrokes())).collect::<Vec<_>>().join(" "));
+    let m = keys(cx, &crate::actions::Minimize);
+    assert!(m.contains("platform: true") && m.contains("key: \"m\""), "⌘M: {m}");
+    let f = keys(cx, &crate::actions::ToggleFullScreen);
+    assert!(f.contains("platform: true") && f.contains("control: true") && f.contains("key: \"f\""), "⌃⌘F: {f}");
+}
+
+/// 「問題を報告…」 opens a new GitHub issue with the version and macOS filled in (nothing of
+/// the user's data).
+#[test]
+fn report_an_issue_opens_github_with_the_versions() {
+    let url = crate::actions::issue_url("0.8.0-alpha.1", "macOS 27.0");
+    assert!(url.starts_with("https://github.com/nemooon/track/issues/new?"), "{url}");
+    assert!(url.contains("0.8.0-alpha.1"), "the app version: {url}");
+    assert!(url.contains("macOS%2027.0"), "the macOS version, encoded: {url}");
+    assert!(!url.contains(' '), "encoded: {url}");
+}
