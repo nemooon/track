@@ -7,6 +7,8 @@ use std::process::{Command, Output};
 pub const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/nemooon/track/releases/latest";
 pub const HOMEBREW_TRACK_CASK: &str = "nemooon/tap/track";
 pub const XATTR: &str = "/usr/bin/xattr";
+/// What someone who installed from the zip or DMG runs after replacing Track.app.
+pub const QUARANTINE_COMMAND: &str = "xattr -dr com.apple.quarantine /Applications/Track.app";
 const CURL: &str = "/usr/bin/curl";
 
 #[derive(Debug, Clone, PartialEq)]
@@ -80,6 +82,16 @@ pub fn fetch_latest() -> Result<Release, String> {
 
 pub fn homebrew_executable() -> Option<PathBuf> {
     ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"].into_iter().map(PathBuf::from).find(|p| p.is_file())
+}
+
+/// Where Homebrew keeps what it installed (Apple silicon, then Intel).
+pub const CASKROOMS: [&str; 2] = ["/opt/homebrew/Caskroom", "/usr/local/Caskroom"];
+
+/// Whether Homebrew installed `app`: some `<caskroom>/track/<version>/Track.app` leads to it.
+/// Only files are read, so the update window can ask before anything runs.
+pub fn installed_by_homebrew(caskrooms: &[&Path], app: &Path) -> bool {
+    let Ok(app) = app.canonicalize() else { return false };
+    caskrooms.iter().filter_map(|room| std::fs::read_dir(room.join("track")).ok()).flatten().flatten().any(|version| version.path().join("Track.app").canonicalize().is_ok_and(|p| p == app))
 }
 
 fn command_error(output: &Output) -> String {
