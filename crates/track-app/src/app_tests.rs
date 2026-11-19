@@ -479,24 +479,16 @@ fn the_bell_toggles_the_history(cx: &mut TestAppContext) {
 fn the_app_menu_lists_its_items(cx: &mut TestAppContext) {
     let (_app, cx) = open_app(cx);
     assert!(cx.debug_bounds("open-settings").is_none(), "no gear any more");
+    assert!(cx.debug_bounds("app-menu-shortcuts").is_none(), "no shortcut list");
     click_sel(cx, "app-menu");
     let button = cx.debug_bounds("app-menu").unwrap();
-    let items = ["app-menu-shortcuts", "app-menu-settings", "app-menu-integrations", "app-menu-update", "app-menu-about"];
+    let items = ["app-menu-settings", "app-menu-integrations", "app-menu-update", "app-menu-about"];
     let mut last = button.bottom();
     for id in items {
         let b = cx.debug_bounds(id).unwrap_or_else(|| panic!("{id}"));
         assert!(b.top() >= last, "{id} comes below the button, in order");
         last = b.top();
     }
-}
-
-#[gpui::test]
-fn the_app_menu_shows_the_shortcuts(cx: &mut TestAppContext) {
-    let (_app, cx) = open_app(cx);
-    click_sel(cx, "app-menu");
-    click_sel(cx, "app-menu-shortcuts");
-    assert!(cx.debug_bounds("shortcuts-dialog").is_some());
-    assert!(cx.debug_bounds("app-menu-shortcuts").is_none(), "the menu closes");
 }
 
 /// 「Track について」 opens its own window (one, brought forward again), with the version and

@@ -1,18 +1,10 @@
-//! The header's 「…」 menu, as in the Tauri version: keyboard shortcuts, settings, the AI
-//! integration and about. It opens from the button (a popover), like every menu in the app.
+//! The header's 「…」 menu, as in the Tauri version: settings, the AI integration, updates and
+//! about. It opens from the button (a popover), like every menu in the app.
 use crate::app::TrackApp;
 use crate::settings::popover::Trigger;
 use crate::ui::theme::*;
 use gpui::{AnyElement, Context, InteractiveElement, IntoElement, MouseButton, ParentElement, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px};
 use gpui_component::popover::Popover;
-use gpui_component::WindowExt as _;
-
-/// The shortcuts listed in 「キーボードショートカット」, grouped as in the Tauri version.
-pub const SHORTCUTS: [(&str, &[(&str, &str)]); 3] = [
-    ("画面", &[("カレンダーを開く", "⌘1"), ("レポートを開く", "⌘2"), ("設定を開く", "⌘,")]),
-    ("日付", &[("前の期間へ移動", "⌘["), ("次の期間へ移動", "⌘]"), ("今日へ移動", "⌘T")]),
-    ("カレンダー", &[("表示を拡大", "⌘+"), ("表示を縮小", "⌘−")]),
-];
 
 pub fn render(app: &TrackApp, cx: &mut Context<TrackApp>) -> AnyElement {
     let p = palette(cx);
@@ -47,9 +39,7 @@ pub fn render(app: &TrackApp, cx: &mut Context<TrackApp>) -> AnyElement {
                 .flex()
                 .flex_col()
                 .text_size(px(13.))
-                .child(item("app-menu-shortcuts", "キーボードショートカット", None, p, cx, open_shortcuts))
-                .child(div().my(px(3.)).mx_1().h(px(1.)).bg(p.border_subtle))
-                .child(item("app-menu-settings", "設定…", Some("⌘,"), p, cx, |this, _, cx| crate::settings::open_settings(this.state.clone(), cx)))
+                                .child(item("app-menu-settings", "設定…", Some("⌘,"), p, cx, |this, _, cx| crate::settings::open_settings(this.state.clone(), cx)))
                 .child(item("app-menu-integrations", integrations, None, p, cx, |this, window, cx| this.open_integrations(window, cx)))
                 .child(div().my(px(3.)).mx_1().h(px(1.)).bg(p.border_subtle))
                 .child(item("app-menu-update", "アップデートを確認…", None, p, cx, |_, _, cx| crate::ui::update::open_update(cx)))
@@ -88,24 +78,6 @@ fn item(
             run(this, window, cx);
             cx.notify();
         }))
-}
-
-fn open_shortcuts(_: &mut TrackApp, window: &mut Window, cx: &mut Context<TrackApp>) {
-    let p = palette(cx);
-    window.open_dialog(cx, move |dialog, _, _| {
-        dialog.title("キーボードショートカット").w(px(400.)).child(
-            div().debug_selector(|| "shortcuts-dialog".into()).flex().flex_col().gap_4().children(SHORTCUTS.iter().map(|(group, items)| {
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .child(div().text_xs().font_weight(gpui::FontWeight::SEMIBOLD).text_color(p.text_muted).child(*group))
-                    .children(items.iter().map(|(label, keys)| {
-                        div().flex().justify_between().text_size(px(13.)).child(div().text_color(p.text).child(*label)).child(div().font_family(MONO).text_color(p.text_muted).child(*keys))
-                    }))
-            })),
-        )
-    });
 }
 
 fn open_about(_: &mut TrackApp, _: &mut Window, cx: &mut Context<TrackApp>) {
