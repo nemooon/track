@@ -155,3 +155,14 @@ fn someone_elses_files_are_reported_and_never_removed() {
     assert!(cmd.exists(), "left alone");
     assert!(uninstall_integration_in(home.path(), IntegrationKind::Codex, true).is_err(), "nothing to uninstall");
 }
+
+#[test]
+fn outdated_lists_only_old_track_skills() {
+    let home = tempfile::tempdir().unwrap();
+    assert!(outdated_integrations(home.path(), true).is_empty(), "nothing installed");
+    install_integrations_in(home.path(), IntegrationKind::Codex, true).unwrap();
+    install_integrations_in(home.path(), IntegrationKind::Claude, true).unwrap();
+    assert!(outdated_integrations(home.path(), true).is_empty(), "both current");
+    std::fs::write(home.path().join(".claude/commands/track-dev.md"), "<!-- track:claude-command:v1 -->\n# /track-dev 古い文面\n").unwrap();
+    assert_eq!(outdated_integrations(home.path(), true), vec![IntegrationKind::Claude]);
+}

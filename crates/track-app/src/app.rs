@@ -102,6 +102,8 @@ pub enum HistoryAction {
     Restore(Box<track_core::model::TimeEntry>),
     /// Undoes this AI operation alone.
     UndoAi(i64),
+    /// Brings these AI tools' Track skills up to date (「更新」).
+    UpdateSkills(Vec<track_core::integrations::IntegrationKind>),
 }
 
 /// Where a row's 「元に戻す」 stands.
@@ -352,6 +354,25 @@ impl AppState {
         }
     }
 
+    /// Some installed skills are older than this version: tell, with 「更新」 in the history.
+    /// Says nothing again while such a notice is still open.
+    pub fn tell_skills_outdated(&mut self, kinds: Vec<track_core::integrations::IntegrationKind>, cx: &mut Context<Self>) {
+        let open = self.history.items.iter().any(|i| matches!(i.action, Some(HistoryAction::UpdateSkills(_))) && i.undo != UndoState::Done);
+        if kinds.is_empty() || open {
+            return;
+        }
+        let names: Vec<&str> = kinds.iter().map(|k| if *k == track_core::integrations::IntegrationKind::Claude { "Claude Code" } else { "Codex" }).collect();
+        self.notice(format!("スキルの新しい版があります：{}", names.join("・")), false, Some(HistoryAction::UpdateSkills(kinds)), cx);
+    }
+
+    /// Records how a history row's action went (done or the reason it failed).
+    pub fn set_history_undo(&mut self, id: u64, state: UndoState, cx: &mut Context<Self>) {
+        if let Some(item) = self.history.get_mut(id) {
+            item.undo = state;
+        }
+        cx.notify();
+    }
+
     /// 「履歴を消す」.
     pub fn clear_history(&mut self, cx: &mut Context<Self>) {
         self.history.items.clear();
@@ -369,6 +390,7 @@ impl AppState {
                 cx.notify();
                 Some(*entry)
             }
+            HistoryAction::UpdateSkills(_) => None,
             HistoryAction::UndoAi(op) => {
                 item.undo = UndoState::Busy;
                 let fut = self.api.undo_operations(vec![op]);
@@ -575,6 +597,11 @@ impl TrackApp {
                 }
             });
         }
+        // Once the window is up: tell when an installed skill is out of date.
+        cx.spawn(async move |this, cx| {
+            let _ = this.update(cx, |a, cx| a.check_skills(cx));
+        })
+        .detach();
         Self::with_state(state, window, cx)
     }
 
@@ -668,6 +695,23 @@ impl TrackApp {
                 last = Some(v);
             }
         })
+    }
+
+    /// Tells when an installed skill is older than this version (at startup).
+    pub fn check_skills(&mut self, cx: &mut Context<Self>) {
+        let kinds = track_core::integrations::outdated_integrations(&self.integrations_home, crate::ui::integrations_window::DEV_NAMES);
+        self.state.update(cx, |s, cx| s.tell_skills_outdated(kinds, cx));
+    }
+
+    /// 「更新」 on the skills notice: installs the current text for each tool.
+    pub fn update_skills(&mut self, id: u64, kinds: Vec<track_core::integrations::IntegrationKind>, cx: &mut Context<Self>) {
+        let home = self.integrations_home.clone();
+        let result = kinds.iter().try_for_each(|&k| track_core::integrations::install_integrations_in(&home, k, crate::ui::integrations_window::DEV_NAMES).map(|_| ()));
+        let state = match result {
+            Ok(()) => UndoState::Done,
+            Err(e) => UndoState::Failed(e.to_string()),
+        };
+        self.state.update(cx, |s, cx| s.set_history_undo(id, state, cx));
     }
 
     /// 「スキルのインストール…」: the window that installs and uninstalls the AI skills.

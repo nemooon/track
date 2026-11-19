@@ -745,3 +745,30 @@ fn report_an_issue_opens_github_with_the_versions() {
     assert!(url.contains("macOS%2027.0"), "the macOS version, encoded: {url}");
     assert!(!url.contains(' '), "encoded: {url}");
 }
+
+/// An installed skill older than this version is told about at startup; 「更新」 in the history
+/// brings it up to date. Up-to-date skills say nothing.
+#[gpui::test]
+fn an_outdated_skill_is_told_and_updated_from_the_history(cx: &mut TestAppContext) {
+    use track_core::integrations::{IntegrationKind, IntegrationStatus, install_integrations_in, integration_status};
+    let (app, cx) = open_app(cx);
+    let home = tempfile::tempdir().unwrap();
+    install_integrations_in(home.path(), IntegrationKind::Codex, true).unwrap();
+    app.update(cx, |a, cx| {
+        a.integrations_home = home.path().to_path_buf();
+        a.check_skills(cx);
+    });
+    settle(cx);
+    assert!(app.read_with(cx, |a, cx| a.state.read(cx).history.items.is_empty()), "current: nothing to say");
+
+    std::fs::write(home.path().join(".codex/skills/track-dev/SKILL.md"), "---\nname: track-dev\n---\n古い文面\n").unwrap();
+    app.update(cx, |a, cx| a.check_skills(cx));
+    settle(cx);
+    let text = app.read_with(cx, |a, cx| a.state.read(cx).history.items[0].text.clone());
+    assert!(text.contains("スキル") && text.contains("Codex"), "{text}");
+    assert!(cx.debug_bounds("status-flash").is_some(), "flashed");
+    open_history(cx);
+    click_sel(cx, "status-history-undo-0");
+    assert_eq!(integration_status(home.path(), IntegrationKind::Codex, true), IntegrationStatus::Installed, "updated");
+    assert!(cx.debug_bounds("status-history-done-0").is_some(), "the row says so");
+}

@@ -152,6 +152,11 @@ fn history_list(history: &NoticeHistory, p: Palette, cx: &mut Context<TrackApp>)
 fn history_row(i: usize, item: &HistoryItem, p: Palette, cx: &mut Context<TrackApp>) -> AnyElement {
     let id = item.id;
     let undo = item.action.as_ref().map(|_| item.undo.clone());
+    let skills = match &item.action {
+        Some(HistoryAction::UpdateSkills(kinds)) => Some(kinds.clone()),
+        _ => None,
+    };
+    let (act_label, done_label) = if skills.is_some() { ("更新", "更新しました") } else { ("元に戻す", "元に戻しました") };
     div()
         .debug_selector(move || format!("status-history-item-{i}"))
         .flex()
@@ -182,8 +187,12 @@ fn history_row(i: usize, item: &HistoryItem, p: Palette, cx: &mut Context<TrackA
                     .text_color(p.accent)
                     .cursor_pointer()
                     .hover(move |s| s.bg(p.hover))
-                    .child("元に戻す")
+                    .child(act_label)
                     .on_click(cx.listener(move |this, _, window, cx| {
+                        if let Some(kinds) = skills.clone() {
+                            this.update_skills(id, kinds, cx);
+                            return;
+                        }
                         if let Some(entry) = this.state.update(cx, |s, cx| s.undo_from_history(id, cx)) {
                             this.calendar.update(cx, |c, cx| c.restore_deleted(entry, window, cx));
                         }
@@ -195,7 +204,7 @@ fn history_row(i: usize, item: &HistoryItem, p: Palette, cx: &mut Context<TrackA
                     .flex_none()
                     .px_1p5()
                     .text_color(p.text_muted)
-                    .child("元に戻しました")
+                    .child(done_label)
                     .into_any_element(),
             })
         })

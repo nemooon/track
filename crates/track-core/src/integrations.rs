@@ -243,3 +243,8 @@ pub fn uninstall_integration_in(home: &Path, kind: IntegrationKind, dev: bool) -
         }
     }
 }
+
+/// The AI tools whose Track skill is installed but older than this version's text.
+pub fn outdated_integrations(home: &Path, dev: bool) -> Vec<IntegrationKind> {
+    [IntegrationKind::Codex, IntegrationKind::Claude].into_iter().filter(|&k| integration_status(home, k, dev) == IntegrationStatus::Outdated).collect()
+}
