@@ -192,6 +192,19 @@ fn button(id: &'static str, label: &'static str, primary: bool, p: Palette) -> g
         .child(label)
 }
 
+/// The same button, greyed out and not pressable (while updating).
+fn disabled_button(id: &'static str, label: &'static str, primary: bool, p: Palette) -> gpui::Div {
+    div()
+        .debug_selector(move || id.into())
+        .px_3()
+        .py_1()
+        .rounded_md()
+        .text_size(px(13.))
+        .opacity(0.5)
+        .map(|d| if primary { d.bg(p.primary).text_color(p.on_color) } else { d.border_1().border_color(p.border).text_color(p.text) })
+        .child(label)
+}
+
 impl Render for UpdateWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = palette(cx);
@@ -232,10 +245,12 @@ impl Render for UpdateWindow {
                         ),
                     )
             }
+            // The actions stay where they were, greyed out, so nothing jumps.
             Stage::Updating(r) => body
                 .child(heading(format!("バージョン {} にアップデートしています…", r.version)))
                 .child(muted("Homebrew からダウンロードしている間も、Track はそのまま使えます。".into()))
-                .child(notes(r)),
+                .child(notes(r))
+                .child(div().flex().justify_end().gap_2().child(disabled_button("update-later", "あとで", false, p)).child(disabled_button("update-installing", "アップデート中…", true, p))),
             Stage::Updated(r) => body
                 .child(div().debug_selector(|| "update-done".into()).child(heading(format!("バージョン {} にアップデートしました", r.version))))
                 .child(muted("再起動すると新しいバージョンになります。".into()))
