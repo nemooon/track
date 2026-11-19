@@ -424,17 +424,19 @@ impl CalendarView {
                     .h(px(28.))
                     .flex()
                     .items_center()
+                    .justify_between()
                     .gap_2()
                     .border_l_1()
                     .border_color(p.border)
                     .px_2()
                     .text_xs()
-                    .child(div().flex_1().min_w_0().overflow_hidden().flex().items_center().gap(px(2.)).children(dots.into_iter().enumerate().map(|(i, project)| {
+                    // Ten to a row (a long day wraps under the first ten).
+                    .child(div().flex_none().w(px(FOOTER_DOT * FOOTER_DOTS as f32 + FOOTER_DOT_GAP * (FOOTER_DOTS - 1) as f32)).flex().flex_wrap().gap(px(FOOTER_DOT_GAP)).children(dots.into_iter().enumerate().map(|(i, project)| {
                         let color = project.and_then(|id| colors.get(&id).cloned()).filter(|c| !c.is_empty());
                         div()
                             .debug_selector(move || format!("day-dot-{d}-{i}"))
                             .flex_none()
-                            .size(px(4.))
+                            .size(px(FOOTER_DOT))
                             .bg(hex(color.as_deref().unwrap_or(NO_PROJECT)))
                     })))
                     .child(
@@ -1316,6 +1318,9 @@ impl Render for CalendarView {
 
 /// How many dots in the footer stand for a day's work hours.
 const FOOTER_DOTS: usize = 10;
+/// A footer dot's side and the space between dots.
+const FOOTER_DOT: f32 = 4.;
+const FOOTER_DOT_GAP: f32 = 2.;
 
 /// Where 複製 puts a copy of an entry spanning `start`–`end` (minutes into its day): right after
 /// it, the same length; one that would run past 24:00 ends there instead.
