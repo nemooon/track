@@ -16,6 +16,7 @@
 - `helpers/apple-intelligence/` — Apple Intelligence で生成するためのヘルパーアプリ（Swift）
 - `packaging/` — `.app` の `Info.plist` とアイコン（`icon.svg` から `scripts/build-icon.sh` で作る）
 - `scripts/` — `package.sh`（アルファ版を作る）、`prepare-db.sh`（コピー DB を作る）、`winshot.sh`（アプリのウインドウだけを撮る）、`build-ai-helper.sh`（ヘルパーをアプリの隣の `target/debug/` にビルド）、`build-icon.sh`（`icon.py` で描いたアイコンを `packaging/` の icns と PNG にする）
+- `README.md` — 利用者向け（インストール・使い方）。開発向けの説明は `docs/DEVELOPMENT.md`
 - `docs/superpowers/` — 設計書と実装計画
 
 ## 開発コマンド

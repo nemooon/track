@@ -1,0 +1,120 @@
+# Track の開発
+
+利用者向けの説明はリポジトリ直下の `README.md`。ここは作る人向け。
+
+工数を記録する macOS アプリ。GPUI（Zed の Rust UI フレームワーク）で作っている。サーバーを持たず、
+アプリと CLI が共通の `track-core` で SQLite を直接読み書きする。
+設計: `docs/superpowers/specs/2026-11-12-gpui-native-design.md`
+
+以前の Tauri 版（Vite + React + Bun）は `tauri` ブランチとタグ `v0.7.4` に残っている。作り直しの経緯と計測は `NOTES.md`。
+
+## 構成
+
+- `crates/track-core` — DB・集計・AI 登録・`prepare`・AI 生成プロバイダ・連携のインストール
+- `crates/track-cli` — `track-cli`（`src/cli/index.ts` と同じサブコマンドと JSON）
+- `crates/track-app` — GPUI アプリ（`track-gpui`）
+
+## 必要なもの
+
+- Rust 1.98.1（`rust-toolchain.toml` で固定。rustup が自動で入れる）
+- Xcode 本体は不要（`runtime_shaders` でシェーダーを実行時にコンパイルする）
+- `sqlite3` と `python3`（`prepare-db.sh` が使う。macOS の Command Line Tools に含まれる）
+- Bun や API サーバーは不要
+
+## 起動
+
+開発版はコピーした DB（`$HOME/.track-gpui`）だけを扱う。アプリも CLI も、ほかの場所を指定するとエラーで止まる。
+
+```bash
+scripts/prepare-db.sh                 # ~/.track-gpui に DB と config.json をコピー（--force で作り直し）
+cargo build --workspace               # アプリと track-cli を同じフォルダにビルド
+TRACK_DATA_DIR="$HOME/.track-gpui" cargo run
+```
+
+`TRACK_DATA_DIR=~/...` と書くと zsh では `env` の引数の `~` が展開されない。必ず `$HOME` を使う。
+
+アプリは起動時に `~/.track-gpui/runtime.json` へ `cliPath`（アプリと同じフォルダの `track-cli`）を書く。
+CLI はアプリを起動していなくても使えるので、終了時にも消さない。
+別の接続（CLI や AI）が DB に書き込むと、アプリは 1 秒以内に検知して表示を読み直す。
+
+## パッケージとリリース
+
+```bash
+scripts/package.sh    # target/package/Track.app と Track_<版>.dmg を作る（その場の署名。この Mac 用）
+scripts/release.sh notes.md   # Track-<版>.zip を作って GitHub Release v<版> を公開（cask は bump-cask.yml が更新）
+```
+
+- 版は `Cargo.toml` の `[workspace.package] version`（今は `0.8.0`）。名前と ID は Tauri 版と同じ `Track` / `com.nemooon.track` で、置き換えて使う
+- `track-core` の `real-data` を付けてビルドするので、開発用ガードが外れて本物の `~/.track` を開く。普段のビルドとテストは付けないので、コピー DB しか触れない
+- `Contents/MacOS/` にアプリと `track-cli`、`Contents/Resources/` に Apple Intelligence ヘルパー（macOS 26 SDK が要る）とアイコン（`packaging/`）
+- 初回起動で本物の DB に移行 0016（AI の操作履歴）・0017（休暇・直行直帰）が当たる。Tauri 版は知らない移行を無視するので、戻しても開ける
+- 「スキルのインストール…」は本来の `track` の名前で入れる
+
+## スキルのインストール（開発用）
+
+メニューの「Track → スキルのインストール…（開発用）」（右上の縦3点メニューからも）で専用のウインドウが開く。Codex と Claude Code のそれぞれで、今の状態を見て、インストール・更新・アンインストールができる。
+本物の `track` スキルを上書きしないよう、開発中は別名で入る。
+
+- Codex: `~/.codex/skills/track-dev/`（`$track-dev` で呼ぶ）
+- Claude Code: `~/.claude/commands/track-dev.md`（`/track-dev` で呼ぶ）
+
+文面は `integrations/` のものを元に、`$HOME/.track-gpui/runtime.json` を読み、`TRACK_DATA_DIR="$HOME/.track-gpui"` を付けて CLI を呼ぶよう書き換えてある。
+パッケージ版（`real-data`）では `ui/integrations_window.rs` の `DEV_NAMES` が外れ、本来の名前（`track`）で入る。
+
+### AI からの編集と取り消し
+
+スキルには記録に加えて、登録済み工数の修正・付け替え・削除と、クライアント・プロジェクト・タグの作成・変更の手順が入る（GPUI 版だけの節。共有の `integrations/` は変えない）。
+
+```bash
+track-cli search --project-id <ID> --from <ISO> --to <ISO>      # 対象を集める
+track-cli update --id <ID> --id <ID> --project-id <ID> --source codex
+track-cli history                                               # AI の操作一覧
+track-cli undo --id <操作ID>                                    # 取り消し
+```
+
+- 確認が要る操作（`--confirmed` が無いと `confirmation_required`）: 工数 10 件以上の変更、工数の削除、クライアント・プロジェクトの作成、タグの削除
+- 書き込みは 1 コマンドごとに `AiOperation` テーブル（`database/migrations/0016_ai_operation.sql`）へ変更前後の行と一緒に残る。直近 100 件・30 日を保持
+- 取り消しは、その操作のあとで行が変わっていれば `undo_conflict` で止まる（部分的には戻さない）
+- アプリは AI の操作を検知すると通知パネルを開き、「AI が N 件変更しました：…」を 1 操作 1 行で出す。行の「元に戻す」でその操作を取り消す
+
+## 設定
+
+`⌘,`、メニュー「Track → 設定…」、ヘッダー右の「…」メニューで別ウインドウの設定を開く。項目は Tauri 版と同じ
+（外観／カレンダー／レポート（出力フォーマット・週報テンプレート）／プロジェクト／タグ／AI／バックアップと復元。メモは無し）。
+プロジェクトは、左にクライアントでまとめた一覧、右に選んだプロジェクトの編集フォーム（名前・クライアント（選択式）・色・タグ・アーカイブ・削除。削除は確認してから行う。工数があるプロジェクトは削除ボタンが押せない）を出し、変更はすぐ保存する（名前は Enter か入力欄を離れたとき）。クライアントは一覧の見出しをダブルクリックして名前を変え（Enter で保存、Esc や他の場所のクリックで取り消し）、＋の左のアイコンでアーカイブ（配下のプロジェクトも）、ゴミ箱アイコンで削除する（確認あり。工数のないプロジェクトも一緒に消え、工数のあるプロジェクトがあればアイコンが押せない）。
+タグは 1 行 1 タグの一覧で、名前はダブルクリックで変更（Enter で保存、Esc や他の場所のクリックで取り消し）、色は丸を押して開くポップオーバーで選び、ゴミ箱（ホバーで表示）から出る確認で削除する。削除の確認はプロジェクト・クライアントも押したボタンから出るポップオーバーで、行の下には何も開かない。各行に使っているプロジェクト数とエントリー数を出す。
+勤務設定・出力フォーマットは DB の `Settings`、AI・バックアップ・外観は GPUI 版専用の `gpui-config.json`（データフォルダ）に保存する。
+`gpui-config.json` が無いときは、初回だけ Tauri 版の `config.json` から AI とバックアップの値を写す（以後 `config.json` は読み書きしない）。
+開発中は写すバックアップ先が `~/.track-gpui` の外なら既定の `exports` にする。`prepare-db.sh --force` は `gpui-config.json` も消して移行をやり直す。
+
+自動バックアップはアプリが起動時と 1 時間ごとに確認し、`backupIntervalHours` 経っていれば `VACUUM INTO` で
+`track-auto-*.db` を保存先へ書く。開発版では保存先・復元元を `~/.track-gpui` の中に限り、iCloud Drive の候補も出さない
+（本物のバックアップがそこにあるため）。
+
+AI 生成（週報・カスタム出力）は `config.json` の `aiProvider` に従い、Codex CLI・カスタムコマンド・
+Apple Intelligence ヘルパーをアプリから直接起動する。
+ヘルパーのソースは `helpers/apple-intelligence/`、ビルドは `scripts/build-ai-helper.sh`（アプリと同じ `target/debug/` に置く。`release` を付けると `target/release/`。macOS 26 SDK が要る）。
+アプリはまず自分の隣、次に `.app` の `Contents/Resources/`、最後にインストール済みの `/Applications/Track.app` の中を探す。
+
+## 休暇と終日
+
+カレンダーの日付の見出しのボタン（休暇・予定）から設定する。休暇は選ぶとすぐ保存する。
+
+- 休暇: なし・休暇（1 日）・前半休・後半休（今の種類にチェックが付く）。1 日分は勤務時間から休憩 1 時間を引いた時間（10:00〜18:30 なら 7h30m）、半休はその半分。勤務日の祝日は自動で全日休暇で、メニューの「休暇にしない」で打ち消せる。見出しに「休暇」「前半休」「後半休」と出る。
+- 終日（以前の直行直帰）: メニューの「終日の予定を入れる…」を押すと、その日の勤務時間に作成予定の枠が出て、新しいエントリーと同じピッカー（プロジェクト・タイトル・タグ・メモ）が開く。作成すると、勤務開始〜終了・休憩 1 時間のエントリーを作る（1 日 1 件、作り直すと置き換え）。時間の枠にプロジェクトの色の斜線のブロックで出て（ドラッグ・リサイズはできない。編集ではタイトル・プロジェクト・タグ・メモだけ変えられる）、見出しにも「終日 プロジェクト」と出る。合計やレポートにはそのプロジェクトの時間として入る。
+- 休暇と終日は同じ日に両方持てない（後から選んだ方が残る）。
+- レポートのツールバーの「休暇を含める」で、明細に「休暇」の行を足し、合計・割合・草グラフにも入れる。絞り込み中と週の合計のコピーには入れない。「休暇」の行を開くと日ごとの内訳（休暇・前半休・後半休・祝日）が出て、「同じタイトルでまとめる」では種類ごとにまとまる。
+- 休暇の日はカレンダーの勤務時間の明るい背景を出さない（半休は休憩なしで働く半日分＝ 1 日分の半分だけを残す。10:00〜18:30 なら後半休は 10:00〜13:45、前半休は 14:45〜18:30）。
+
+## 見た目
+
+色は `crates/track-app/src/ui/theme.rs` の `Palette` を意味の名前で引く（`palette(cx)`）。生の色は書かない（テストで確かめている）。
+明るい配色（`Palette::light`）と暗い配色（`Palette::dark`）があり、設定の「外観」（自動／明るい／暗い）で選ぶ。自動は macOS の外観に従い、起動中の切り替えにも追従する。数字は等幅（`MONO`）。
+
+## 開発用
+
+- `scripts/winshot.sh out.png` — アプリのウインドウだけをスクリーンショットする
+- `TRACK_GPUI_PAGE=reports cargo run` — レポート画面から起動する
+- `TRACK_GPUI_WINDOW=1440x900` — 起動時のウインドウサイズ
+- `TRACK_GPUI_APPEARANCE=light|dark` — 外観の設定と macOS の外観より優先して明暗を決める（撮影用）
+- `TRACK_GPUI_SETTINGS=<appearance|calendar|reports|projects|ai|backup>` — 起動時に設定ウインドウをその項目で開く（`winshot.sh` はどちらかのウインドウを撮るので、設定だけ撮るときはウインドウ ID を指定する）
