@@ -44,12 +44,12 @@ pub struct AppState {
     persist_path: PathBuf,
     /// Newest AI operation already known; None until the startup baseline is read.
     pub ops_seen: Option<i64>,
-    /// The AI operations offered for undo in the main window.
-    pub ai_op: Option<AiOpNotice>,
-    /// The notice about the user's own change in the status bar (the newest replaces it).
-    pub note: Option<StatusNote>,
-    /// Every notice shown this session, for the status bar's bell.
+    /// Every notice shown this session (deletions, failures, AI changes), for the status bar's
+    /// bell; undo lives in its rows.
     pub history: NoticeHistory,
+    /// The newest notice, shown in the status bar for `FLASH_FOR` (its history item's id).
+    pub flash: Option<u64>,
+    flash_task: Option<gpui::Task<()>>,
     /// The seed of the header's dot pattern; saving an entry changes it.
     pub header_seed: u64,
     /// The pattern the current one fades in from, and over how long.
@@ -92,13 +92,38 @@ impl StatusNote {
 /// How many notices the history keeps.
 pub const HISTORY_LIMIT: usize = 50;
 
+/// How long a new notice shows in the status bar.
+pub const FLASH_FOR: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// What 「元に戻す」 does for a history row.
+#[derive(Debug, Clone, PartialEq)]
+pub enum HistoryAction {
+    /// Makes the deleted entry again.
+    Restore(Box<track_core::model::TimeEntry>),
+    /// Undoes this AI operation alone.
+    UndoAi(i64),
+}
+
+/// Where a row's 「元に戻す」 stands.
+#[derive(Debug, Clone, PartialEq)]
+pub enum UndoState {
+    Open,
+    Busy,
+    Done,
+    /// Could not be undone, with the reason.
+    Failed(String),
+}
+
 /// One line of the notice history.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HistoryItem {
+    pub id: u64,
     pub at: chrono::DateTime<chrono::Local>,
     pub text: String,
     /// A failure, shown in red.
     pub error: bool,
+    pub action: Option<HistoryAction>,
+    pub undo: UndoState,
 }
 
 /// The notices shown while the app is open, newest first (not saved anywhere).
@@ -107,52 +132,74 @@ pub struct NoticeHistory {
     pub items: std::collections::VecDeque<HistoryItem>,
     /// Something arrived since the list was last opened (the bell's dot).
     pub unseen: bool,
+    next_id: u64,
 }
 
 impl NoticeHistory {
-    pub fn push(&mut self, text: String, error: bool, at: chrono::DateTime<chrono::Local>) {
-        self.items.push_front(HistoryItem { at, text, error });
+    /// Adds a notice on top and returns its id.
+    #[cfg(test)]
+    pub fn push(&mut self, text: String, error: bool, at: chrono::DateTime<chrono::Local>) -> u64 {
+        self.push_with(text, error, None, at)
+    }
+
+    pub fn push_with(&mut self, text: String, error: bool, action: Option<HistoryAction>, at: chrono::DateTime<chrono::Local>) -> u64 {
+        self.next_id += 1;
+        self.items.push_front(HistoryItem { id: self.next_id, at, text, error, action, undo: UndoState::Open });
         self.items.truncate(HISTORY_LIMIT);
         self.unseen = true;
+        self.next_id
     }
 
     pub fn mark_seen(&mut self) {
         self.unseen = false;
     }
-}
 
-/// 「AI が N 件変更しました［元に戻す］」: every AI operation that arrived while the notice
-/// was up (until it is closed), undone together newest first.
-#[derive(Debug, Clone, PartialEq)]
-pub struct AiOpNotice {
-    /// Newest first.
-    pub operations: Vec<track_core::ops::Operation>,
-    pub error: Option<String>,
-    pub busy: bool,
-}
-
-impl AiOpNotice {
-    /// Items changed by all the operations.
-    pub fn count(&self) -> i64 {
-        self.operations.iter().map(|o| o.count).sum()
+    pub fn get(&self, id: u64) -> Option<&HistoryItem> {
+        self.items.iter().find(|i| i.id == id)
     }
 
-    pub fn summary(&self) -> String {
-        match self.operations.as_slice() {
-            [] => String::new(),
-            [one] => one.summary.clone(),
-            [newest, rest @ ..] => format!("{} ほか{}件の操作", newest.summary, rest.len()),
+    fn get_mut(&mut self, id: u64) -> Option<&mut HistoryItem> {
+        self.items.iter_mut().find(|i| i.id == id)
+    }
+
+    /// AI operations still offered for undo.
+    fn open_ai_ops(&self) -> Vec<i64> {
+        self.items
+            .iter()
+            .filter(|i| i.undo != UndoState::Done)
+            .filter_map(|i| match i.action {
+                Some(HistoryAction::UndoAi(op)) => Some(op),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// How many AI rows can still be undone.
+    #[cfg(test)]
+    pub fn undoable_ai(&self) -> usize {
+        self.open_ai_ops().len()
+    }
+
+    /// Rows whose operation is no longer pending (undone or pruned elsewhere) are done.
+    fn settle_ai(&mut self, asked: &[i64], pending: &[i64]) {
+        for i in self.items.iter_mut() {
+            if let Some(HistoryAction::UndoAi(op)) = i.action
+                && asked.contains(&op)
+                && !pending.contains(&op)
+                && i.undo != UndoState::Busy
+            {
+                i.undo = UndoState::Done;
+            }
         }
     }
 
-    fn ids(&self) -> Vec<i64> {
-        self.operations.iter().map(|o| o.id).collect()
-    }
-
-    /// Keeps only `ids`; None when nothing is left.
-    fn keep(mut self, ids: &[i64]) -> Option<Self> {
-        self.operations.retain(|o| ids.contains(&o.id));
-        (!self.operations.is_empty()).then_some(self)
+    /// After a restore the old operation ids mean other things: stop offering them.
+    fn forget_ai(&mut self) {
+        for i in self.items.iter_mut() {
+            if matches!(i.action, Some(HistoryAction::UndoAi(_))) {
+                i.action = None;
+            }
+        }
     }
 }
 
@@ -185,7 +232,7 @@ impl AppState {
 
     pub fn with_path(api: DataClient, persist_path: PathBuf) -> Self {
         let seed = fresh_seed();
-        Self { reloads: 0, api, data: None, error: None, loading: false, persist: PersistState::load(&persist_path), persist_path, ops_seen: None, ai_op: None, note: None, history: NoticeHistory::default(), header_seed: seed, header_prev_seed: seed, header_fade: std::time::Duration::ZERO, header_shuffles: 0, sparkle: None }
+        Self { reloads: 0, api, data: None, error: None, loading: false, persist: PersistState::load(&persist_path), persist_path, ops_seen: None, history: NoticeHistory::default(), flash: None, flash_task: None, header_seed: seed, header_prev_seed: seed, header_fade: std::time::Duration::ZERO, header_shuffles: 0, sparkle: None }
     }
 
     pub fn update_persist(&mut self, f: impl FnOnce(&mut PersistState)) {
@@ -215,7 +262,8 @@ impl AppState {
     pub fn refresh_all(&mut self, cx: &mut Context<Self>) {
         let fut = Self::read_all(self.api.clone());
         let ops = self.ops_seen.map(|seen| self.api.operations_after(seen));
-        let shown = self.ai_op.as_ref().map(|n| self.api.pending_operations(n.ids()));
+        let asked = self.history.open_ai_ops();
+        let shown = (!asked.is_empty()).then(|| self.api.pending_operations(asked.clone()));
         cx.spawn(async move |this, cx| {
             let result = fut.await;
             let ops = match ops {
@@ -233,10 +281,10 @@ impl AppState {
                     Err(e) => this.error = Some(e.message),
                 }
                 if let Some(pending) = pending {
-                    this.ai_op = this.ai_op.take().and_then(|n| n.keep(&pending));
+                    this.history.settle_ai(&asked, &pending);
                 }
                 if let Some(ops) = ops {
-                    this.note_operations(ops);
+                    this.note_operations(ops, cx);
                 }
                 this.reloads += 1;
                 cx.emit(StateEvent::Reloaded);
@@ -260,7 +308,7 @@ impl AppState {
     /// After a restore the DB's operations (and their ids) are the snapshot's: start over from
     /// its newest one and drop a notice about an operation that no longer applies.
     pub fn reset_ops_baseline(&mut self, cx: &mut Context<Self>) {
-        self.ai_op = None;
+        self.history.forget_ai();
         let fut = self.api.latest_operation_id();
         cx.spawn(async move |this, cx| {
             if let Ok(id) = fut.await {
@@ -274,64 +322,41 @@ impl AppState {
         cx.notify();
     }
 
-    /// New operations (newest first) join the notice that is up, or start one.
-    fn note_operations(&mut self, ops: Vec<track_core::ops::Operation>) {
+    /// New AI operations (newest first) each join the history, the newest flashing.
+    fn note_operations(&mut self, ops: Vec<track_core::ops::Operation>, cx: &mut Context<Self>) {
         if let Some(max) = ops.iter().map(|o| o.id).max() {
             self.ops_seen = Some(self.ops_seen.unwrap_or(0).max(max));
         }
-        let mut fresh: Vec<_> = ops.into_iter().filter(|o| o.undone_at.is_none()).collect();
-        if fresh.is_empty() {
-            return;
-        }
-        for op in fresh.iter().rev() {
-            self.history.push(format!("AI が {} 件変更しました：{}", op.count, op.summary), false, chrono::Local::now());
-        }
-        match self.ai_op.as_mut() {
-            Some(n) => {
-                fresh.retain(|o| !n.operations.iter().any(|x| x.id == o.id));
-                fresh.append(&mut n.operations);
-                n.operations = fresh;
-            }
-            None => self.ai_op = Some(AiOpNotice { operations: fresh, error: None, busy: false }),
+        let known = self.history.open_ai_ops();
+        for op in ops.iter().rev().filter(|o| o.undone_at.is_none() && !known.contains(&o.id)) {
+            let text = format!("AI が {} 件変更しました：{}", op.count, op.summary);
+            self.notice(text, false, Some(HistoryAction::UndoAi(op.id)), cx);
         }
     }
 
-    /// Undoes every operation in the notice, newest first; stops at one that cannot be undone.
-    pub fn undo_ai_op(&mut self, cx: &mut Context<Self>) {
-        let Some(notice) = self.ai_op.as_mut().filter(|n| !n.busy) else { return };
-        notice.busy = true;
-        notice.error = None;
-        let fut = self.api.undo_operations(notice.ids());
-        cx.notify();
-        cx.spawn(async move |this, cx| {
-            let result = fut.await;
+    /// Adds a notice to the history and shows it in the status bar for `FLASH_FOR`.
+    fn notice(&mut self, text: String, error: bool, action: Option<HistoryAction>, cx: &mut Context<Self>) {
+        let id = self.history.push_with(text, error, action, chrono::Local::now());
+        self.flash = Some(id);
+        self.flash_task = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(FLASH_FOR).await;
             let _ = this.update(cx, |this, cx| {
-                let (done, error) = match result {
-                    Ok((done, error)) => (done, error.map(|e| e.message)),
-                    Err(e) => (vec![], Some(e.message)),
-                };
-                this.ai_op = this.ai_op.take().and_then(|mut n| {
-                    n.operations.retain(|o| !done.contains(&o.id));
-                    n.busy = false;
-                    n.error = error;
-                    (!n.operations.is_empty()).then_some(n)
-                });
-                this.refresh_all(cx);
-                cx.notify();
+                if this.flash == Some(id) {
+                    this.flash = None;
+                    cx.notify();
+                }
             });
-        })
-        .detach();
+        }));
+        cx.notify();
     }
 
+    /// A change of the user's own: a deletion (undoable from the history) or a failure.
     pub fn set_note(&mut self, note: StatusNote, cx: &mut Context<Self>) {
-        self.history.push(note.text(), matches!(note, StatusNote::Error(_)), chrono::Local::now());
-        self.note = Some(note);
-        cx.notify();
-    }
-
-    pub fn dismiss_note(&mut self, cx: &mut Context<Self>) {
-        self.note = None;
-        cx.notify();
+        let text = note.text();
+        match note {
+            StatusNote::Deleted(entry) => self.notice(text, false, Some(HistoryAction::Restore(entry)), cx),
+            StatusNote::Error(_) => self.notice(text, true, None, cx),
+        }
     }
 
     pub fn mark_history_seen(&mut self, cx: &mut Context<Self>) {
@@ -339,9 +364,39 @@ impl AppState {
         cx.notify();
     }
 
-    pub fn dismiss_ai_op(&mut self, cx: &mut Context<Self>) {
-        self.ai_op = None;
-        cx.notify();
+    /// 「元に戻す」 on a history row. A deletion's entry is handed back for the calendar to make
+    /// again (the row is then done); an AI operation is undone here.
+    pub fn undo_from_history(&mut self, id: u64, cx: &mut Context<Self>) -> Option<track_core::model::TimeEntry> {
+        let item = self.history.get_mut(id).filter(|i| matches!(i.undo, UndoState::Open | UndoState::Failed(_)))?;
+        match item.action.clone()? {
+            HistoryAction::Restore(entry) => {
+                item.undo = UndoState::Done;
+                cx.notify();
+                Some(*entry)
+            }
+            HistoryAction::UndoAi(op) => {
+                item.undo = UndoState::Busy;
+                let fut = self.api.undo_operations(vec![op]);
+                cx.notify();
+                cx.spawn(async move |this, cx| {
+                    let result = fut.await;
+                    let _ = this.update(cx, |this, cx| {
+                        let state = match result {
+                            Ok((done, _)) if done.contains(&op) => UndoState::Done,
+                            Ok((_, error)) => UndoState::Failed(error.map(|e| e.message).unwrap_or_else(|| "取り消せませんでした".into())),
+                            Err(e) => UndoState::Failed(e.message),
+                        };
+                        if let Some(item) = this.history.get_mut(id) {
+                            item.undo = state;
+                        }
+                        this.refresh_all(cx);
+                        cx.notify();
+                    });
+                })
+                .detach();
+                None
+            }
+        }
     }
 
     /// Saves settings; on success everything is refreshed. The task resolves with the result.

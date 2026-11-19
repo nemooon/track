@@ -622,13 +622,14 @@ fn restore_resets_the_ai_operation_baseline(cx: &mut TestAppContext) {
     click(&mut scx, "backup-restore-confirm");
     wait_io(&mut scx);
     wait_io(cx);
-    let state = app.read_with(cx, |a, cx| (a.state.read(cx).ops_seen, a.state.read(cx).ai_op.is_some()));
-    assert_eq!(state, (Some(0), false), "the restored DB has no operations; nothing from before is offered");
+    let undoable = |app: &gpui::Entity<crate::app::TrackApp>, cx: &mut gpui::VisualTestContext| app.read_with(cx, |a, cx| a.state.read(cx).history.undoable_ai());
+    let state = app.read_with(cx, |a, cx| a.state.read(cx).ops_seen);
+    assert_eq!((state, undoable(&app, cx)), (Some(0), 0), "the restored DB has no operations; nothing from before is offered");
     // The next AI operation (id 1 again) is offered.
     f.db().edit_entries("codex", &["a".to_string()], track_core::model::EntryPatch { title: Some(Some("後".into())), ..Default::default() }).unwrap();
     app.update(cx, |a, cx| a.state.update(cx, |s, cx| s.refresh_all(cx)));
     wait_io(cx);
-    assert!(app.read_with(cx, |a, cx| a.state.read(cx).ai_op.is_some()));
+    assert_eq!(undoable(&app, cx), 1);
 }
 
 #[gpui::test]

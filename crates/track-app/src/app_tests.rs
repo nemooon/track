@@ -195,56 +195,87 @@ fn seeded(cx: &mut TestAppContext, before_launch: bool) -> (gpui::Entity<crate::
     })
 }
 
-#[gpui::test]
-fn ai_operation_shows_banner_and_undo_restores(cx: &mut TestAppContext) {
-    let (app, cx, f) = seeded(cx, false);
-    refresh(&app, cx);
-    assert!(cx.debug_bounds("ai-op-banner").is_none());
-    ai_rename(&mut f.db(), "a", "AI");
-    refresh(&app, cx);
-    assert!(cx.debug_bounds("ai-op-banner").is_some(), "banner after an AI operation");
-    let b = cx.debug_bounds("ai-op-undo").expect("undo button");
+
+/// Opens the history from the status bar's flash (or the bell when the flash is gone).
+fn open_history(cx: &mut gpui::VisualTestContext) {
+    let target = if cx.debug_bounds("status-flash").is_some() { "status-flash" } else { "status-history" };
+    let b = cx.debug_bounds(target).unwrap();
     cx.simulate_click(b.center(), gpui::Modifiers::none());
     settle(cx);
+    assert!(cx.debug_bounds("status-history-list").is_some(), "the history opens");
+}
+
+fn click_sel(cx: &mut gpui::VisualTestContext, sel: &'static str) {
+    let b = cx.debug_bounds(sel).unwrap_or_else(|| panic!("{sel} not rendered"));
+    cx.simulate_click(b.center(), gpui::Modifiers::none());
+    settle(cx);
+}
+
+/// An AI change flashes in the status bar; clicking it opens the history, where it is undone.
+#[gpui::test]
+fn ai_operation_flashes_and_is_undone_from_the_history(cx: &mut TestAppContext) {
+    let (app, cx, f) = seeded(cx, false);
+    refresh(&app, cx);
+    assert!(cx.debug_bounds("status-flash").is_none());
+    ai_rename(&mut f.db(), "a", "AI");
+    refresh(&app, cx);
+    let bar = cx.debug_bounds("status-bar").expect("status bar");
+    let flash = cx.debug_bounds("status-flash").expect("the change flashes");
+    assert!(bar.contains(&flash.center()), "in the status bar");
+    assert!(cx.debug_bounds("status-history-undo-0").is_none(), "no undo until the history is open");
+    open_history(cx);
+    click_sel(cx, "status-history-undo-0");
     assert_eq!(f.db().entry("a").unwrap().unwrap().title.as_deref(), Some("元"));
-    assert!(cx.debug_bounds("ai-op-banner").is_none());
+    assert!(cx.debug_bounds("status-history-done-0").is_some(), "the row says it was undone");
+    assert!(cx.debug_bounds("status-history-undo-0").is_none());
 }
 
 #[gpui::test]
 fn operations_before_launch_are_not_shown(cx: &mut TestAppContext) {
     let (app, cx, _f) = seeded(cx, true);
     refresh(&app, cx);
-    assert!(cx.debug_bounds("ai-op-banner").is_none());
+    assert!(cx.debug_bounds("status-flash").is_none());
+    assert!(app.read_with(cx, |a, cx| a.state.read(cx).history.items.is_empty()));
+}
+
+/// The flash goes after a few seconds; the history keeps the notice.
+#[gpui::test]
+fn the_flash_goes_after_a_few_seconds(cx: &mut TestAppContext) {
+    let (app, cx, f) = seeded(cx, false);
+    refresh(&app, cx);
+    ai_rename(&mut f.db(), "a", "AI");
+    refresh(&app, cx);
+    assert!(cx.debug_bounds("status-flash").is_some());
+    cx.executor().advance_clock(crate::app::FLASH_FOR + std::time::Duration::from_millis(100));
+    settle(cx);
+    assert!(cx.debug_bounds("status-flash").is_none(), "gone");
+    open_history(cx);
+    assert!(cx.debug_bounds("status-history-undo-0").is_some(), "still undoable from the history");
 }
 
 #[gpui::test]
-fn undo_conflict_shows_error_in_banner(cx: &mut TestAppContext) {
+fn undo_conflict_is_explained_in_the_history(cx: &mut TestAppContext) {
     let (app, cx, f) = seeded(cx, false);
     refresh(&app, cx);
     ai_rename(&mut f.db(), "a", "AI");
     refresh(&app, cx);
     f.db().update_entry("a", track_core::model::EntryPatch { title: Some(Some("手修正".into())), ..Default::default() }).unwrap();
-    let b = cx.debug_bounds("ai-op-undo").expect("undo button");
-    cx.simulate_click(b.center(), gpui::Modifiers::none());
-    settle(cx);
-    assert!(cx.debug_bounds("ai-op-error").is_some());
+    open_history(cx);
+    click_sel(cx, "status-history-undo-0");
+    assert!(cx.debug_bounds("status-history-failed-0").is_some(), "the reason is shown in the row");
     assert_eq!(f.db().entry("a").unwrap().unwrap().title.as_deref(), Some("手修正"));
-    let close = cx.debug_bounds("ai-op-close").expect("close");
-    cx.simulate_click(close.center(), gpui::Modifiers::none());
-    settle(cx);
-    assert!(cx.debug_bounds("ai-op-banner").is_none());
 }
 
 #[gpui::test]
-fn banner_goes_away_when_undone_elsewhere(cx: &mut TestAppContext) {
+fn an_operation_undone_elsewhere_is_marked_done(cx: &mut TestAppContext) {
     let (app, cx, f) = seeded(cx, false);
     refresh(&app, cx);
     ai_rename(&mut f.db(), "a", "AI");
     refresh(&app, cx);
-    assert!(cx.debug_bounds("ai-op-banner").is_some());
     f.db().undo_operation(None).unwrap();
     refresh(&app, cx);
-    assert!(cx.debug_bounds("ai-op-banner").is_none(), "an operation undone from the CLI is no longer offered");
+    open_history(cx);
+    assert!(cx.debug_bounds("status-history-done-0").is_some(), "undone from the CLI: no longer offered");
 }
 
 fn ai_record(db: &mut track_core::Db, project: &str, h: u32, title: &str) -> String {
@@ -253,63 +284,23 @@ fn ai_record(db: &mut track_core::Db, project: &str, h: u32, title: &str) -> Str
     db.op_create_entry("codex", input).unwrap().0.id
 }
 
-fn group_len(app: &gpui::Entity<crate::app::TrackApp>, cx: &mut gpui::VisualTestContext) -> usize {
-    app.read_with(cx, |a, cx| a.state.read(cx).ai_op.as_ref().map(|n| n.operations.len()).unwrap_or(0))
-}
-
+/// Each AI operation is a row of its own and is undone alone.
 #[gpui::test]
-fn banner_undoes_every_operation_since_it_appeared(cx: &mut TestAppContext) {
+fn each_ai_operation_is_its_own_row(cx: &mut TestAppContext) {
     let (app, cx, f) = seeded(cx, false);
     refresh(&app, cx);
-    let c = f.db().clients().unwrap()[0].id.clone();
-    let (p, _) = f.db().op_create_project("codex", &c, "Hako", "#22c55e", &[]).unwrap();
+    let p = f.db().projects(false).unwrap()[0].id.clone();
+    let e1 = ai_record(&mut f.db(), &p, 13, "一");
+    let e2 = ai_record(&mut f.db(), &p, 14, "二");
     refresh(&app, cx);
-    let e1 = ai_record(&mut f.db(), &p.id, 13, "一");
-    let e2 = ai_record(&mut f.db(), &p.id, 14, "二");
-    refresh(&app, cx);
-    let e3 = ai_record(&mut f.db(), &p.id, 15, "三");
-    refresh(&app, cx);
-    assert_eq!(group_len(&app, cx), 4, "project creation and three recordings in one notice");
-    let b = cx.debug_bounds("ai-op-undo").expect("undo button");
-    cx.simulate_click(b.center(), gpui::Modifiers::none());
-    settle(cx);
-    let db = f.db();
-    assert!([&e1, &e2, &e3].iter().all(|id| db.entry(id).unwrap().is_none()));
-    assert!(db.project(&p.id).is_err(), "the project creation is undone too");
-    assert!(db.operations(10).unwrap().iter().all(|o| o.undone_at.is_some()));
-    assert!(cx.debug_bounds("ai-op-banner").is_none());
+    assert_eq!(app.read_with(cx, |a, cx| a.state.read(cx).history.items.len()), 2);
+    open_history(cx);
+    click_sel(cx, "status-history-undo-0");
+    assert!(f.db().entry(&e2).unwrap().is_none(), "the newest row undoes the newest operation");
+    assert!(f.db().entry(&e1).unwrap().is_some(), "and only that one");
+    assert!(cx.debug_bounds("status-history-undo-1").is_some(), "the older one is still offered");
 }
 
-#[gpui::test]
-fn grouped_undo_stops_at_a_conflict_and_keeps_the_rest(cx: &mut TestAppContext) {
-    let (app, cx, f) = seeded(cx, false);
-    refresh(&app, cx);
-    ai_rename(&mut f.db(), "a", "AI");
-    let e = ai_record(&mut f.db(), &f.db().projects(false).unwrap()[0].id, 13, "記録");
-    refresh(&app, cx);
-    f.db().update_entry("a", track_core::model::EntryPatch { title: Some(Some("手修正".into())), ..Default::default() }).unwrap();
-    let b = cx.debug_bounds("ai-op-undo").expect("undo button");
-    cx.simulate_click(b.center(), gpui::Modifiers::none());
-    settle(cx);
-    assert!(f.db().entry(&e).unwrap().is_none(), "the newer operation was undone");
-    assert_eq!(f.db().entry("a").unwrap().unwrap().title.as_deref(), Some("手修正"));
-    assert!(cx.debug_bounds("ai-op-error").is_some());
-    assert_eq!(group_len(&app, cx), 1, "only the conflicting operation is left");
-}
-
-#[gpui::test]
-fn closing_the_banner_starts_a_new_group(cx: &mut TestAppContext) {
-    let (app, cx, f) = seeded(cx, false);
-    refresh(&app, cx);
-    ai_rename(&mut f.db(), "a", "一");
-    refresh(&app, cx);
-    let close = cx.debug_bounds("ai-op-close").expect("close");
-    cx.simulate_click(close.center(), gpui::Modifiers::none());
-    settle(cx);
-    ai_rename(&mut f.db(), "a", "二");
-    refresh(&app, cx);
-    assert_eq!(group_len(&app, cx), 1);
-}
 
 #[gpui::test]
 fn header_has_only_tabs_and_settings(cx: &mut TestAppContext) {
@@ -393,32 +384,6 @@ fn header_icons_are_one_size(cx: &mut TestAppContext) {
     }
 }
 
-#[gpui::test]
-fn ai_notice_lives_in_the_status_bar(cx: &mut TestAppContext) {
-    let (app, cx, f) = seeded(cx, false);
-    refresh(&app, cx);
-    ai_rename(&mut f.db(), "a", "AI");
-    refresh(&app, cx);
-    let bar = cx.debug_bounds("status-bar").expect("status bar");
-    let notice = cx.debug_bounds("ai-op-banner").expect("notice");
-    assert!(bar.contains(&notice.center()), "the AI notice sits in the status bar");
-    let window_h = cx.update(|w, _| w.viewport_size().height);
-    assert!((bar.origin.y + bar.size.height - window_h).abs() <= gpui::px(1.), "the status bar is at the bottom");
-}
-
-#[gpui::test]
-fn failed_undo_keeps_the_summary_next_to_the_reason(cx: &mut TestAppContext) {
-    let (app, cx, f) = seeded(cx, false);
-    refresh(&app, cx);
-    ai_rename(&mut f.db(), "a", "AI");
-    refresh(&app, cx);
-    f.db().update_entry("a", track_core::model::EntryPatch { title: Some(Some("手修正".into())), ..Default::default() }).unwrap();
-    let b = cx.debug_bounds("ai-op-undo").expect("undo button");
-    cx.simulate_click(b.center(), gpui::Modifiers::none());
-    settle(cx);
-    assert!(cx.debug_bounds("ai-op-error").is_some(), "the reason is shown");
-    assert!(cx.debug_bounds("ai-op-summary").is_some(), "and which change it was");
-}
 
 /// The app header keeps the Tauri version's height (44px), the traffic lights centred in it.
 #[gpui::test]

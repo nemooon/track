@@ -704,37 +704,37 @@ fn a_successful_save_leaves_the_status_bar_quiet(cx: &mut TestAppContext) {
     drag_entry_one_column_right_and_30_minutes_down(cx);
     wait_io(cx);
     assert_eq!(stored(&f, "a").unwrap().start, at(13, 10, 30));
-    assert!(cx.debug_bounds("status-note").is_none(), "no notice for a plain save");
+    assert!(cx.debug_bounds("status-flash").is_none(), "no notice for a plain save");
 }
 
-/// Deleting tells so in the status bar, with 「元に戻す」 bringing the entry back.
+/// Deleting flashes in the status bar; clicking it opens the history, whose 「元に戻す」 brings
+/// the entry back.
 #[gpui::test]
-fn deleting_offers_undo_in_the_status_bar(cx: &mut TestAppContext) {
+fn deleting_is_undone_from_the_history(cx: &mut TestAppContext) {
     let (_app, cx, f) = setup(cx);
     let b = cx.debug_bounds("entry-a").expect("entry block");
     cx.simulate_click(b.center(), Modifiers::none());
     cx.simulate_keystrokes("backspace");
     wait_io(cx);
     assert!(stored(&f, "a").is_none());
-    assert!(cx.debug_bounds("status-note").is_some(), "the deletion is told in the status bar");
-    click(cx, "status-note-undo");
+    assert!(cx.debug_bounds("status-flash").is_some(), "the deletion flashes in the status bar");
+    click(cx, "status-flash");
+    click(cx, "status-history-undo-0");
     wait_io(cx);
     let back: Vec<_> = f.db().entries(at(12, 0, 0), at(13, 0, 0)).unwrap().into_iter().filter(|e| e.title.as_deref() == Some("作業a")).collect();
     assert_eq!(back.len(), 1, "the entry is made again");
     assert_eq!((back[0].start, back[0].end), (at(12, 10, 0), at(12, 11, 0)));
-    assert!(cx.debug_bounds("status-note").is_none(), "the notice goes once undone");
+    assert!(cx.debug_bounds("status-history-done-0").is_some(), "the row says it was undone");
 }
 
-/// A failed save is told in red in the status bar and stays until closed.
+/// A failed save flashes in red in the status bar.
 #[gpui::test]
 fn a_failed_save_is_told_in_the_status_bar(cx: &mut TestAppContext) {
     let (_app, cx, f) = setup(cx);
     f.data.fail_ops(&["update_entry"]);
     drag_entry_one_column_right_and_30_minutes_down(cx);
     wait_io(cx);
-    assert!(cx.debug_bounds("status-note-error").is_some(), "the failure is shown");
-    click(cx, "status-note-close");
-    assert!(cx.debug_bounds("status-note").is_none(), "closed");
+    assert!(cx.debug_bounds("status-flash-error").is_some(), "the failure is shown in red");
 }
 
 /// A deletion lands in the history: the bell gets a dot until the list is opened from it.
