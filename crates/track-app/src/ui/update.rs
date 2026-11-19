@@ -21,6 +21,9 @@ pub type Install = Arc<dyn Fn(&Release) -> Result<(), String> + Send + Sync>;
 pub struct UpdateSource {
     pub fetch: Fetch,
     pub install: Install,
+    /// Whether Homebrew installed this Track. If not (the zip or DMG), Track can't update itself
+    /// and shows how to download the new version instead.
+    pub homebrew: bool,
 }
 
 impl Global for UpdateSource {}
@@ -39,6 +42,11 @@ impl UpdateSource {
                 let app = track_core::update::current_app_bundle().ok_or("Track.appのインストール先を確認できません。")?;
                 track_core::update::run_homebrew_update(&brew, std::path::Path::new(track_core::update::XATTR), &app, &release.version)
             }),
+            homebrew: track_core::update::homebrew_executable().is_some()
+                && track_core::update::current_app_bundle().is_some_and(|app| {
+                    let rooms = track_core::update::CASKROOMS.map(std::path::Path::new);
+                    track_core::update::installed_by_homebrew(&rooms, &app)
+                }),
         }
     }
 }
@@ -51,8 +59,9 @@ pub fn set_source(source: UpdateSource, cx: &mut App) {
 
 /// A sample newer release whose update pretends to succeed (after a moment), to look at the
 /// window without a real release. Used by development builds started with
-/// `TRACK_GPUI_UPDATE_PREVIEW=<version>`.
-pub fn preview_source(version: &str) -> UpdateSource {
+/// `TRACK_GPUI_UPDATE_PREVIEW=<version>` (with `TRACK_GPUI_UPDATE_DOWNLOAD=1`, as if installed
+/// from the zip or DMG).
+pub fn preview_source(version: &str, homebrew: bool) -> UpdateSource {
     let version = version.to_string();
     UpdateSource {
         fetch: Arc::new(move || {
@@ -66,6 +75,7 @@ pub fn preview_source(version: &str) -> UpdateSource {
             std::thread::sleep(std::time::Duration::from_secs(2));
             Ok(())
         }),
+        homebrew,
     }
 }
 
@@ -75,7 +85,7 @@ fn source(cx: &App) -> UpdateSource {
     }
     // Development builds only: the preview never reaches a packaged app.
     match std::env::var("TRACK_GPUI_UPDATE_PREVIEW") {
-        Ok(v) if track_core::guard::GUARDED && !cfg!(test) && !v.is_empty() => preview_source(&v),
+        Ok(v) if track_core::guard::GUARDED && !cfg!(test) && !v.is_empty() => preview_source(&v, std::env::var("TRACK_GPUI_UPDATE_DOWNLOAD").as_deref() != Ok("1")),
         _ => UpdateSource::real(),
     }
 }
@@ -94,6 +104,8 @@ enum Stage {
 
 pub struct UpdateWindow {
     stage: Stage,
+    /// Installed by Homebrew (read once when the window opens).
+    homebrew: bool,
 }
 
 struct OpenUpdate {
@@ -126,7 +138,7 @@ pub fn open_update(cx: &mut App) {
         },
         |window, cx| {
             let view = cx.new(|cx| {
-                let mut v = UpdateWindow { stage: Stage::Checking };
+                let mut v = UpdateWindow { stage: Stage::Checking, homebrew: source(cx).homebrew };
                 v.check(cx);
                 v
             });
@@ -205,6 +217,27 @@ fn disabled_button(id: &'static str, label: &'static str, primary: bool, p: Pale
         .child(label)
 }
 
+/// For a Track from the zip or DMG: how to update by hand, and the command that clears the
+/// quarantine flag on the new copy (with a button to copy it).
+fn download_help(p: Palette) -> gpui::Div {
+    let line = |t: &'static str| div().text_size(px(12.)).text_color(p.text_muted).child(t);
+    div()
+        .debug_selector(|| "update-download-help".into())
+        .flex()
+        .flex_col()
+        .gap_1()
+        .child(line("Homebrew で入れていないため、ここからはアップデートできません。リリースのページから DMG をダウンロードし、Track.app を入れ替えてください。"))
+        .child(line("入れ替えたら、開く前にターミナルで次を実行して隔離属性を外してください。"))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(div().flex_1().px_2().py_1().rounded_md().bg(p.surface).border_1().border_color(p.border).font_family("Menlo").text_size(px(11.)).text_color(p.text).child(track_core::update::QUARANTINE_COMMAND))
+                .child(button("update-quarantine-copy", "コピー", false, p).on_click(|_, _, cx| cx.write_to_clipboard(gpui::ClipboardItem::new_string(track_core::update::QUARANTINE_COMMAND.into())))),
+        )
+}
+
 impl Render for UpdateWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = palette(cx);
@@ -234,6 +267,18 @@ impl Render for UpdateWindow {
                 .child(div().debug_selector(|| "update-current".into()).child(heading(format!("Track {CURRENT_VERSION} は最新版です"))))
                 .child(div().flex_1())
                 .child(div().flex().justify_end().child(close)),
+            Stage::Available(r) if !self.homebrew => {
+                let url = r.url.clone();
+                body.child(heading(format!("新しいバージョン {} があります", r.version)))
+                    .child(muted(format!("今のバージョン: {CURRENT_VERSION}")))
+                    .child(notes(r))
+                    .child(download_help(p))
+                    .child(
+                        div().flex().justify_end().gap_2().child(button("update-later", "あとで", false, p).on_click(|_, window, _| window.remove_window())).child(
+                            button("update-download", "ダウンロードページを開く", true, p).on_click(move |_, _, cx| cx.open_url(&url)),
+                        ),
+                    )
+            }
             Stage::Available(r) => {
                 let r2 = r.clone();
                 body.child(heading(format!("新しいバージョン {} があります", r.version)))

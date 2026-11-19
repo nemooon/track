@@ -1,4 +1,4 @@
-use crate::update::{Release, is_newer, parse_brew_cask_version, parse_release, run_homebrew_update};
+use crate::update::{Release, installed_by_homebrew, is_newer, parse_brew_cask_version, parse_release, run_homebrew_update};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -79,4 +79,32 @@ fn reports_when_the_tap_has_not_caught_up() {
     let brew = script(dir.path(), "brew", r#"if [ "$1" = "list" ]; then echo "track 0.8.0"; fi"#);
     let error = run_homebrew_update(&brew, &dir.path().join("xattr-must-not-run"), &dir.path().join("Track.app"), "0.9.0").unwrap_err();
     assert!(error.contains("まだバージョン0.9.0が反映されていません"), "{error}");
+}
+
+/// Homebrew keeps `Caskroom/track/<version>/Track.app` pointing at the app it put in place.
+#[test]
+fn installed_by_homebrew_when_its_caskroom_points_at_this_app() {
+    let d = tempfile::tempdir().unwrap();
+    let apps = d.path().join("Applications");
+    let app = apps.join("Track.app");
+    fs::create_dir_all(&app).unwrap();
+    let caskroom = d.path().join("Caskroom");
+    fs::create_dir_all(caskroom.join("track/0.8.0")).unwrap();
+    std::os::unix::fs::symlink(&app, caskroom.join("track/0.8.0/Track.app")).unwrap();
+    assert!(installed_by_homebrew(&[caskroom.as_path()], &app));
+
+    let elsewhere = d.path().join("Downloads/Track.app");
+    fs::create_dir_all(&elsewhere).unwrap();
+    assert!(!installed_by_homebrew(&[caskroom.as_path()], &elsewhere), "a copy from the DMG somewhere else");
+}
+
+#[test]
+fn not_installed_by_homebrew_without_its_caskroom() {
+    let d = tempfile::tempdir().unwrap();
+    let app = d.path().join("Applications/Track.app");
+    fs::create_dir_all(&app).unwrap();
+    let missing = d.path().join("Caskroom");
+    assert!(!installed_by_homebrew(&[missing.as_path()], &app), "no Homebrew");
+    fs::create_dir_all(missing.join("other/1.0/Other.app")).unwrap();
+    assert!(!installed_by_homebrew(&[missing.as_path()], &app), "Homebrew without Track");
 }

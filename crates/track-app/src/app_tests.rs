@@ -554,6 +554,11 @@ fn the_copyright_matches_the_app_bundle() {
 
 /// Opens 「アップデートを確認…」 with a stand-in for GitHub and Homebrew; returns the window's context.
 fn open_update(cx: &mut gpui::VisualTestContext, latest: Result<&'static str, &'static str>, install: Result<(), &'static str>) -> (gpui::VisualTestContext, std::rc::Rc<std::cell::Cell<u32>>) {
+    open_update_from(cx, latest, install, true)
+}
+
+/// The same, for a Track installed by Homebrew (`homebrew`) or from the zip or DMG.
+fn open_update_from(cx: &mut gpui::VisualTestContext, latest: Result<&'static str, &'static str>, install: Result<(), &'static str>, homebrew: bool) -> (gpui::VisualTestContext, std::rc::Rc<std::cell::Cell<u32>>) {
     use crate::ui::update::{UpdateSource, set_source};
     use track_core::update::Release;
     let installs = std::rc::Rc::new(std::cell::Cell::new(0));
@@ -562,6 +567,7 @@ fn open_update(cx: &mut gpui::VisualTestContext, latest: Result<&'static str, &'
             UpdateSource {
                 fetch: std::sync::Arc::new(move || latest.map(|v| Release { version: v.into(), notes: "## 変更\n- 速くなった".into(), url: "https://example.invalid".into() }).map_err(str::to_string)),
                 install: std::sync::Arc::new(move |_| install.map_err(str::to_string)),
+                homebrew,
             },
             cx,
         )
@@ -594,6 +600,23 @@ fn update_window_shows_the_notes_and_updates(cx: &mut TestAppContext) {
     assert!(ucx.debug_bounds("update-restart").is_some(), "offers a restart");
 }
 
+/// From the zip or DMG, Track can't update itself: it says how, opens the release page, and
+/// tells how to clear the quarantine flag on the new copy.
+#[gpui::test]
+fn update_window_guides_a_download_when_not_from_homebrew(cx: &mut TestAppContext) {
+    let (_app, cx) = open_app(cx);
+    let (mut ucx, _) = open_update_from(cx, Ok("9.0.0"), Ok(()), false);
+    assert!(ucx.debug_bounds("update-notes").is_some(), "the release notes");
+    assert!(ucx.debug_bounds("update-install").is_none(), "no アップデート");
+    assert!(ucx.debug_bounds("update-download-help").is_some(), "how to update by hand");
+    let b = ucx.debug_bounds("update-quarantine-copy").expect("copy the xattr command");
+    ucx.simulate_click(b.center(), gpui::Modifiers::none());
+    assert_eq!(ucx.read_from_clipboard().and_then(|c| c.text()).as_deref(), Some(track_core::update::QUARANTINE_COMMAND));
+    let b = ucx.debug_bounds("update-download").expect("ダウンロードページを開く");
+    ucx.simulate_click(b.center(), gpui::Modifiers::none());
+    assert_eq!(ucx.opened_url().as_deref(), Some("https://example.invalid"), "the release page");
+}
+
 #[gpui::test]
 fn update_window_explains_a_failure(cx: &mut TestAppContext) {
     let (_app, cx) = open_app(cx);
@@ -617,7 +640,7 @@ fn update_window_retries_a_failed_check(cx: &mut TestAppContext) {
 /// update pretends to succeed, to look at the window without a real release.
 #[test]
 fn the_update_preview_offers_a_sample_release() {
-    let source = crate::ui::update::preview_source("9.9.9");
+    let source = crate::ui::update::preview_source("9.9.9", true);
     let release = (source.fetch)().unwrap();
     assert_eq!(release.version, "9.9.9");
     assert!(!release.notes.is_empty(), "with sample notes");
@@ -678,7 +701,7 @@ fn cmd_w_closes_the_other_windows(cx: &mut TestAppContext) {
     settle(cx);
     assert_eq!(windows(cx), 1, "about closes");
 
-    cx.update(|_, cx| crate::ui::update::set_source(crate::ui::update::preview_source("9.9.9"), cx));
+    cx.update(|_, cx| crate::ui::update::set_source(crate::ui::update::preview_source("9.9.9", true), cx));
     cx.dispatch_action(crate::actions::CheckForUpdates);
     settle(cx);
     let (h, _) = cx.update(|_, cx| crate::ui::update::update_window(cx)).expect("update");
