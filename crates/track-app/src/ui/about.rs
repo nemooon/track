@@ -1,5 +1,5 @@
-//! 「Track について」: a small window of its own, like a Mac app's About panel — the name, the
-//! version and a link to the repository. Opened from the header's menu and the Track menu.
+//! 「Track について」: a small window of its own, like a Mac app's About panel — the icon, the
+//! name, the version and a link to the repository. Opened from the header's menu and the Track menu.
 use crate::ui::theme::*;
 use gpui::{
     AnyWindowHandle, App, AppContext, Context, Global, InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled, TitlebarOptions,
@@ -36,7 +36,7 @@ pub fn open_about(cx: &mut App) {
         let _ = window.update(cx, |_, window, _| window.activate_window());
         return;
     }
-    let bounds = gpui::Bounds::centered(None, size(px(320.), px(300.)), cx);
+    let bounds = gpui::Bounds::centered(None, size(px(320.), px(280.)), cx);
     let opened = cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -71,7 +71,6 @@ impl Render for AboutWindow {
             .child(gpui::img(self.icon.clone()).debug_selector(|| "about-icon".into()).size(px(96.)).mb_2())
             .child(div().text_size(px(20.)).font_weight(gpui::FontWeight::BOLD).child("Track"))
             .child(div().debug_selector(|| "about-version".into()).text_size(px(12.)).text_color(p.text_muted).child(format!("バージョン {}", env!("CARGO_PKG_VERSION"))))
-            .child(div().mt_2().text_size(px(12.)).text_color(p.text_muted).child("ローカルで動く工数記録アプリ"))
             .child(
                 div()
                     .id("about-github")
