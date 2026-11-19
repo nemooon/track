@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Draws the app icon (packaging/icon.svg): a stopwatch on a dark tile under the header's dot
-pattern, its tracked time marked in blue. scripts/build-icon.sh renders it into icon.icns.
+"""Draws the app icon (packaging/icon.svg): a stopwatch face (no buttons) on a dark tile under the
+header's dot pattern, its tracked time marked in blue. scripts/build-icon.sh renders it into icon.icns.
 
 Shadows are stacked translucent shapes, not SVG filters (macOS's SVG renderer ignores filters).
 """
@@ -10,11 +10,8 @@ import sys
 
 CX, CY = 512, 512  # the watch's centre: the middle of the icon
 R = 292  # the watch's outer radius (before WATCH_SCALE)
-# The whole watch (with its buttons and shadow) is drawn this much smaller, about the centre.
+# The whole watch (with its shadow) is drawn this much smaller, about the centre.
 WATCH_SCALE = 0.9
-# The button on top (crown) and its stem, from the top of the watch up.
-STEM_W, STEM_H = 48, 56
-CROWN_W, CROWN_H = 120, 50
 TILE = (100, 100, 824, 185)  # x, y, side, corner radius (Apple's icon grid)
 
 
@@ -63,17 +60,11 @@ def svg():
     hand_end, hand_tail = polar(206, 130), polar(-44, 130)
     tile_shadow = soft_shadow(lambda i, dy, a: f'<rect x="{x0 - i}" y="{y0 + dy}" width="{side + 2 * i}" height="{side}" rx="{rx + i}" fill="#000" fill-opacity="{a}"/>', steps=6, dy=3, alpha=0.035)
     watch_shadow = soft_shadow(lambda i, dy, a: f'<circle cx="{CX}" cy="{CY + 6 + dy}" r="{R + i * 2}" fill="#000" fill-opacity="{a}"/>', steps=7, dy=3, alpha=0.06)
-    stem_top = CY - R - STEM_H + 14
-    crown_top = stem_top - CROWN_H + 10
-    crown_x = CX - CROWN_W / 2
-    crown_shadow = soft_shadow(lambda i, dy, a: f'<rect x="{crown_x - i}" y="{crown_top + dy + 4}" width="{CROWN_W + 2 * i}" height="{CROWN_H}" rx="{CROWN_H / 2}" fill="#000" fill-opacity="{a}"/>', steps=5, dy=2, alpha=0.06)
-    knurl = "".join(f'<rect x="{x}" y="{crown_top + 10}" width="5" height="{CROWN_H - 20}" rx="2.5" fill="#000" fill-opacity="0.12"/>' for x in range(int(crown_x) + 20, int(crown_x + CROWN_W) - 16, 15))
     return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
 <defs>
 <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#343842"/><stop offset="1" stop-color="#101216"/></linearGradient>
 <clipPath id="tileclip"><rect x="{x0}" y="{y0}" width="{side}" height="{side}" rx="{rx}"/></clipPath>
 <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbfcfd"/><stop offset="0.55" stop-color="#d9dde4"/><stop offset="1" stop-color="#aeb4bf"/></linearGradient>
-<linearGradient id="metaldark" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c9ced6"/><stop offset="1" stop-color="#8c939f"/></linearGradient>
 <radialGradient id="face" cx="0.5" cy="0.35" r="0.75"><stop offset="0" stop-color="#232730"/><stop offset="1" stop-color="#0c0e11"/></radialGradient>
 </defs>
 {tile_shadow}
@@ -81,11 +72,6 @@ def svg():
 <g clip-path="url(#tileclip)" transform="rotate(-2 512 512)">{dots()}</g>
 <rect x="{x0 + 1.5}" y="{y0 + 1.5}" width="{side - 3}" height="{side - 3}" rx="{rx - 1.5}" fill="none" stroke="#fff" stroke-opacity="0.10" stroke-width="3"/>
 <g transform="translate({CX} {CY}) scale({WATCH_SCALE}) translate({-CX} {-CY})">
-{crown_shadow}
-<rect x="{CX - STEM_W / 2}" y="{stem_top}" width="{STEM_W}" height="{STEM_H}" rx="9" fill="url(#metaldark)"/>
-<rect x="{crown_x}" y="{crown_top}" width="{CROWN_W}" height="{CROWN_H}" rx="{CROWN_H / 2}" fill="url(#metal)"/>
-{knurl}
-<g transform="rotate(45 {CX} {CY})"><rect x="{CX - 14}" y="{CY - R - 20}" width="28" height="32" rx="8" fill="url(#metaldark)"/></g>
 {watch_shadow}
 <circle cx="{CX}" cy="{CY}" r="{R}" fill="url(#metal)"/>
 <circle cx="{CX}" cy="{CY}" r="262" fill="#6b7280"/>
