@@ -8,7 +8,11 @@ import math
 import random
 import sys
 
-CX, CY = 512, 574  # the watch's centre
+CX, CY = 512, 512  # the watch's centre: the middle of the icon
+R = 292  # the watch's outer radius
+# The button on top (crown) and its stem, from the top of the watch up.
+STEM_W, STEM_H = 48, 56
+CROWN_W, CROWN_H = 120, 50
 TILE = (100, 100, 824, 185)  # x, y, side, corner radius (Apple's icon grid)
 
 
@@ -56,9 +60,12 @@ def svg():
     x0, y0, side, rx = TILE
     hand_end, hand_tail = polar(206, 130), polar(-44, 130)
     tile_shadow = soft_shadow(lambda i, dy, a: f'<rect x="{x0 - i}" y="{y0 + dy}" width="{side + 2 * i}" height="{side}" rx="{rx + i}" fill="#000" fill-opacity="{a}"/>', steps=6, dy=3, alpha=0.035)
-    watch_shadow = soft_shadow(lambda i, dy, a: f'<circle cx="{CX}" cy="{CY + 6 + dy}" r="{292 + i * 2}" fill="#000" fill-opacity="{a}"/>', steps=7, dy=3, alpha=0.06)
-    crown_shadow = soft_shadow(lambda i, dy, a: f'<rect x="{438 - i}" y="{188 + dy + 4}" width="{148 + 2 * i}" height="62" rx="31" fill="#000" fill-opacity="{a}"/>', steps=5, dy=2, alpha=0.06)
-    knurl = "".join(f'<rect x="{x}" y="200" width="6" height="42" rx="3" fill="#000" fill-opacity="0.12"/>' for x in range(462, 560, 18))
+    watch_shadow = soft_shadow(lambda i, dy, a: f'<circle cx="{CX}" cy="{CY + 6 + dy}" r="{R + i * 2}" fill="#000" fill-opacity="{a}"/>', steps=7, dy=3, alpha=0.06)
+    stem_top = CY - R - STEM_H + 14
+    crown_top = stem_top - CROWN_H + 10
+    crown_x = CX - CROWN_W / 2
+    crown_shadow = soft_shadow(lambda i, dy, a: f'<rect x="{crown_x - i}" y="{crown_top + dy + 4}" width="{CROWN_W + 2 * i}" height="{CROWN_H}" rx="{CROWN_H / 2}" fill="#000" fill-opacity="{a}"/>', steps=5, dy=2, alpha=0.06)
+    knurl = "".join(f'<rect x="{x}" y="{crown_top + 10}" width="5" height="{CROWN_H - 20}" rx="2.5" fill="#000" fill-opacity="0.12"/>' for x in range(int(crown_x) + 20, int(crown_x + CROWN_W) - 16, 15))
     return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
 <defs>
 <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#343842"/><stop offset="1" stop-color="#101216"/></linearGradient>
@@ -72,12 +79,12 @@ def svg():
 <g clip-path="url(#tileclip)" transform="rotate(-2 512 512)">{dots()}</g>
 <rect x="{x0 + 1.5}" y="{y0 + 1.5}" width="{side - 3}" height="{side - 3}" rx="{rx - 1.5}" fill="none" stroke="#fff" stroke-opacity="0.10" stroke-width="3"/>
 {crown_shadow}
-<rect x="484" y="236" width="56" height="64" rx="10" fill="url(#metaldark)"/>
-<rect x="438" y="188" width="148" height="62" rx="31" fill="url(#metal)"/>
+<rect x="{CX - STEM_W / 2}" y="{stem_top}" width="{STEM_W}" height="{STEM_H}" rx="9" fill="url(#metaldark)"/>
+<rect x="{crown_x}" y="{crown_top}" width="{CROWN_W}" height="{CROWN_H}" rx="{CROWN_H / 2}" fill="url(#metal)"/>
 {knurl}
-<g transform="rotate(45 {CX} {CY})"><rect x="492" y="258" width="40" height="56" rx="10" fill="url(#metaldark)"/></g>
+<g transform="rotate(45 {CX} {CY})"><rect x="{CX - 14}" y="{CY - R - 20}" width="28" height="32" rx="8" fill="url(#metaldark)"/></g>
 {watch_shadow}
-<circle cx="{CX}" cy="{CY}" r="292" fill="url(#metal)"/>
+<circle cx="{CX}" cy="{CY}" r="{R}" fill="url(#metal)"/>
 <circle cx="{CX}" cy="{CY}" r="262" fill="#6b7280"/>
 <circle cx="{CX}" cy="{CY}" r="256" fill="url(#face)"/>
 <path d="{arc(214, 0, 130)}" fill="none" stroke="#3b82f6" stroke-opacity="0.25" stroke-width="66" stroke-linecap="round"/>
