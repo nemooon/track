@@ -737,21 +737,19 @@ fn a_failed_save_is_told_in_the_status_bar(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("status-flash-error").is_some(), "the failure is shown in red");
 }
 
-/// A deletion lands in the history: the bell gets a dot until the list is opened from it.
+/// A deletion lands in the history, opened from the bell (which carries no unread mark).
 #[gpui::test]
 fn deleting_is_listed_in_the_history(cx: &mut TestAppContext) {
     let (_app, cx, _f) = setup(cx);
     assert!(cx.debug_bounds("status-history").is_some(), "the bell is in the status bar");
-    assert!(cx.debug_bounds("status-history-dot").is_none(), "nothing new yet");
     let b = cx.debug_bounds("entry-a").expect("entry block");
     cx.simulate_click(b.center(), Modifiers::none());
     cx.simulate_keystrokes("backspace");
     wait_io(cx);
-    assert!(cx.debug_bounds("status-history-dot").is_some(), "something new");
+    assert!(cx.debug_bounds("status-history-dot").is_none(), "no unread mark");
     click(cx, "status-history");
     let list = cx.debug_bounds("status-history-list").expect("the list opens");
     let bell = cx.debug_bounds("status-history").unwrap();
     assert!(list.bottom() <= bell.top(), "it opens above the bell");
     assert!(cx.debug_bounds("status-history-item-0").is_some(), "the deletion is listed");
-    assert!(cx.debug_bounds("status-history-dot").is_none(), "seen");
 }

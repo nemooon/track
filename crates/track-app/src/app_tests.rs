@@ -406,21 +406,31 @@ fn apply_theme_switches_palette_and_component_theme(cx: &mut TestAppContext) {
     assert_eq!(cx.update(|_, cx| gpui_component::Theme::global(cx).mode), gpui_component::ThemeMode::Light);
 }
 
-/// The history keeps the newest notices first, up to HISTORY_LIMIT, and flags them unseen.
+/// The history keeps the newest notices first, up to HISTORY_LIMIT.
 #[test]
-fn notice_history_keeps_the_newest_fifty() {
+fn notice_history_keeps_only_the_newest() {
     use crate::app::{HISTORY_LIMIT, NoticeHistory};
     let mut h = NoticeHistory::default();
-    assert!(!h.unseen);
-    let at = chrono::Local::now();
     for i in 0..HISTORY_LIMIT + 5 {
-        h.push(format!("n{i}"), i % 2 == 0, at);
+        h.push(format!("n{i}"), i % 2 == 0);
     }
-    assert_eq!(h.items.len(), HISTORY_LIMIT);
+    assert_eq!(HISTORY_LIMIT, 10);
+    assert_eq!(h.items.len(), HISTORY_LIMIT, "older ones are pushed out");
     assert_eq!(h.items[0].text, format!("n{}", HISTORY_LIMIT + 4), "newest first");
-    assert!(h.unseen);
-    h.mark_seen();
-    assert!(!h.unseen);
+}
+
+/// 「履歴を消す」 in the list empties it.
+#[gpui::test]
+fn the_history_can_be_cleared(cx: &mut TestAppContext) {
+    let (app, cx, f) = seeded(cx, false);
+    refresh(&app, cx);
+    ai_rename(&mut f.db(), "a", "AI");
+    refresh(&app, cx);
+    open_history(cx);
+    click_sel(cx, "status-history-clear");
+    assert!(app.read_with(cx, |a, cx| a.state.read(cx).history.items.is_empty()));
+    assert!(cx.debug_bounds("status-history-item-0").is_none());
+    assert!(cx.debug_bounds("status-flash").is_none(), "the flash of a cleared notice goes too");
 }
 
 /// AI changes join the history too.

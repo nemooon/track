@@ -32,9 +32,6 @@ pub fn render(app: &TrackApp, left: Vec<AnyElement>, cx: &mut Context<TrackApp>)
 
 fn toggle_history(this: &mut TrackApp, open: bool, cx: &mut Context<TrackApp>) {
     this.history_open = open;
-    if open {
-        this.state.update(cx, |s, cx| s.mark_history_seen(cx));
-    }
     cx.notify();
 }
 
@@ -65,7 +62,7 @@ fn flash_notice(item: &HistoryItem, p: Palette, cx: &mut Context<TrackApp>) -> i
         .on_click(cx.listener(|this, _, _, cx| toggle_history(this, true, cx)))
 }
 
-/// The bell at the right end: a dot while something is unseen; it opens the list above it.
+/// The bell at the right end; it opens the list above it.
 fn history_bell(history: &NoticeHistory, open: bool, p: Palette, cx: &mut Context<TrackApp>) -> impl IntoElement {
     let bell = div()
         .id("status-history")
@@ -79,9 +76,6 @@ fn history_bell(history: &NoticeHistory, open: bool, p: Palette, cx: &mut Contex
         .when(open, |d| d.bg(p.hover))
         .hover(move |s| s.text_color(p.text).bg(p.hover))
         .child(crate::ui::icons::bell().size(px(12.)))
-        .when(history.unseen, |d| {
-            d.child(div().debug_selector(|| "status-history-dot".into()).absolute().top(px(1.)).right(px(1.)).size(px(5.)).rounded_full().bg(p.accent))
-        })
         .on_click(cx.listener(|this, _, _, cx| {
             let open = !this.history_open;
             toggle_history(this, open, cx);
@@ -109,6 +103,22 @@ fn history_list(history: &NoticeHistory, p: Palette, cx: &mut Context<TrackApp>)
             .shadow_md()
             .text_size(px(12.))
             .when(history.items.is_empty(), |d| d.child(div().px_2().py_1().text_color(p.text_muted).child("通知はまだありません")))
+            .when(!history.items.is_empty(), |d| {
+                d.child(
+                    div().flex().justify_end().px_2().pb_1().border_b_1().border_color(p.border_subtle).mb_1().child(
+                        div()
+                            .id("status-history-clear")
+                            .debug_selector(|| "status-history-clear".into())
+                            .px_1p5()
+                            .rounded(RADIUS_SM)
+                            .text_color(p.text_muted)
+                            .cursor_pointer()
+                            .hover(move |s| s.text_color(p.text).bg(p.hover))
+                            .child("履歴を消す")
+                            .on_click(cx.listener(|this, _, _, cx| this.state.update(cx, |s, cx| s.clear_history(cx)))),
+                    ),
+                )
+            })
             .children(rows)
             .on_mouse_down_out(cx.listener(|this, _, _, cx| {
                 this.history_open = false;
@@ -118,7 +128,7 @@ fn history_list(history: &NoticeHistory, p: Palette, cx: &mut Context<TrackApp>)
     .with_priority(5)
 }
 
-/// A row: time, text and, while it can be undone, 「元に戻す」 (or how the undo went).
+/// A row: the text and, while it can be undone, 「元に戻す」 (or how the undo went).
 fn history_row(i: usize, item: &HistoryItem, p: Palette, cx: &mut Context<TrackApp>) -> AnyElement {
     let id = item.id;
     let undo = item.action.as_ref().map(|_| item.undo.clone());
@@ -129,7 +139,6 @@ fn history_row(i: usize, item: &HistoryItem, p: Palette, cx: &mut Context<TrackA
         .gap_2()
         .px_2()
         .py_1()
-        .child(div().flex_none().font_family(MONO).text_color(p.text_muted).child(item.at.format("%H:%M").to_string()))
         .child(
             div()
                 .flex_1()

@@ -89,8 +89,8 @@ impl StatusNote {
     }
 }
 
-/// How many notices the history keeps.
-pub const HISTORY_LIMIT: usize = 50;
+/// How many notices the history keeps: older ones are pushed out by new ones.
+pub const HISTORY_LIMIT: usize = 10;
 
 /// How long a new notice shows in the status bar.
 pub const FLASH_FOR: std::time::Duration = std::time::Duration::from_secs(5);
@@ -118,7 +118,6 @@ pub enum UndoState {
 #[derive(Debug, Clone, PartialEq)]
 pub struct HistoryItem {
     pub id: u64,
-    pub at: chrono::DateTime<chrono::Local>,
     pub text: String,
     /// A failure, shown in red.
     pub error: bool,
@@ -130,29 +129,23 @@ pub struct HistoryItem {
 #[derive(Debug, Clone, Default)]
 pub struct NoticeHistory {
     pub items: std::collections::VecDeque<HistoryItem>,
-    /// Something arrived since the list was last opened (the bell's dot).
-    pub unseen: bool,
     next_id: u64,
 }
 
 impl NoticeHistory {
     /// Adds a notice on top and returns its id.
     #[cfg(test)]
-    pub fn push(&mut self, text: String, error: bool, at: chrono::DateTime<chrono::Local>) -> u64 {
-        self.push_with(text, error, None, at)
+    pub fn push(&mut self, text: String, error: bool) -> u64 {
+        self.push_with(text, error, None)
     }
 
-    pub fn push_with(&mut self, text: String, error: bool, action: Option<HistoryAction>, at: chrono::DateTime<chrono::Local>) -> u64 {
+    pub fn push_with(&mut self, text: String, error: bool, action: Option<HistoryAction>) -> u64 {
         self.next_id += 1;
-        self.items.push_front(HistoryItem { id: self.next_id, at, text, error, action, undo: UndoState::Open });
+        self.items.push_front(HistoryItem { id: self.next_id, text, error, action, undo: UndoState::Open });
         self.items.truncate(HISTORY_LIMIT);
-        self.unseen = true;
         self.next_id
     }
 
-    pub fn mark_seen(&mut self) {
-        self.unseen = false;
-    }
 
     pub fn get(&self, id: u64) -> Option<&HistoryItem> {
         self.items.iter().find(|i| i.id == id)
@@ -336,7 +329,7 @@ impl AppState {
 
     /// Adds a notice to the history and shows it in the status bar for `FLASH_FOR`.
     fn notice(&mut self, text: String, error: bool, action: Option<HistoryAction>, cx: &mut Context<Self>) {
-        let id = self.history.push_with(text, error, action, chrono::Local::now());
+        let id = self.history.push_with(text, error, action);
         self.flash = Some(id);
         self.flash_task = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(FLASH_FOR).await;
@@ -359,8 +352,10 @@ impl AppState {
         }
     }
 
-    pub fn mark_history_seen(&mut self, cx: &mut Context<Self>) {
-        self.history.mark_seen();
+    /// 「履歴を消す」.
+    pub fn clear_history(&mut self, cx: &mut Context<Self>) {
+        self.history.items.clear();
+        self.flash = None;
         cx.notify();
     }
 
