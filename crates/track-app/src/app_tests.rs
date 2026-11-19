@@ -511,6 +511,8 @@ fn about_opens_its_own_window(cx: &mut TestAppContext) {
     let mut acx = gpui::VisualTestContext::from_window(handle, cx);
     acx.run_until_parked();
     assert!(acx.debug_bounds("about-version").is_some(), "the version");
+    let icon = acx.debug_bounds("about-icon").expect("the app icon");
+    assert_eq!(icon.size.width, gpui::px(96.));
     assert!(acx.debug_bounds("about-github").is_some(), "the GitHub link");
     cx.dispatch_action(crate::actions::ShowAbout);
     settle(cx);

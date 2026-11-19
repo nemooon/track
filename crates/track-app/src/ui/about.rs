@@ -9,7 +9,12 @@ use gpui_component::Root;
 
 pub const GITHUB_URL: &str = "https://github.com/nemooon/track";
 
-pub struct AboutWindow;
+/// The app icon (rendered by scripts/build-icon.sh).
+const ICON_PNG: &[u8] = include_bytes!("../../../../packaging/icon-256.png");
+
+pub struct AboutWindow {
+    icon: std::sync::Arc<gpui::Image>,
+}
 
 struct OpenAbout {
     window: AnyWindowHandle,
@@ -31,7 +36,7 @@ pub fn open_about(cx: &mut App) {
         let _ = window.update(cx, |_, window, _| window.activate_window());
         return;
     }
-    let bounds = gpui::Bounds::centered(None, size(px(320.), px(220.)), cx);
+    let bounds = gpui::Bounds::centered(None, size(px(320.), px(300.)), cx);
     let opened = cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -41,7 +46,7 @@ pub fn open_about(cx: &mut App) {
             ..Default::default()
         },
         |window, cx| {
-            let view = cx.new(|_| AboutWindow);
+            let view = cx.new(|_| AboutWindow { icon: std::sync::Arc::new(gpui::Image::from_bytes(gpui::ImageFormat::Png, ICON_PNG.to_vec())) });
             cx.set_global(OpenAbout { window: window.window_handle(), view: view.downgrade() });
             cx.new(|cx| Root::new(view, window, cx))
         },
@@ -63,6 +68,7 @@ impl Render for AboutWindow {
             .gap_1()
             .bg(p.bg)
             .text_color(p.text)
+            .child(gpui::img(self.icon.clone()).debug_selector(|| "about-icon".into()).size(px(96.)).mb_2())
             .child(div().text_size(px(20.)).font_weight(gpui::FontWeight::BOLD).child("Track"))
             .child(div().debug_selector(|| "about-version".into()).text_size(px(12.)).text_color(p.text_muted).child(format!("バージョン {}", env!("CARGO_PKG_VERSION"))))
             .child(div().mt_2().text_size(px(12.)).text_color(p.text_muted).child("ローカルで動く工数記録アプリ"))

@@ -14,8 +14,8 @@
 - `database/migrations/` — 手書き SQL。`track-core/src/migrate.rs` が `include_str!` で埋め込み、起動時とリストア後に当てる
 - `integrations/` — Codex スキルと Claude Code コマンドの元の文面（`track-core/src/integrations.rs` が埋め込む）
 - `helpers/apple-intelligence/` — Apple Intelligence で生成するためのヘルパーアプリ（Swift）
-- `packaging/` — `.app` の `Info.plist` とアイコン
-- `scripts/` — `package.sh`（アルファ版を作る）、`prepare-db.sh`（コピー DB を作る）、`winshot.sh`（アプリのウインドウだけを撮る）、`build-ai-helper.sh`（ヘルパーをアプリの隣の `target/debug/` にビルド）
+- `packaging/` — `.app` の `Info.plist` とアイコン（`icon.svg` から `scripts/build-icon.sh` で作る）
+- `scripts/` — `package.sh`（アルファ版を作る）、`prepare-db.sh`（コピー DB を作る）、`winshot.sh`（アプリのウインドウだけを撮る）、`build-ai-helper.sh`（ヘルパーをアプリの隣の `target/debug/` にビルド）、`build-icon.sh`（`icon.py` で描いたアイコンを `packaging/` の icns と PNG にする）
 - `docs/superpowers/` — 設計書と実装計画
 
 ## 開発コマンド
