@@ -137,6 +137,17 @@ pub fn register_system_menus() {
     let Some(main) = app.mainMenu() else { return };
     let submenu = |title: &str| main.itemWithTitle(&NSString::from_str(title)).and_then(|item| item.submenu());
     if let Some(menu) = submenu("ウインドウ") {
+        // Point our items at AppKit's own actions, so macOS sees the standard 「しまう」
+        // 「拡大／縮小」「すべてを手前に移動」 and puts its items (fill, tiling, the window
+        // list) around them in the usual order.
+        for (title, action) in [("しまう", objc2::sel!(performMiniaturize:)), ("拡大／縮小", objc2::sel!(performZoom:)), ("すべてを手前に移動", objc2::sel!(arrangeInFront:))] {
+            if let Some(item) = menu.itemWithTitle(&NSString::from_str(title)) {
+                unsafe {
+                    item.setTarget(None);
+                    item.setAction(Some(action));
+                }
+            }
+        }
         app.setWindowsMenu(Some(&menu));
     }
     if let Some(menu) = submenu("ヘルプ") {
