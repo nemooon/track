@@ -4,7 +4,7 @@
 アプリと CLI が共通の `track-core` で SQLite を直接読み書きする。
 設計: `docs/superpowers/specs/2026-11-12-gpui-native-design.md`
 
-以前の Tauri 版（Vite + React + Bun）は `main` ブランチに残っている。作り直しの経緯と計測は `NOTES.md`。
+以前の Tauri 版（Vite + React + Bun）は `tauri` ブランチとタグ `v0.7.4` に残っている。作り直しの経緯と計測は `NOTES.md`。
 
 ## 構成
 

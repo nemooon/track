@@ -4,7 +4,7 @@
 
 - アプリ: Rust + GPUI（gpui-pre）+ gpui-component
 - DB: SQLite（rusqlite）。サーバーは持たず、アプリと CLI が直接読み書きする
-- 以前の Tauri 版（Vite + React + Bun + Prisma）は `main` ブランチにだけ残っている
+- 以前の Tauri 版（Vite + React + Bun + Prisma）は `tauri` ブランチとタグ `v0.7.4` にだけ残っている
 
 ## コード配置
 
