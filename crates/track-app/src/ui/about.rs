@@ -77,11 +77,15 @@ impl Render for AboutWindow {
                     .id("about-github")
                     .debug_selector(|| "about-github".into())
                     .mt_3()
+                    .flex()
+                    .items_center()
+                    .gap_1p5()
                     .text_size(px(12.))
-                    .text_color(p.accent)
+                    .text_color(p.text_muted)
                     .cursor_pointer()
-                    .hover(|s| s.underline())
-                    .child("GitHub で見る")
+                    .hover(move |s| s.text_color(p.text))
+                    .child(crate::ui::icons::github().size(px(14.)))
+                    .child("GitHub")
                     .on_click(|_, _, cx| cx.open_url(GITHUB_URL)),
             )
     }
