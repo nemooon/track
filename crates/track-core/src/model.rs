@@ -65,12 +65,12 @@ pub struct TimeEntry {
     pub external_event_source: Option<String>,
     #[serde(default)]
     pub break_minutes: i64,
-    /// `direct` for a 直行直帰 day; everything else is `normal`.
+    /// `direct` for a 終日 day (once called 直行直帰); everything else is `normal`.
     #[serde(default)]
     pub kind: EntryKind,
 }
 
-/// What a time entry is: an ordinary record, or a 直行直帰 day (one day of scheduled work for a
+/// What a time entry is: an ordinary record, or a 終日 day (once called 直行直帰) (one day of scheduled work for a
 /// project, made from the calendar's day menu).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

@@ -1,16 +1,14 @@
-//! The day header's 休暇・直行直帰 menu and mark. The menu is a popover from a small button: leave
-//! (全日・前半・後半・なし, 「休暇にしない」 on a holiday) and 直行直帰 (pick a project, or take it
-//! away; the project list and its search are the ones new entries use). Choosing saves at once; leave and a direct visit never share a day (core keeps that).
+//! The day header's 休暇・予定 menu and mark. The menu is a popover from a small button: leave
+//! (全日・前半・後半・なし, 「休暇にしない」 on a holiday, saved at once) and 予定: 「終日」 frames the
+//! day's work hours and opens the picker new entries use (or the day's 終日 with 「外す」). Leave
+//! and a 終日 never share a day (core keeps that).
 use super::CalendarView;
 use crate::core::holidays::holiday_name;
 use crate::settings::popover::Trigger;
 use crate::ui::{controls, theme::*};
 use chrono::{Datelike, NaiveDate};
-use gpui::{AnyElement, AppContext, Context, InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, div, prelude::FluentBuilder, px};
-use gpui_component::input::{Input, InputEvent, InputState};
+use gpui::{AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, div, prelude::FluentBuilder, px};
 use gpui_component::popover::Popover;
-use super::picker::{PickFn, project_list};
-use std::rc::Rc;
 use std::future::Future;
 use track_core::model::{EntryKind, LeaveKind, TimeEntry};
 
@@ -30,7 +28,7 @@ impl CalendarView {
         self.auto_leave(d, cx) && !self.leaves.contains_key(&d) && self.direct_on(d).is_none()
     }
 
-    /// 「休暇」「前半休」「後半休」 or 「直行直帰 プロジェクト」 in the header.
+    /// 「休暇」「前半休」「後半休」 or 「終日 プロジェクト」 in the header.
     pub(super) fn day_mark(&self, d: NaiveDate, cx: &mut Context<Self>) -> Option<AnyElement> {
         let p = palette(cx);
         let sel = format!("day-mark-{d}");
@@ -40,7 +38,7 @@ impl CalendarView {
         if let Some(e) = self.direct_on(d) {
             let (name, color) = e.project.as_ref().map(|p| (p.name.clone(), p.color.clone())).unwrap_or_default();
             let c = hex(if color.is_empty() { NO_PROJECT } else { &color });
-            let text = if name.is_empty() { "直行直帰".to_string() } else { format!("直行直帰 {name}") };
+            let text = if name.is_empty() { "終日".to_string() } else { format!("終日 {name}") };
             return Some(badge(text, gpui::Hsla::from(mix(c, 0.18, p.bg)), p.text).into_any_element());
         }
         let label = match self.leaves.get(&d) {
@@ -53,9 +51,8 @@ impl CalendarView {
     }
 
     /// Saves through `fut`, then re-reads everything (this page and the reports).
-    fn save_day(&mut self, fut: impl Future<Output = crate::data::DataResult<impl Send + 'static>> + Send + 'static, cx: &mut Context<Self>) {
+    pub(super) fn save_day(&mut self, fut: impl Future<Output = crate::data::DataResult<impl Send + 'static>> + Send + 'static, cx: &mut Context<Self>) {
         self.day_menu = None;
-        self.direct_query = None;
         cx.spawn(async move |this, cx| {
             let result = fut.await;
             let _ = this.update(cx, |this, cx| {
@@ -74,21 +71,15 @@ impl CalendarView {
     pub(super) fn render_day_menu(&self, d: NaiveDate, cx: &mut Context<Self>) -> AnyElement {
         let p = palette(cx);
         let open = self.day_menu == Some(d);
-        let button = controls::icon_button(&p, SharedString::from(format!("day-menu-{d}")), crate::ui::icons::calendar_cog(), "休暇・直行直帰")
+        let button = controls::icon_button(&p, SharedString::from(format!("day-menu-{d}")), crate::ui::icons::calendar_cog(), "休暇・予定")
             .debug_selector(move || format!("day-menu-{d}"));
         let this = cx.entity().downgrade();
         let mut pop = Popover::new(SharedString::from(format!("day-menu-pop-{d}")))
             .open(open)
-            .on_open_change(move |open: &bool, window, cx| {
+            .on_open_change(move |open: &bool, _, cx| {
                 let open = *open;
                 let _ = this.update(cx, |this, cx| {
                     this.day_menu = open.then_some(d);
-                    this.direct_query = open.then(|| {
-                        let q = cx.new(|cx| InputState::new(window, cx).placeholder("プロジェクトを検索"));
-                        cx.subscribe(&q, |_, _, _: &InputEvent, cx| cx.notify()).detach();
-                        q.update(cx, |s, cx| s.focus(window, cx));
-                        q
-                    });
                     cx.notify();
                 });
             })
@@ -116,14 +107,6 @@ impl CalendarView {
             None => !holiday,
             _ => false,
         };
-        let projects: Vec<track_core::model::Project> = self.state.read(cx).data.as_ref().map(|data| data.projects.clone()).unwrap_or_default();
-        let query = self.direct_query.clone();
-        let q = query.as_ref().map(|q| q.read(cx).value().to_string()).unwrap_or_default();
-        let on_pick: PickFn<Self> = Rc::new(move |this, id, _, cx| {
-            let fut = this.state.read(cx).api.set_direct(d, id);
-            this.save_day(fut, cx);
-        });
-        let list = project_list(&projects, &q, on_pick, cx);
         div()
             .flex()
             .flex_col()
@@ -140,7 +123,17 @@ impl CalendarView {
                     .child(leave_chip("day-leave-pm", "後半", Some(LeaveKind::Pm), current == Some(LeaveKind::Pm), cx))
                     .child(leave_chip("day-leave-none", none_label, None, none_on, cx)),
             )
-            .child(heading("直行直帰"))
+            .child(heading("予定"))
+            .when(direct.is_none(), |c| {
+                c.child(
+                    div().flex().child(
+                        controls::chip(&p, "day-allday", false)
+                            .debug_selector(|| "day-allday".into())
+                            .child("終日")
+                            .on_click(cx.listener(move |this, _, window, cx| this.start_all_day(d, window, cx))),
+                    ),
+                )
+            })
             .when_some(direct, |c, e| {
                 let (name, color) = e.project.as_ref().map(|p| (format!("{} · {}", p.client.name, p.name), p.color.clone())).unwrap_or_else(|| ("プロジェクトなし".into(), String::new()));
                 c.child(
@@ -171,14 +164,5 @@ impl CalendarView {
                         ),
                 )
             })
-            .child(
-                div()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(p.border)
-                    .overflow_hidden()
-                    .when_some(query, |c, q| c.child(div().border_b_1().border_color(p.border).child(Input::new(&q).appearance(false).px_3().py_2())))
-                    .child(list),
-            )
     }
 }

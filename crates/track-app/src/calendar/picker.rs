@@ -200,7 +200,7 @@ impl ProjectPicker {
 }
 
 /// Client-grouped project list with a trailing 「プロジェクトなし」 row (ProjectPickerPopover /
-/// ProjectSelectPopover / the 直行直帰 menu).
+/// ProjectSelectPopover).
 pub fn project_list<V: 'static>(projects: &[Project], query: &str, on_pick: PickFn<V>, cx: &mut Context<V>) -> AnyElement {
     let p = palette(cx);
     let groups = filter_projects(projects, query);

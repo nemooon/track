@@ -43,7 +43,7 @@ pub fn trash() -> gpui_component::Icon {
     gpui_component::Icon::empty().path(gpui_kit_assets::IconName::Trash.path())
 }
 
-/// The day menu: 休暇・直行直帰 (Lucide `calendar-cog`).
+/// The day menu: 休暇・予定 (Lucide `calendar-cog`).
 pub fn calendar_cog() -> gpui_component::Icon {
     gpui_component::Icon::empty().path(gpui_kit_assets::IconName::CalendarCog.path())
 }

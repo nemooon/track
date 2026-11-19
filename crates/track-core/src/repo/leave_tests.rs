@@ -99,7 +99,7 @@ fn direct_is_one_day_of_work() {
     let d = day(11, 12);
     let e = db.set_direct(d, Some(&p)).unwrap();
     assert_eq!((e.start, e.end, e.break_minutes, e.kind), (at(d, 600), at(d, 1110), 60, EntryKind::Direct));
-    assert_eq!((e.title.as_deref(), e.project_id.as_deref()), (Some("直行直帰"), Some(p.as_str())));
+    assert_eq!((e.title.as_deref(), e.project_id.as_deref()), (Some("終日"), Some(p.as_str())));
     assert_eq!((e.end - e.start).num_minutes() - e.break_minutes, 450);
     assert_eq!(db.direct_entry(d).unwrap().map(|x| x.id), Some(e.id));
 }
@@ -181,4 +181,21 @@ fn a_direct_visit_can_have_no_project() {
     let e = db.set_direct(d, None).unwrap();
     assert_eq!((e.kind, e.project_id), (EntryKind::Direct, None));
     assert_eq!(db.direct_entry(d).unwrap().map(|e| e.id), Some(e.id));
+}
+
+/// An all-day entry made from the picker keeps its title, note and tags; its times are the work
+/// hours whatever the input says.
+#[test]
+fn all_day_keeps_the_pickers_title_note_and_tags() {
+    let (_d, mut db) = db();
+    schedule(&mut db);
+    let (p, _, _) = crate::repo::repo_tests::seed(&mut db);
+    let tag = db.create_tag("客先", "#123456").unwrap();
+    let d = day(11, 12);
+    let e = db
+        .set_direct_with(d, NewEntry { project_id: Some(p.clone()), title: Some("客先で打合せ".into()), note: Some("メモ".into()), tag_ids: vec![tag.clone()], start: at(d, 0), end: at(d, 30), break_minutes: 0, ..Default::default() })
+        .unwrap();
+    assert_eq!((e.start, e.end, e.break_minutes, e.kind), (at(d, 600), at(d, 1110), 60, EntryKind::Direct));
+    assert_eq!((e.title.as_deref(), e.note.as_deref()), (Some("客先で打合せ"), Some("メモ")));
+    assert_eq!(e.tags.iter().map(|t| t.tag_id.clone()).collect::<Vec<_>>(), vec![tag]);
 }

@@ -176,8 +176,9 @@ impl DataClient {
     }
 
     /// `None` is 「プロジェクトなし」.
-    pub fn set_direct(&self, date: chrono::NaiveDate, project_id: Option<String>) -> impl Future<Output = DataResult<TimeEntry>> + Send + 'static {
-        self.call("set_direct", move |db| db.set_direct(date, project_id.as_deref()))
+    /// The day's 終日 with the picker's project, title, note and tags (over the work hours).
+    pub fn set_direct(&self, date: chrono::NaiveDate, body: NewEntry) -> impl Future<Output = DataResult<TimeEntry>> + Send + 'static {
+        self.call("set_direct", move |db| db.set_direct_with(date, body))
     }
 
     pub fn remove_direct(&self, date: chrono::NaiveDate) -> impl Future<Output = DataResult<()>> + Send + 'static {

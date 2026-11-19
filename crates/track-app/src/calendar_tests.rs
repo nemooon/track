@@ -387,41 +387,61 @@ fn choosing_full_leave_marks_the_day(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("day-mark-2026-11-12").is_some(), "the header says 休暇");
 }
 
+/// The day menu's 「予定」 has a 「終日」 button: it closes the menu, frames the work hours on that
+/// day and opens the same picker new entries use.
+fn start_all_day(app: &gpui::Entity<crate::app::TrackApp>, cx: &mut gpui::VisualTestContext) {
+    click_id(cx, "day-menu-2026-11-12".into());
+    assert!(cx.debug_bounds("project-p1").is_none(), "no project list in the menu any more");
+    click_id(cx, "day-allday".into());
+    assert!(cx.debug_bounds("day-allday").is_none(), "the menu closes");
+    assert!(cx.debug_bounds("project-picker").is_some(), "the picker opens");
+    let drag = app.read_with(cx, |a, cx| a.calendar.read(cx).drag.clone());
+    let DragState::Picking { day_index, start_min, end_min } = drag else { panic!("expected Picking, got {drag:?}") };
+    assert_eq!((day_index, start_min, end_min), (3, 10 * 60, 18 * 60 + 30), "the 12th's work hours");
+}
+
 #[gpui::test]
-fn direct_shows_in_the_time_grid_and_counts_once(cx: &mut TestAppContext) {
+fn all_day_is_made_through_the_picker_and_counts_once(cx: &mut TestAppContext) {
     let (app, cx, f) = setup(cx);
     let days = visible_days(&app, cx);
     let before = app.read_with(cx, |a, cx| a.calendar.read(cx).visible_total_minutes(&days));
-    click_id(cx, "day-menu-2026-11-12".into());
-    click_id(cx, "project-p1".into());
+    start_all_day(&app, cx);
+    click(cx, "project-p1");
     wait_io(cx);
-    let direct = f.db().direct_entry(day(12)).unwrap().expect("direct entry");
-    assert!(cx.debug_bounds(Box::leak(format!("entry-{}", direct.id).into_boxed_str())).is_some(), "a block in the time grid");
+    cx.simulate_input("客先");
+    cx.simulate_keystrokes("cmd-enter");
+    wait_io(cx);
+    let e = f.db().direct_entry(day(12)).unwrap().expect("an all-day entry");
+    assert_eq!(e.project_id.as_deref(), Some("p1"));
+    assert_eq!(e.title.as_deref(), Some("客先"), "the picker's title");
+    assert_eq!(e.tags.iter().map(|t| t.tag_id.as_str()).collect::<Vec<_>>(), vec!["t1"], "and its tags");
+    assert!(cx.debug_bounds(Box::leak(format!("entry-{}", e.id).into_boxed_str())).is_some(), "a block in the time grid");
     assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).visible_total_minutes(&days)), before + 450);
-    assert!(cx.debug_bounds("day-mark-2026-11-12").is_some(), "the header says 直行直帰");
+    assert!(cx.debug_bounds("day-mark-2026-11-12").is_some(), "the header says 終日");
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).drag.clone()), DragState::Idle);
 }
 
 #[gpui::test]
-fn direct_uses_the_shared_project_list(cx: &mut TestAppContext) {
-    let (_app, cx, f) = setup(cx);
-    click_id(cx, "day-menu-2026-11-12".into());
-    assert!(cx.debug_bounds("project-p1").is_some() && cx.debug_bounds("project-p2").is_some());
-    cx.simulate_input("bet");
-    assert!(cx.debug_bounds("project-p1").is_none(), "the search narrows the list");
-    click_id(cx, "project-p2".into());
+fn all_day_can_be_made_without_a_project(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
+    start_all_day(&app, cx);
+    click(cx, "project-none");
     wait_io(cx);
-    assert_eq!(f.db().direct_entry(day(12)).unwrap().and_then(|e| e.project_id).as_deref(), Some("p2"));
-}
-
-#[gpui::test]
-fn direct_can_be_made_without_a_project(cx: &mut TestAppContext) {
-    let (_app, cx, f) = setup(cx);
-    click_id(cx, "day-menu-2026-11-12".into());
-    click_id(cx, "project-none".into());
+    cx.simulate_keystrokes("cmd-enter");
     wait_io(cx);
-    let e = f.db().direct_entry(day(12)).unwrap().expect("direct entry");
+    let e = f.db().direct_entry(day(12)).unwrap().expect("an all-day entry");
     assert_eq!(e.project_id, None);
-    assert!(cx.debug_bounds("day-mark-2026-11-12").is_some(), "the header says 直行直帰");
+}
+
+/// Escape in the picker makes nothing.
+#[gpui::test]
+fn all_day_can_be_cancelled(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
+    start_all_day(&app, cx);
+    cx.simulate_keystrokes("escape");
+    wait_io(cx);
+    assert!(f.db().direct_entry(day(12)).unwrap().is_none());
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).drag.clone()), DragState::Idle);
 }
 
 #[gpui::test]
@@ -513,7 +533,7 @@ fn off_hours_get_darker_in_both_themes() {
     }
 }
 
-/// A 直行直帰 on the 13th (made through core, like the day menu does), with its block's selector.
+/// A 終日 on the 13th (made through core, like the day menu does), with its block's selector.
 fn direct_block(f: &Fixture, cx: &mut gpui::VisualTestContext) -> (track_core::model::TimeEntry, &'static str) {
     let e = f.db().set_direct(day(13), Some("p1")).unwrap();
     cx.update(|_, cx| cx.refresh_windows());

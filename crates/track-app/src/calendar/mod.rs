@@ -26,7 +26,7 @@ use gpui_component::{Icon, IconName, WindowExt};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-/// A 直行直帰 keeps the work hours it was made with: it is never dragged, resized or nudged.
+/// A 終日 keeps the work hours it was made with: it is never dragged, resized or nudged.
 fn is_direct(e: &TimeEntry) -> bool {
     e.kind == track_core::model::EntryKind::Direct
 }
@@ -110,10 +110,10 @@ pub struct CalendarView {
     pub cache: EntryCache,
     /// Stored leave rows of the shown days (holidays' automatic leave is worked out when drawn).
     pub leaves: HashMap<NaiveDate, track_core::model::LeaveKind>,
-    /// The day whose 休暇・直行直帰 menu is open.
+    /// The day whose 休暇・予定 menu is open.
     day_menu: Option<NaiveDate>,
-    /// The 直行直帰 search in the open day menu.
-    direct_query: Option<Entity<gpui_component::input::InputState>>,
+    /// The open picker makes the framed day's 終日 (from the day menu), not a plain entry.
+    all_day: bool,
     pub load_error: Option<String>,
     pub drag: DragState,
     pub editing: Option<String>,
@@ -159,7 +159,7 @@ impl CalendarView {
             cache: EntryCache::default(),
             leaves: HashMap::new(),
             day_menu: None,
-            direct_query: None,
+            all_day: false,
             load_error: None,
             drag: DragState::Idle,
             editing: None,
@@ -1097,7 +1097,12 @@ impl CalendarView {
                                 tag_ids,
                                 ..Default::default()
                             };
-                            this.create(body, window, cx);
+                            if this.all_day {
+                                let fut = this.state.read(cx).api.set_direct(day, body);
+                                this.save_day(fut, cx);
+                            } else {
+                                this.create(body, window, cx);
+                            }
                         }
                     this.close_picker(cx);
                     this.focus.focus(window, cx);
@@ -1112,8 +1117,19 @@ impl CalendarView {
         cx.notify();
     }
 
+    /// 「終日」 in the day menu: frames the day's work hours and opens the picker, like a new entry.
+    pub(super) fn start_all_day(&mut self, d: NaiveDate, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(day_index) = self.rendered_days.iter().position(|x| *x == d) else { return };
+        let Some(s) = self.state.read(cx).data.as_ref().map(|data| data.settings.clone()) else { return };
+        self.day_menu = None;
+        self.all_day = true;
+        self.drag = DragState::Picking { day_index, start_min: s.work_start, end_min: s.work_end };
+        self.open_picker(window, cx);
+    }
+
     fn close_picker(&mut self, cx: &mut Context<Self>) {
         self.picker = None;
+        self.all_day = false;
         if matches!(self.drag, DragState::Picking { .. }) {
             self.drag = DragState::Idle;
         }

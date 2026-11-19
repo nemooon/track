@@ -80,37 +80,35 @@ impl Db {
         }
     }
 
-    /// The day's 直行直帰 entry, if any.
+    /// The day's 終日 entry (kind `direct`), if any.
     pub fn direct_entry(&self, date: NaiveDate) -> Result<Option<TimeEntry>> {
         let (from, to) = (crate::dates::local_midnight(date), crate::dates::local_midnight(date + chrono::Duration::days(1)));
         Ok(self.entries(from, to)?.into_iter().find(|e| e.kind == EntryKind::Direct && e.start >= from && e.start < to))
     }
 
-    /// Makes (or replaces) the day's 直行直帰: one day of scheduled work for `project_id` (or no
-    /// project), from the
-    /// work start to the work end with the one-hour break. The day's leave goes (a holiday's
-    /// automatic leave is cancelled with `none`).
+    /// Makes (or replaces) the day's 終日 (stored as `direct`): one day of scheduled work for
+    /// `project_id` (or no project), titled 「終日」. See `set_direct_with`.
     pub fn set_direct(&mut self, date: NaiveDate, project_id: Option<&str>) -> Result<TimeEntry> {
+        self.set_direct_with(date, NewEntry { project_id: project_id.map(str::to_string), title: Some("終日".into()), ..Default::default() })
+    }
+
+    /// Makes (or replaces) the day's 終日 with `input`'s project, title, note and tags: from the
+    /// work start to the work end with the one-hour break (`input`'s times and break are not
+    /// used). The day's leave goes (a holiday's automatic leave is cancelled with `none`).
+    pub fn set_direct_with(&mut self, date: NaiveDate, input: NewEntry) -> Result<TimeEntry> {
         self.ensure_writable()?;
         let settings = self.settings()?;
         let at = |minutes: i64| crate::dates::local_at(date.and_hms_opt(0, 0, 0).unwrap() + chrono::Duration::minutes(minutes)).to_utc();
         self.in_savepoint(|db| {
             db.remove_direct_inner(date)?;
-            let e = db.create_entry(NewEntry {
-                project_id: project_id.map(str::to_string),
-                start: at(settings.work_start),
-                end: at(settings.work_end),
-                title: Some("直行直帰".into()),
-                break_minutes: BREAK_MINUTES,
-                ..Default::default()
-            })?;
+            let e = db.create_entry(NewEntry { start: at(settings.work_start), end: at(settings.work_end), break_minutes: BREAK_MINUTES, external_event_id: None, external_event_source: None, ..input })?;
             db.conn().execute(r#"UPDATE "TimeEntry" SET kind = ?1 WHERE id = ?2"#, params![EntryKind::Direct.as_db(), e.id])?;
             db.write_leave_row(date, is_auto_leave(&settings, date).then_some(LeaveKind::None))?;
             Ok(TimeEntry { kind: EntryKind::Direct, ..e })
         })
     }
 
-    /// Removes the day's 直行直帰, if any. On a holiday the `none` the direct visit left goes too,
+    /// Removes the day's 終日, if any. On a holiday the `none` the all-day entry left goes too,
     /// so the day is the holiday's leave again.
     pub fn remove_direct(&mut self, date: NaiveDate) -> Result<()> {
         self.ensure_writable()?;
