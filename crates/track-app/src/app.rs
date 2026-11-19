@@ -48,6 +48,8 @@ pub struct AppState {
     pub ai_op: Option<AiOpNotice>,
     /// The notice about the user's own change in the status bar (the newest replaces it).
     pub note: Option<StatusNote>,
+    /// Every notice shown this session, for the status bar's bell.
+    pub history: NoticeHistory,
     /// The seed of the header's dot pattern; saving an entry changes it.
     pub header_seed: u64,
     /// The pattern the current one fades in from, and over how long.
@@ -75,6 +77,48 @@ pub enum StatusNote {
     Deleted(Box<track_core::model::TimeEntry>),
     /// A change that could not be saved, in red until closed.
     Error(String),
+}
+
+impl StatusNote {
+    /// The notice as one line of text (also its line in the history).
+    pub fn text(&self) -> String {
+        match self {
+            StatusNote::Deleted(e) => format!("1件削除しました：{}", e.title.clone().filter(|t| !t.is_empty()).unwrap_or_else(|| "タイトルなし".into())),
+            StatusNote::Error(msg) => msg.clone(),
+        }
+    }
+}
+
+/// How many notices the history keeps.
+pub const HISTORY_LIMIT: usize = 50;
+
+/// One line of the notice history.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HistoryItem {
+    pub at: chrono::DateTime<chrono::Local>,
+    pub text: String,
+    /// A failure, shown in red.
+    pub error: bool,
+}
+
+/// The notices shown while the app is open, newest first (not saved anywhere).
+#[derive(Debug, Clone, Default)]
+pub struct NoticeHistory {
+    pub items: std::collections::VecDeque<HistoryItem>,
+    /// Something arrived since the list was last opened (the bell's dot).
+    pub unseen: bool,
+}
+
+impl NoticeHistory {
+    pub fn push(&mut self, text: String, error: bool, at: chrono::DateTime<chrono::Local>) {
+        self.items.push_front(HistoryItem { at, text, error });
+        self.items.truncate(HISTORY_LIMIT);
+        self.unseen = true;
+    }
+
+    pub fn mark_seen(&mut self) {
+        self.unseen = false;
+    }
 }
 
 /// 「AI が N 件変更しました［元に戻す］」: every AI operation that arrived while the notice
@@ -141,7 +185,7 @@ impl AppState {
 
     pub fn with_path(api: DataClient, persist_path: PathBuf) -> Self {
         let seed = fresh_seed();
-        Self { reloads: 0, api, data: None, error: None, loading: false, persist: PersistState::load(&persist_path), persist_path, ops_seen: None, ai_op: None, note: None, header_seed: seed, header_prev_seed: seed, header_fade: std::time::Duration::ZERO, header_shuffles: 0, sparkle: None }
+        Self { reloads: 0, api, data: None, error: None, loading: false, persist: PersistState::load(&persist_path), persist_path, ops_seen: None, ai_op: None, note: None, history: NoticeHistory::default(), header_seed: seed, header_prev_seed: seed, header_fade: std::time::Duration::ZERO, header_shuffles: 0, sparkle: None }
     }
 
     pub fn update_persist(&mut self, f: impl FnOnce(&mut PersistState)) {
@@ -239,6 +283,9 @@ impl AppState {
         if fresh.is_empty() {
             return;
         }
+        for op in fresh.iter().rev() {
+            self.history.push(format!("AI が {} 件変更しました：{}", op.count, op.summary), false, chrono::Local::now());
+        }
         match self.ai_op.as_mut() {
             Some(n) => {
                 fresh.retain(|o| !n.operations.iter().any(|x| x.id == o.id));
@@ -277,12 +324,18 @@ impl AppState {
     }
 
     pub fn set_note(&mut self, note: StatusNote, cx: &mut Context<Self>) {
+        self.history.push(note.text(), matches!(note, StatusNote::Error(_)), chrono::Local::now());
         self.note = Some(note);
         cx.notify();
     }
 
     pub fn dismiss_note(&mut self, cx: &mut Context<Self>) {
         self.note = None;
+        cx.notify();
+    }
+
+    pub fn mark_history_seen(&mut self, cx: &mut Context<Self>) {
+        self.history.mark_seen();
         cx.notify();
     }
 
@@ -337,6 +390,8 @@ pub struct TrackApp {
     /// Where 「AI 連携をインストール」 installs (tests point it at a tempdir).
     pub integrations_home: PathBuf,
     pub integrations: Option<Entity<crate::ui::integrations_dialog::IntegrationsDialog>>,
+    /// The notice history list is open above the status bar's bell.
+    pub history_open: bool,
     _watcher: gpui::Task<()>,
     _backups: gpui::Task<()>,
     _new_day: gpui::Task<()>,
@@ -443,6 +498,7 @@ impl TrackApp {
             focus,
             integrations_home: dirs::home_dir().unwrap_or_default(),
             integrations: None,
+            history_open: false,
             _watcher: watcher,
             _backups: backups,
             _new_day: new_day,
@@ -672,7 +728,10 @@ impl Render for TrackApp {
             .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.calendar.update(cx, |c, cx| c.zoom(-1, cx))))
             .child(self.render_header(window, cx))
             .child(div().flex_1().min_h_0().flex().flex_col().child(self.render_body(cx)))
-            .child(crate::ui::status_bar::render(self.status_left(window, cx), self.state.read(cx).note.clone(), self.state.read(cx).ai_op.clone(), cx))
+            .child({
+                let left = self.status_left(window, cx);
+                crate::ui::status_bar::render(self, left, cx)
+            })
     }
 }
 

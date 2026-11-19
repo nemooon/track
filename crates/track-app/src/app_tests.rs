@@ -440,3 +440,32 @@ fn apply_theme_switches_palette_and_component_theme(cx: &mut TestAppContext) {
     assert_eq!(cx.update(|_, cx| palette(cx)), Palette::light());
     assert_eq!(cx.update(|_, cx| gpui_component::Theme::global(cx).mode), gpui_component::ThemeMode::Light);
 }
+
+/// The history keeps the newest notices first, up to HISTORY_LIMIT, and flags them unseen.
+#[test]
+fn notice_history_keeps_the_newest_fifty() {
+    use crate::app::{HISTORY_LIMIT, NoticeHistory};
+    let mut h = NoticeHistory::default();
+    assert!(!h.unseen);
+    let at = chrono::Local::now();
+    for i in 0..HISTORY_LIMIT + 5 {
+        h.push(format!("n{i}"), i % 2 == 0, at);
+    }
+    assert_eq!(h.items.len(), HISTORY_LIMIT);
+    assert_eq!(h.items[0].text, format!("n{}", HISTORY_LIMIT + 4), "newest first");
+    assert!(h.unseen);
+    h.mark_seen();
+    assert!(!h.unseen);
+}
+
+/// AI changes join the history too.
+#[gpui::test]
+fn ai_changes_are_kept_in_the_history(cx: &mut TestAppContext) {
+    let (app, cx, f) = seeded(cx, false);
+    refresh(&app, cx);
+    ai_rename(&mut f.db(), "a", "AI");
+    refresh(&app, cx);
+    let items = app.read_with(cx, |a, cx| a.state.read(cx).history.items.clone());
+    assert_eq!(items.len(), 1);
+    assert!(items[0].text.starts_with("AI が 1 件変更しました"), "{}", items[0].text);
+}
