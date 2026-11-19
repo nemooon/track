@@ -122,7 +122,7 @@ pub fn aggregate_ai_result(response: &str, data: &ReportEntriesResponse) -> Resu
     if !unassigned.is_empty() {
         rows.push(AiAggregationRow {
             label: "その他".into(),
-            summary: "AIが分類しなかった工数記録".into(),
+            summary: "AIが分類しなかった稼働記録".into(),
             minutes: unassigned.iter().map(|e| e.minutes).sum(),
             entry_count: unassigned.len() as i64,
             generated_values: BTreeMap::new(),

@@ -156,7 +156,7 @@ impl Db {
             |r| r.get(0),
         )?;
         if entries > 0 {
-            return Err(CoreError::code_msg("client_has_entries", "工数が登録されたプロジェクトがあるため削除できません。"));
+            return Err(CoreError::code_msg("client_has_entries", "稼働が登録されたプロジェクトがあるため削除できません。"));
         }
         self.conn().execute(r#"DELETE FROM "Client" WHERE id = ?1"#, [id])?;
         Ok(())
@@ -213,7 +213,7 @@ impl Db {
         self.exists("Project", id)?;
         let n: i64 = self.conn().query_row(r#"SELECT COUNT(*) FROM "TimeEntry" WHERE projectId = ?1"#, [id], |r| r.get(0))?;
         if n > 0 {
-            return Err(CoreError::code_msg("project_has_entries", "工数が登録されているため削除できません。アーカイブしてください。"));
+            return Err(CoreError::code_msg("project_has_entries", "稼働が登録されているため削除できません。アーカイブしてください。"));
         }
         self.conn().execute(r#"DELETE FROM "Project" WHERE id = ?1"#, [id])?;
         Ok(())

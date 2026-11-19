@@ -84,7 +84,7 @@ impl Db {
 
     pub fn update_entry(&mut self, id: &str, patch: EntryPatch) -> Result<TimeEntry> {
         self.ensure_writable()?;
-        let existing = self.entry(id)?.ok_or_else(|| CoreError::code_msg("not_found", "工数が見つかりません。"))?;
+        let existing = self.entry(id)?.ok_or_else(|| CoreError::code_msg("not_found", "稼働が見つかりません。"))?;
         if let (Some(s), Some(e)) = (patch.start, patch.end)
             && e <= s
         {
@@ -125,7 +125,7 @@ impl Db {
         self.ensure_writable()?;
         let n = self.conn().execute(r#"DELETE FROM "TimeEntry" WHERE id = ?1"#, [id])?;
         if n == 0 {
-            return Err(CoreError::code_msg("not_found", "工数が見つかりません。"));
+            return Err(CoreError::code_msg("not_found", "稼働が見つかりません。"));
         }
         Ok(())
     }

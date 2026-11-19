@@ -20,12 +20,12 @@ fn with_editing(text: &str, kind: IntegrationKind) -> String {
     };
     let text = text
         .replace(
-            "description: \"Trackへ当日の会話から工数を記録する。",
-            "description: \"Trackへ当日の会話から工数を記録する。登録済み工数の修正・付け替え・削除、クライアント・プロジェクト・タグの作成と変更、AIの操作の取り消しも行う。",
+            "description: \"Trackへ当日の会話から稼働を記録する。",
+            "description: \"Trackへ当日の会話から稼働を記録する。登録済みの稼働の修正・付け替え・削除、クライアント・プロジェクト・タグの作成と変更、AIの操作の取り消しも行う。",
         )
         .replace(
-            "description: Trackに、その日の会話すべてから未記録の工数を提案して記録する",
-            "description: Trackに、その日の会話すべてから未記録の工数を提案して記録する。登録済み工数の修正・付け替え・削除、クライアント・プロジェクト・タグの作成と変更、取り消しもできる",
+            "description: Trackに、その日の会話すべてから未記録の稼働を提案して記録する",
+            "description: Trackに、その日の会話すべてから未記録の稼働を提案して記録する。登録済みの稼働の修正・付け替え・削除、クライアント・プロジェクト・タグの作成と変更、取り消しもできる",
         );
     format!("{}{}", text.trim_end(), EDITING.replace("<SOURCE>", source).replace("<CONFIRM>", confirm))
 }
@@ -66,7 +66,7 @@ pub fn adapt(text: &str, dev: bool) -> String {
             .replace("name: track\n", "name: track-dev\n")
             .replace("$track", "$track-dev")
             .replace("# /track ", "# /track-dev ")
-            .replace("display_name: \"Track 工数記録\"", "display_name: \"Track 工数記録（開発版）\"")
+            .replace("display_name: \"Track 稼働記録\"", "display_name: \"Track 稼働記録（開発版）\"")
             .replace("description: Trackに", "description: 【開発版】Trackに");
     }
     t
