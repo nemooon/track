@@ -1111,7 +1111,8 @@ impl CalendarView {
             }
             _ => {}
         }
-        // The arrows move the selection to a neighbouring entry (see `core::navigation`).
+        // The arrows move the selection to a neighbouring entry (see `core::navigation`); with
+        // Shift they add it to the selection.
         let dir = match ev.keystroke.key.as_str() {
             "up" => Dir::Up,
             "down" => Dir::Down,
@@ -1126,7 +1127,13 @@ impl CalendarView {
             if let Some(b) = blocks.iter().find(|b| b.id == id) {
                 self.reveal(b.start, b.end, cx);
             }
-            self.selected = vec![id];
+            if ev.keystroke.modifiers.shift {
+                // Shift adds it; the last selected is where the next arrow starts from.
+                self.selected.retain(|s| *s != id);
+                self.selected.push(id);
+            } else {
+                self.selected = vec![id];
+            }
             cx.notify();
         }
     }

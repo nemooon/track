@@ -1089,3 +1089,17 @@ fn arrow_keys_move_the_selection(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("down");
     assert_eq!(sel(cx), vec!["a".to_string()], "from nothing: the first shown");
 }
+
+/// Shift with an arrow adds the entry it moves to, keeping the ones already selected.
+#[gpui::test]
+fn shift_arrows_add_to_the_selection(cx: &mut TestAppContext) {
+    let (app, cx, _f) = setup_two(cx);
+    click(cx, "entry-a");
+    cx.simulate_keystrokes("shift-right");
+    assert_eq!(selection(&app, cx), vec!["a".to_string(), "b".to_string()]);
+    assert_eq!(app.read_with(cx, |a, cx| a.calendar.read(cx).selected.last().cloned()), Some("b".into()), "b is where the next arrow starts");
+    cx.simulate_keystrokes("shift-left");
+    assert_eq!(selection(&app, cx), vec!["a".to_string(), "b".to_string()], "going back keeps both");
+    cx.simulate_keystrokes("right");
+    assert_eq!(selection(&app, cx), vec!["b".to_string()], "without Shift: just the one");
+}
