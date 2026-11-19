@@ -31,14 +31,23 @@ pub fn with_alpha(c: impl Into<Rgba>, a: f32) -> Hsla {
 
 pub const NO_PROJECT: &str = "#9ca3af";
 
-/// Zed's title bar (also gpui-component's `TITLE_BAR_HEIGHT`).
+/// Zed's title bar (also gpui-component's `TITLE_BAR_HEIGHT`), which the settings window follows.
 pub const TITLE_BAR_HEIGHT: gpui::Pixels = gpui::px(34.);
 /// Corner radii: RADIUS_SM for icon buttons and small badges, `rounded_md()` (6px) for buttons,
 /// chips, rows and fields, `rounded_lg()` (8px) for popovers and panels, `rounded_full()` for dots.
 pub const RADIUS_SM: gpui::Pixels = gpui::px(4.);
 /// Where macOS draws the traffic lights so they sit centred in that bar, as in Zed.
 pub fn traffic_light_position() -> gpui::Point<gpui::Pixels> {
-    gpui::point(gpui::px(9.), gpui::px(9.))
+    gpui::point(gpui::px(9.), (TITLE_BAR_HEIGHT - TRAFFIC_LIGHT_HEIGHT) / 2.)
+}
+
+/// The main window's header: as tall as the Tauri version's (44px).
+pub const APP_HEADER_HEIGHT: gpui::Pixels = gpui::px(44.);
+/// How tall macOS draws the traffic lights (Zed's 34px bar centres them at y = 9).
+pub const TRAFFIC_LIGHT_HEIGHT: gpui::Pixels = gpui::px(16.);
+/// The traffic lights of the main window, centred in `APP_HEADER_HEIGHT`.
+pub fn app_traffic_light_position() -> gpui::Point<gpui::Pixels> {
+    gpui::point(gpui::px(14.), (APP_HEADER_HEIGHT - TRAFFIC_LIGHT_HEIGHT) / 2.)
 }
 
 /// Numbers (durations, shares, clock times) use a fixed-width face, like Zed.

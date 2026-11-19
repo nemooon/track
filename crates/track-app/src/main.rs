@@ -41,7 +41,7 @@ fn main() {
                 titlebar: Some(TitlebarOptions {
                     title: Some("Track (GPUI)".into()),
                     appears_transparent: true,
-                    traffic_light_position: Some(crate::ui::theme::traffic_light_position()),
+                    traffic_light_position: Some(crate::ui::theme::app_traffic_light_position()),
                 }),
                 window_min_size: Some(size(px(360.), px(480.))),
                 ..Default::default()

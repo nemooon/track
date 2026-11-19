@@ -420,11 +420,13 @@ fn failed_undo_keeps_the_summary_next_to_the_reason(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("ai-op-summary").is_some(), "and which change it was");
 }
 
-/// Zed's (and gpui-component's) title bar: 34px, traffic lights at (9, 9).
+/// The app header keeps the Tauri version's height (44px), the traffic lights centred in it.
 #[gpui::test]
-fn header_is_as_tall_as_zeds_title_bar(cx: &mut TestAppContext) {
+fn header_is_as_tall_as_the_tauri_version(cx: &mut TestAppContext) {
     let (_app, cx) = open_app(cx);
-    assert_eq!(cx.debug_bounds("app-header").expect("header").size.height, gpui::px(34.));
+    assert_eq!(cx.debug_bounds("app-header").expect("header").size.height, gpui::px(44.));
+    let lights = crate::ui::theme::app_traffic_light_position();
+    assert_eq!(lights.y * 2. + crate::ui::theme::TRAFFIC_LIGHT_HEIGHT, gpui::px(44.), "lights centred");
 }
 
 #[gpui::test]
