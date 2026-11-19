@@ -1,5 +1,5 @@
-//! The bottom strip (like Zed's): page facts on the left; on the right a new notice for a few
-//! seconds (click it for the history) and the bell that opens the history, where undo lives.
+//! The bottom strip (like Zed's): page facts on the left and, on the right, the bell that opens
+//! the notice panel, where undo lives. A new notice opens the panel itself; the strip shows none.
 use crate::app::{HistoryAction, HistoryItem, NoticeHistory, TrackApp, UndoState};
 use crate::ui::theme::*;
 use gpui::{AnyElement, Context, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled, deferred, div, prelude::FluentBuilder, px};
@@ -8,7 +8,6 @@ pub fn render(app: &TrackApp, left: Vec<AnyElement>, cx: &mut Context<TrackApp>)
     let p = palette(cx);
     let state = app.state.read(cx);
     let history = state.history.clone();
-    let flash = state.flash.and_then(|id| history.get(id).cloned());
     let open = app.history_open;
     div()
         .id("status-bar")
@@ -27,7 +26,6 @@ pub fn render(app: &TrackApp, left: Vec<AnyElement>, cx: &mut Context<TrackApp>)
         .text_color(p.text_muted)
         .children(left)
         .child(div().flex_1())
-        .when_some(flash, |d, item| d.child(flash_notice(&item, p, cx)))
         .child(history_bell(app.bell_bounds.clone(), open, p, cx))
         .when(open, |d| d.child(history_list(&history, p, cx)))
 }
@@ -38,33 +36,6 @@ pub const STATUS_BAR_HEIGHT: f32 = 30.;
 fn toggle_history(this: &mut TrackApp, open: bool, cx: &mut Context<TrackApp>) {
     this.history_open = open;
     cx.notify();
-}
-
-/// The newest notice for a few seconds; clicking it opens the history.
-fn flash_notice(item: &HistoryItem, p: Palette, cx: &mut Context<TrackApp>) -> impl IntoElement {
-    let ai = matches!(item.action, Some(HistoryAction::UndoAi(_)));
-    div()
-        .id("status-flash")
-        .debug_selector(|| "status-flash".into())
-        .flex()
-        .min_w_0()
-        .max_w(px(480.))
-        .items_center()
-        .gap_2()
-        .px_1p5()
-        .rounded(RADIUS_SM)
-        .cursor_pointer()
-        .hover(move |s| s.bg(p.hover))
-        .when(ai, |d| d.child(div().size(px(6.)).rounded_full().bg(p.warning).flex_none()))
-        .child(
-            div()
-                .when(item.error, |d| d.debug_selector(|| "status-flash-error".into()))
-                .min_w_0()
-                .truncate()
-                .text_color(if item.error { p.danger } else { p.text })
-                .child(item.text.clone()),
-        )
-        .on_click(cx.listener(|this, _, _, cx| toggle_history(this, true, cx)))
 }
 
 /// The bell at the right end; it opens the list above it.
@@ -121,16 +92,9 @@ fn history_list(history: &NoticeHistory, p: Palette, cx: &mut Context<TrackApp>)
                     .child(div().flex_1().font_weight(gpui::FontWeight::SEMIBOLD).text_color(p.text).child("通知"))
                     .when(!history.items.is_empty(), |d| {
                         d.child(
-                        div()
-                            .id("status-history-clear")
-                            .debug_selector(|| "status-history-clear".into())
-                            .px_1p5()
-                            .rounded(RADIUS_SM)
-                            .text_color(p.text_muted)
-                            .cursor_pointer()
-                            .hover(move |s| s.text_color(p.text).bg(p.hover))
-                            .child("履歴を消す")
-                            .on_click(cx.listener(|this, _, _, cx| this.state.update(cx, |s, cx| s.clear_history(cx)))),
+                            crate::ui::controls::icon_button_sized(&p, "status-history-clear", crate::ui::icons::trash(), px(12.), "履歴を消す")
+                                .debug_selector(|| "status-history-clear".into())
+                                .on_click(cx.listener(|this, _, _, cx| this.state.update(cx, |s, cx| s.clear_history(cx)))),
                         )
                     }),
             )
@@ -170,7 +134,12 @@ fn history_row(i: usize, item: &HistoryItem, p: Palette, cx: &mut Context<TrackA
             div()
                 .flex_1()
                 .min_w_0()
-                .child(div().text_color(if item.error { p.danger } else { p.text }).child(item.text.clone()))
+                .child(
+                    div()
+                        .when(item.error, |d| d.debug_selector(move || format!("status-history-error-{i}")))
+                        .text_color(if item.error { p.danger } else { p.text })
+                        .child(item.text.clone()),
+                )
                 .when_some(match &undo {
                     Some(UndoState::Failed(reason)) => Some(reason.clone()),
                     _ => None,

@@ -47,9 +47,9 @@ pub struct AppState {
     /// Every notice shown this session (deletions, failures, AI changes), for the status bar's
     /// bell; undo lives in its rows.
     pub history: NoticeHistory,
-    /// The newest notice, shown in the status bar for `FLASH_FOR` (its history item's id).
-    pub flash: Option<u64>,
-    flash_task: Option<gpui::Task<()>>,
+    /// How many notices have been raised this session; the main window opens its notice panel
+    /// whenever this grows.
+    pub notices: u64,
     /// The seed of the header's dot pattern; saving an entry changes it.
     pub header_seed: u64,
     /// The pattern the current one fades in from, and over how long.
@@ -91,9 +91,6 @@ impl StatusNote {
 
 /// How many notices the history keeps: older ones are pushed out by new ones.
 pub const HISTORY_LIMIT: usize = 10;
-
-/// How long a new notice shows in the status bar.
-pub const FLASH_FOR: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// What 「元に戻す」 does for a history row.
 #[derive(Debug, Clone, PartialEq)]
@@ -146,11 +143,6 @@ impl NoticeHistory {
         self.items.push_front(HistoryItem { id: self.next_id, text, error, action, undo: UndoState::Open });
         self.items.truncate(HISTORY_LIMIT);
         self.next_id
-    }
-
-
-    pub fn get(&self, id: u64) -> Option<&HistoryItem> {
-        self.items.iter().find(|i| i.id == id)
     }
 
     fn get_mut(&mut self, id: u64) -> Option<&mut HistoryItem> {
@@ -227,7 +219,7 @@ impl AppState {
 
     pub fn with_path(api: DataClient, persist_path: PathBuf) -> Self {
         let seed = fresh_seed();
-        Self { reloads: 0, api, data: None, error: None, loading: false, persist: PersistState::load(&persist_path), persist_path, ops_seen: None, history: NoticeHistory::default(), flash: None, flash_task: None, header_seed: seed, header_prev_seed: seed, header_fade: std::time::Duration::ZERO, header_shuffles: 0, sparkle: None }
+        Self { reloads: 0, api, data: None, error: None, loading: false, persist: PersistState::load(&persist_path), persist_path, ops_seen: None, history: NoticeHistory::default(), notices: 0, header_seed: seed, header_prev_seed: seed, header_fade: std::time::Duration::ZERO, header_shuffles: 0, sparkle: None }
     }
 
     pub fn update_persist(&mut self, f: impl FnOnce(&mut PersistState)) {
@@ -317,7 +309,7 @@ impl AppState {
         cx.notify();
     }
 
-    /// New AI operations (newest first) each join the history, the newest flashing.
+    /// New AI operations (newest first) each join the history (and open the notice panel).
     fn note_operations(&mut self, ops: Vec<track_core::ops::Operation>, cx: &mut Context<Self>) {
         if let Some(max) = ops.iter().map(|o| o.id).max() {
             self.ops_seen = Some(self.ops_seen.unwrap_or(0).max(max));
@@ -329,19 +321,10 @@ impl AppState {
         }
     }
 
-    /// Adds a notice to the history and shows it in the status bar for `FLASH_FOR`.
+    /// Adds a notice to the history; the main window opens its notice panel to show it.
     fn notice(&mut self, text: String, error: bool, action: Option<HistoryAction>, cx: &mut Context<Self>) {
-        let id = self.history.push_with(text, error, action);
-        self.flash = Some(id);
-        self.flash_task = Some(cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(FLASH_FOR).await;
-            let _ = this.update(cx, |this, cx| {
-                if this.flash == Some(id) {
-                    this.flash = None;
-                    cx.notify();
-                }
-            });
-        }));
+        self.history.push_with(text, error, action);
+        self.notices += 1;
         cx.notify();
     }
 
@@ -376,7 +359,6 @@ impl AppState {
     /// 「履歴を消す」.
     pub fn clear_history(&mut self, cx: &mut Context<Self>) {
         self.history.items.clear();
-        self.flash = None;
         cx.notify();
     }
 
@@ -521,8 +503,10 @@ pub struct TrackApp {
     focus: FocusHandle,
     /// Where 「スキルのインストール…」 installs the skills (tests point it at a tempdir).
     pub integrations_home: PathBuf,
-    /// The notice history list is open above the status bar's bell.
+    /// The notice history list is open above the status bar's bell (a new notice opens it).
     pub history_open: bool,
+    /// `AppState::notices` when last looked at: more means a new notice to open the panel for.
+    notices_seen: u64,
     /// The header's 「…」 menu is open.
     pub app_menu_open: bool,
     /// Where the bell is, so a press on it is left to the bell (which toggles) instead of
@@ -608,7 +592,15 @@ impl TrackApp {
     pub fn with_state(state: Entity<AppState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let view = cx.entity().downgrade();
         cx.set_global(MainWindow { window: window.window_handle(), view, state: state.clone() });
-        cx.observe(&state, |_, _, cx| cx.notify()).detach();
+        cx.observe(&state, |this, state, cx| {
+            let notices = state.read(cx).notices;
+            if notices > this.notices_seen {
+                this.notices_seen = notices;
+                this.history_open = true;
+            }
+            cx.notify();
+        })
+        .detach();
         cx.subscribe(&state, |this, _, _: &StateEvent, cx| {
             this.calendar.update(cx, |c, cx| c.reload(cx));
             this.reports.update(cx, |r, cx| r.reload_if_shown(cx));
@@ -633,6 +625,7 @@ impl TrackApp {
                 break;
             }
         });
+        let notices_seen = state.read(cx).notices;
         Self {
             state,
             page,
@@ -641,6 +634,7 @@ impl TrackApp {
             focus,
             integrations_home: dirs::home_dir().unwrap_or_default(),
             history_open: false,
+            notices_seen,
             app_menu_open: false,
             bell_bounds: Default::default(),
             _watcher: watcher,

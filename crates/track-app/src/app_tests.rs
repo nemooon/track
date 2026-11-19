@@ -220,12 +220,13 @@ fn seeded(cx: &mut TestAppContext, before_launch: bool) -> (gpui::Entity<crate::
 }
 
 
-/// Opens the history from the status bar's flash (or the bell when the flash is gone).
+/// Opens the notice panel from the bell (unless a notice already opened it).
 fn open_history(cx: &mut gpui::VisualTestContext) {
-    let target = if cx.debug_bounds("status-flash").is_some() { "status-flash" } else { "status-history" };
-    let b = cx.debug_bounds(target).unwrap();
-    cx.simulate_click(b.center(), gpui::Modifiers::none());
-    settle(cx);
+    if cx.debug_bounds("status-history-list").is_none() {
+        let b = cx.debug_bounds("status-history").unwrap();
+        cx.simulate_click(b.center(), gpui::Modifiers::none());
+        settle(cx);
+    }
     assert!(cx.debug_bounds("status-history-list").is_some(), "the history opens");
 }
 
@@ -235,19 +236,16 @@ fn click_sel(cx: &mut gpui::VisualTestContext, sel: &'static str) {
     settle(cx);
 }
 
-/// An AI change flashes in the status bar; clicking it opens the history, where it is undone.
+/// An AI change opens the notice panel (nothing in the status bar), where it is undone.
 #[gpui::test]
-fn ai_operation_flashes_and_is_undone_from_the_history(cx: &mut TestAppContext) {
+fn ai_operation_opens_the_panel_and_is_undone_there(cx: &mut TestAppContext) {
     let (app, cx, f) = seeded(cx, false);
     refresh(&app, cx);
-    assert!(cx.debug_bounds("status-flash").is_none());
+    assert!(cx.debug_bounds("status-history-list").is_none());
     ai_rename(&mut f.db(), "a", "AI");
     refresh(&app, cx);
-    let bar = cx.debug_bounds("status-bar").expect("status bar");
-    let flash = cx.debug_bounds("status-flash").expect("the change flashes");
-    assert!(bar.contains(&flash.center()), "in the status bar");
-    assert!(cx.debug_bounds("status-history-undo-0").is_none(), "no undo until the history is open");
-    open_history(cx);
+    assert!(cx.debug_bounds("status-flash").is_none(), "nothing in the status bar");
+    assert!(cx.debug_bounds("status-history-list").is_some(), "the change opens the notice panel");
     click_sel(cx, "status-history-undo-0");
     assert_eq!(f.db().entry("a").unwrap().unwrap().title.as_deref(), Some("元"));
     assert!(cx.debug_bounds("status-history-done-0").is_some(), "the row says it was undone");
@@ -258,23 +256,27 @@ fn ai_operation_flashes_and_is_undone_from_the_history(cx: &mut TestAppContext) 
 fn operations_before_launch_are_not_shown(cx: &mut TestAppContext) {
     let (app, cx, _f) = seeded(cx, true);
     refresh(&app, cx);
-    assert!(cx.debug_bounds("status-flash").is_none());
+    assert!(cx.debug_bounds("status-history-list").is_none());
     assert!(app.read_with(cx, |a, cx| a.state.read(cx).history.items.is_empty()));
 }
 
-/// The flash goes after a few seconds; the history keeps the notice.
+/// The panel a notice opened stays until closed; closed, it stays closed until the next notice.
 #[gpui::test]
-fn the_flash_goes_after_a_few_seconds(cx: &mut TestAppContext) {
+fn a_closed_panel_opens_again_for_the_next_notice(cx: &mut TestAppContext) {
     let (app, cx, f) = seeded(cx, false);
     refresh(&app, cx);
     ai_rename(&mut f.db(), "a", "AI");
     refresh(&app, cx);
-    assert!(cx.debug_bounds("status-flash").is_some());
-    cx.executor().advance_clock(crate::app::FLASH_FOR + std::time::Duration::from_millis(100));
+    cx.executor().advance_clock(std::time::Duration::from_secs(30));
     settle(cx);
-    assert!(cx.debug_bounds("status-flash").is_none(), "gone");
-    open_history(cx);
-    assert!(cx.debug_bounds("status-history-undo-0").is_some(), "still undoable from the history");
+    assert!(cx.debug_bounds("status-history-list").is_some(), "stays open");
+    click_sel(cx, "status-history");
+    assert!(cx.debug_bounds("status-history-list").is_none(), "the bell closes it");
+    refresh(&app, cx);
+    assert!(cx.debug_bounds("status-history-list").is_none(), "nothing new: stays closed");
+    ai_rename(&mut f.db(), "a", "AI2");
+    refresh(&app, cx);
+    assert!(cx.debug_bounds("status-history-list").is_some(), "the next notice opens it again");
 }
 
 #[gpui::test]
@@ -443,7 +445,7 @@ fn notice_history_keeps_only_the_newest() {
     assert_eq!(h.items[0].text, format!("n{}", HISTORY_LIMIT + 4), "newest first");
 }
 
-/// 「履歴を消す」 in the list empties it.
+/// The clear button (an icon) in the panel's title strip empties it.
 #[gpui::test]
 fn the_history_can_be_cleared(cx: &mut TestAppContext) {
     let (app, cx, f) = seeded(cx, false);
@@ -451,10 +453,11 @@ fn the_history_can_be_cleared(cx: &mut TestAppContext) {
     ai_rename(&mut f.db(), "a", "AI");
     refresh(&app, cx);
     open_history(cx);
+    assert!(cx.debug_bounds("status-history-clear-icon").is_some(), "clearing is an icon button");
     click_sel(cx, "status-history-clear");
     assert!(app.read_with(cx, |a, cx| a.state.read(cx).history.items.is_empty()));
     assert!(cx.debug_bounds("status-history-item-0").is_none());
-    assert!(cx.debug_bounds("status-flash").is_none(), "the flash of a cleared notice goes too");
+    assert!(cx.debug_bounds("status-history-clear-icon").is_none(), "nothing left to clear");
 }
 
 /// AI changes join the history too.
@@ -766,7 +769,7 @@ fn an_outdated_skill_is_told_and_updated_from_the_history(cx: &mut TestAppContex
     settle(cx);
     let text = app.read_with(cx, |a, cx| a.state.read(cx).history.items[0].text.clone());
     assert!(text.contains("スキル") && text.contains("Codex"), "{text}");
-    assert!(cx.debug_bounds("status-flash").is_some(), "flashed");
+    assert!(cx.debug_bounds("status-history-list").is_some(), "the notice panel opens");
     open_history(cx);
     click_sel(cx, "status-history-undo-0");
     assert_eq!(integration_status(home.path(), IntegrationKind::Codex, true), IntegrationStatus::Installed, "updated");

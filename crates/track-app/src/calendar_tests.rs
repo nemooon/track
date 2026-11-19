@@ -704,11 +704,11 @@ fn a_successful_save_leaves_the_status_bar_quiet(cx: &mut TestAppContext) {
     drag_entry_one_column_right_and_30_minutes_down(cx);
     wait_io(cx);
     assert_eq!(stored(&f, "a").unwrap().start, at(13, 10, 30));
-    assert!(cx.debug_bounds("status-flash").is_none(), "no notice for a plain save");
+    assert!(cx.debug_bounds("status-history-list").is_none(), "no notice for a plain save");
 }
 
-/// Deleting flashes in the status bar; clicking it opens the history, whose 「元に戻す」 brings
-/// the entry back.
+/// Deleting opens the notice panel (nothing in the status bar), whose 「元に戻す」 brings the
+/// entry back.
 #[gpui::test]
 fn deleting_is_undone_from_the_history(cx: &mut TestAppContext) {
     let (_app, cx, f) = setup(cx);
@@ -717,8 +717,8 @@ fn deleting_is_undone_from_the_history(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("backspace");
     wait_io(cx);
     assert!(stored(&f, "a").is_none());
-    assert!(cx.debug_bounds("status-flash").is_some(), "the deletion flashes in the status bar");
-    click(cx, "status-flash");
+    assert!(cx.debug_bounds("status-flash").is_none(), "nothing in the status bar");
+    assert!(cx.debug_bounds("status-history-list").is_some(), "the deletion opens the notice panel");
     click(cx, "status-history-undo-0");
     wait_io(cx);
     let back: Vec<_> = f.db().entries(at(12, 0, 0), at(13, 0, 0)).unwrap().into_iter().filter(|e| e.title.as_deref() == Some("作業a")).collect();
@@ -727,14 +727,15 @@ fn deleting_is_undone_from_the_history(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("status-history-done-0").is_some(), "the row says it was undone");
 }
 
-/// A failed save flashes in red in the status bar.
+/// A failed save opens the notice panel, the failure in red.
 #[gpui::test]
 fn a_failed_save_is_told_in_the_status_bar(cx: &mut TestAppContext) {
     let (_app, cx, f) = setup(cx);
     f.data.fail_ops(&["update_entry"]);
     drag_entry_one_column_right_and_30_minutes_down(cx);
     wait_io(cx);
-    assert!(cx.debug_bounds("status-flash-error").is_some(), "the failure is shown in red");
+    assert!(cx.debug_bounds("status-history-list").is_some(), "the panel opens");
+    assert!(cx.debug_bounds("status-history-error-0").is_some(), "the failure is shown in red");
 }
 
 /// A deletion lands in the history, opened from the bell (which carries no unread mark).
@@ -747,8 +748,7 @@ fn deleting_is_listed_in_the_history(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("backspace");
     wait_io(cx);
     assert!(cx.debug_bounds("status-history-dot").is_none(), "no unread mark");
-    click(cx, "status-history");
-    let list = cx.debug_bounds("status-history-list").expect("the list opens");
+    let list = cx.debug_bounds("status-history-list").expect("the list opens by itself");
     let bell = cx.debug_bounds("status-history").unwrap();
     assert!(list.bottom() <= bell.top(), "it opens above the bell");
     assert!(cx.debug_bounds("status-history-item-0").is_some(), "the deletion is listed");
