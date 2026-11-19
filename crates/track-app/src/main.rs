@@ -29,6 +29,8 @@ fn main() {
         actions::bind_keys(cx);
         actions::set_menus(cx);
         cx.on_action(|_: &actions::Quit, cx| cx.quit());
+        // From the Track menu even while another window (settings, about) is in front.
+        cx.on_action(|_: &actions::ShowAbout, cx| crate::ui::about::open_about(cx));
         // Dev/measurement: TRACK_GPUI_WINDOW=1440x900 sets the initial window size.
         let (w, h) = std::env::var("TRACK_GPUI_WINDOW")
             .ok()

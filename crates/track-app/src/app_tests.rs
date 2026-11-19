@@ -499,11 +499,25 @@ fn the_app_menu_shows_the_shortcuts(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("app-menu-shortcuts").is_none(), "the menu closes");
 }
 
+/// 「Track について」 opens its own window (one, brought forward again), with the version and
+/// a link to GitHub.
 #[gpui::test]
-fn the_app_menu_shows_about(cx: &mut TestAppContext) {
+fn about_opens_its_own_window(cx: &mut TestAppContext) {
     let (_app, cx) = open_app(cx);
     click_sel(cx, "app-menu");
     click_sel(cx, "app-menu-about");
-    assert!(cx.debug_bounds("about-dialog").is_some());
-    assert!(cx.debug_bounds("about-version").is_some(), "with the version");
+    assert_eq!(cx.update(|_, cx| cx.windows().len()), 2, "a window of its own");
+    let (handle, _) = cx.update(|_, cx| crate::ui::about::about_window(cx)).expect("about window");
+    let mut acx = gpui::VisualTestContext::from_window(handle, cx);
+    acx.run_until_parked();
+    assert!(acx.debug_bounds("about-version").is_some(), "the version");
+    assert!(acx.debug_bounds("about-github").is_some(), "the GitHub link");
+    cx.dispatch_action(crate::actions::ShowAbout);
+    settle(cx);
+    assert_eq!(cx.update(|_, cx| cx.windows().len()), 2, "the app menu's item brings the same window forward");
+}
+
+#[test]
+fn about_links_to_the_repository() {
+    assert_eq!(crate::ui::about::GITHUB_URL, "https://github.com/nemooon/track");
 }

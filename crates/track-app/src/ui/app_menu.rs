@@ -107,19 +107,6 @@ fn open_shortcuts(_: &mut TrackApp, window: &mut Window, cx: &mut Context<TrackA
     });
 }
 
-fn open_about(_: &mut TrackApp, window: &mut Window, cx: &mut Context<TrackApp>) {
-    let p = palette(cx);
-    window.open_dialog(cx, move |dialog, _, _| {
-        dialog.title("Track について").w(px(360.)).child(
-            div()
-                .debug_selector(|| "about-dialog".into())
-                .flex()
-                .flex_col()
-                .gap_1()
-                .text_size(px(13.))
-                .child(div().text_color(p.text).font_weight(gpui::FontWeight::SEMIBOLD).child("Track"))
-                .child(div().debug_selector(|| "about-version".into()).text_color(p.text_muted).child(format!("バージョン {}", env!("CARGO_PKG_VERSION"))))
-                .child(div().text_color(p.text_muted).child("ローカルで動く工数記録アプリ")),
-        )
-    });
+fn open_about(_: &mut TrackApp, _: &mut Window, cx: &mut Context<TrackApp>) {
+    crate::ui::about::open_about(cx);
 }
