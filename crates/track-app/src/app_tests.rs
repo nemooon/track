@@ -528,7 +528,7 @@ fn about_links_to_the_repository() {
 /// The copyright shows in 「Track について」 and, the same words, in Finder's Get Info.
 #[test]
 fn the_copyright_matches_the_app_bundle() {
-    assert_eq!(crate::ui::about::COPYRIGHT, "© 2026 nemooon");
+    assert_eq!(crate::ui::about::COPYRIGHT, "© nemooon");
     let plist = include_str!("../../../packaging/Info.plist");
     assert!(plist.contains(&format!("<key>NSHumanReadableCopyright</key>\n  <string>{}</string>", crate::ui::about::COPYRIGHT)), "Info.plist carries it");
 }

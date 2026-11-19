@@ -9,7 +9,7 @@ use gpui_component::Root;
 
 pub const GITHUB_URL: &str = "https://github.com/nemooon/track";
 /// Also in packaging/Info.plist (NSHumanReadableCopyright), for Finder's Get Info.
-pub const COPYRIGHT: &str = "© 2026 nemooon";
+pub const COPYRIGHT: &str = "© nemooon";
 
 /// The app icon (rendered by scripts/build-icon.sh).
 const ICON_PNG: &[u8] = include_bytes!("../../../../packaging/icon-256.png");
