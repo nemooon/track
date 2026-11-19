@@ -1104,3 +1104,15 @@ fn shift_arrows_add_to_the_selection(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("right");
     assert_eq!(selection(&app, cx), vec!["b".to_string()], "without Shift: just the one");
 }
+
+/// On a half day the ten dots stand for the half worked (3h45m), so an hour fills three.
+#[gpui::test]
+fn footer_dots_count_half_days_as_half(cx: &mut TestAppContext) {
+    let (app, cx, f) = setup(cx);
+    assert!(cx.debug_bounds("day-dot-2026-11-12-0").is_some() && cx.debug_bounds("day-dot-2026-11-12-1").is_none(), "a full day: one dot");
+    f.db().set_leave(day(12), Some(track_core::model::LeaveKind::Pm)).unwrap();
+    app.update(cx, |a, cx| a.calendar.update(cx, |c, cx| c.reload(cx)));
+    wait_io(cx);
+    // 60 of 225 minutes × 10 = 2.7 → 3 dots.
+    assert!(cx.debug_bounds("day-dot-2026-11-12-2").is_some() && cx.debug_bounds("day-dot-2026-11-12-3").is_none(), "a half day: three dots");
+}

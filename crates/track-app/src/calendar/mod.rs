@@ -420,7 +420,9 @@ impl CalendarView {
                 // Ten dots for the work hours (more on a day of overtime), in the colours of the
                 // projects the time went to; the rest are not drawn.
                 let colors: HashMap<String, String> = self.cache.entries().iter().filter_map(|e| Some((e.project_id.clone()?, e.project.as_ref()?.color.clone()))).collect();
-                let dots = crate::core::layout::day_dots(self.cache.entries(), d, scheduled, FOOTER_DOTS);
+                // On a half day the dots stand for the half that is worked.
+                let base = if matches!(self.leaves.get(&d), Some(track_core::model::LeaveKind::Am | track_core::model::LeaveKind::Pm)) { scheduled / 2 } else { scheduled };
+                let dots = crate::core::layout::day_dots(self.cache.entries(), d, base, FOOTER_DOTS);
                 div()
                     .flex_1()
                     .min_w_0()
