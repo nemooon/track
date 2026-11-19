@@ -620,3 +620,90 @@ fn the_update_preview_offers_a_sample_release() {
     assert!(!release.notes.is_empty(), "with sample notes");
     assert!((source.install)(&release).is_ok(), "the update pretends to succeed");
 }
+
+/// Opens 「スキルのインストール…」 and returns its window's context.
+fn open_skills(app: &gpui::Entity<crate::app::TrackApp>, cx: &mut gpui::VisualTestContext) -> gpui::VisualTestContext {
+    let home = tempfile::tempdir().unwrap().keep();
+    app.update(cx, |a, _| a.integrations_home = home);
+    cx.dispatch_action(crate::actions::InstallIntegrations);
+    settle(cx);
+    let (handle, _) = cx.update(|_, cx| crate::ui::integrations_window::integrations_window(cx)).expect("skills window");
+    let w = gpui::VisualTestContext::from_window(handle, cx);
+    w.run_until_parked();
+    w
+}
+
+#[gpui::test]
+fn cmd_w_closes_the_skills_window(cx: &mut TestAppContext) {
+    let (app, cx) = open_app(cx);
+    let mut w = open_skills(&app, cx);
+    assert_eq!(cx.update(|_, cx| cx.windows().len()), 2);
+    w.update(|window, _| window.activate_window());
+    w.simulate_keystrokes("cmd-w");
+    settle(cx);
+    assert_eq!(cx.update(|_, cx| cx.windows().len()), 1, "⌘W closes it");
+}
+
+#[gpui::test]
+fn the_skills_window_has_a_close_button_at_the_bottom(cx: &mut TestAppContext) {
+    let (app, cx) = open_app(cx);
+    let mut w = open_skills(&app, cx);
+    let close = w.debug_bounds("integrations-close").expect("閉じる");
+    let claude = w.debug_bounds("integration-claude").unwrap();
+    assert!(close.top() >= claude.bottom(), "at the bottom, under the areas");
+    w.simulate_click(close.center(), gpui::Modifiers::none());
+    settle(cx);
+    assert_eq!(cx.update(|_, cx| cx.windows().len()), 1);
+}
+
+/// ⌘W closes the window in front (settings, about, updates, the main window).
+#[gpui::test]
+fn cmd_w_closes_the_other_windows(cx: &mut TestAppContext) {
+    let (_app, cx) = open_app(cx);
+    let windows = |cx: &mut gpui::VisualTestContext| cx.update(|_, cx| cx.windows().len());
+    let close = |handle: gpui::AnyWindowHandle, cx: &mut gpui::VisualTestContext| {
+        let mut w = gpui::VisualTestContext::from_window(handle, cx);
+        w.run_until_parked();
+        w.update(|window, _| window.activate_window());
+        w.simulate_keystrokes("cmd-w");
+    };
+
+    cx.dispatch_action(crate::actions::ShowAbout);
+    settle(cx);
+    let (h, _) = cx.update(|_, cx| crate::ui::about::about_window(cx)).expect("about");
+    close(h, cx);
+    settle(cx);
+    assert_eq!(windows(cx), 1, "about closes");
+
+    cx.update(|_, cx| crate::ui::update::set_source(crate::ui::update::preview_source("9.9.9"), cx));
+    cx.dispatch_action(crate::actions::CheckForUpdates);
+    settle(cx);
+    let (h, _) = cx.update(|_, cx| crate::ui::update::update_window(cx)).expect("update");
+    close(h, cx);
+    settle(cx);
+    assert_eq!(windows(cx), 1, "update closes");
+
+    cx.dispatch_action(crate::actions::OpenSettings);
+    settle(cx);
+    let (h, _) = cx.update(|_, cx| crate::settings::settings_window(cx)).expect("settings");
+    close(h, cx);
+    settle(cx);
+    assert_eq!(windows(cx), 1, "settings closes");
+
+    // The main window closes too, like any Mac app; ⌘1 brings it back with the same data.
+    let state = _app.read_with(cx, |a, _| a.state.clone());
+    cx.update(|window, _| window.activate_window());
+    cx.simulate_keystrokes("cmd-w");
+    let app_cx: &mut TestAppContext = &mut cx.cx;
+    app_cx.run_until_parked();
+    assert_eq!(app_cx.update(|cx| cx.windows().len()), 0, "the main window closes");
+    // ⌘2's handler (with no window, GPUI sends the key to it; the test platform keeps a stale
+    // active window, so call it directly).
+    app_cx.update(|cx| crate::app::show_main_window(Some(crate::app::Page::Reports), cx));
+    app_cx.run_until_parked();
+    assert_eq!(app_cx.update(|cx| cx.windows().len()), 1, "⌘2 opens it again");
+    let reopened = app_cx.update(|cx| crate::app::main_window(cx)).expect("main window");
+    let page = app_cx.update(|cx| reopened.read(cx).page);
+    assert_eq!(page, crate::app::Page::Reports, "on the asked page");
+    assert!(app_cx.update(|cx| reopened.read(cx).state == state), "the same data");
+}

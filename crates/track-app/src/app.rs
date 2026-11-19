@@ -431,6 +431,66 @@ pub enum Page {
     Reports,
 }
 
+/// The main window, and the data it shows (kept when the window is closed, so reopening it is
+/// instant and shares what the settings window works on).
+pub struct MainWindow {
+    pub window: gpui::AnyWindowHandle,
+    pub view: gpui::WeakEntity<TrackApp>,
+    pub state: Entity<AppState>,
+}
+
+impl gpui::Global for MainWindow {}
+
+/// The open main window's view, if it is open.
+pub fn main_window(cx: &App) -> Option<Entity<TrackApp>> {
+    let m = cx.try_global::<MainWindow>()?;
+    cx.windows().contains(&m.window).then(|| m.view.upgrade()).flatten()
+}
+
+/// The main window's options (size, title bar).
+pub fn main_window_options(cx: &App) -> gpui::WindowOptions {
+    // Dev/measurement: TRACK_GPUI_WINDOW=1440x900 sets the initial window size.
+    let (w, h) = std::env::var("TRACK_GPUI_WINDOW")
+        .ok()
+        .and_then(|v| v.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?))))
+        .unwrap_or((1200., 800.));
+    gpui::WindowOptions {
+        window_bounds: Some(gpui::WindowBounds::Windowed(gpui::Bounds::centered(None, gpui::size(px(w), px(h)), cx))),
+        titlebar: Some(gpui::TitlebarOptions { title: Some("Track (GPUI)".into()), appears_transparent: true, traffic_light_position: Some(app_traffic_light_position()) }),
+        window_min_size: Some(gpui::size(px(360.), px(480.))),
+        ..Default::default()
+    }
+}
+
+/// Brings the main window forward (on `page` when given), opening it again with the same data
+/// when it was closed (⌘1・⌘2, the Dock icon).
+pub fn show_main_window(page: Option<Page>, cx: &mut App) {
+    if let Some(view) = main_window(cx) {
+        let handle = cx.global::<MainWindow>().window;
+        let _ = handle.update(cx, |_, window, _| window.activate_window());
+        if let Some(page) = page {
+            view.update(cx, |a, cx| a.show(page, cx));
+        }
+        return;
+    }
+    let Some(state) = cx.try_global::<MainWindow>().map(|m| m.state.clone()) else { return };
+    let options = main_window_options(cx);
+    let opened = cx.open_window(options, move |window, cx| {
+        let view = cx.new(|cx| {
+            let mut app = TrackApp::with_state(state, window, cx);
+            if let Some(page) = page {
+                app.page = page;
+            }
+            app
+        });
+        cx.new(|cx| gpui_component::Root::new(view, window, cx))
+    });
+    if let Ok(handle) = opened {
+        let _ = handle.update(cx, |_, window, _| window.activate_window());
+    }
+    cx.activate(true);
+}
+
 pub struct TrackApp {
     pub state: Entity<AppState>,
     pub page: Page,
@@ -519,6 +579,8 @@ impl TrackApp {
     }
 
     pub fn with_state(state: Entity<AppState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let view = cx.entity().downgrade();
+        cx.set_global(MainWindow { window: window.window_handle(), view, state: state.clone() });
         cx.observe(&state, |_, _, cx| cx.notify()).detach();
         cx.subscribe(&state, |this, _, _: &StateEvent, cx| {
             this.calendar.update(cx, |c, cx| c.reload(cx));
@@ -613,7 +675,7 @@ impl TrackApp {
         crate::ui::integrations_window::open_integrations(self.integrations_home.clone(), cx);
     }
 
-    fn show(&mut self, page: Page, cx: &mut Context<Self>) {
+    pub fn show(&mut self, page: Page, cx: &mut Context<Self>) {
         self.page = page;
         cx.notify();
     }

@@ -189,5 +189,26 @@ impl Render for IntegrationsWindow {
             .child(self.area(IntegrationKind::Codex, p, cx))
             .child(div().debug_selector(|| "integration-divider".into()).h(px(1.)).bg(p.border_subtle))
             .child(self.area(IntegrationKind::Claude, p, cx))
+            .child(div().flex_1())
+            .child(
+                div().flex().justify_end().child(
+                    div()
+                        .id("integrations-close")
+                        .debug_selector(|| "integrations-close".into())
+                        .px_3()
+                        .h(px(28.))
+                        .flex()
+                        .items_center()
+                        .rounded_md()
+                        .border_1()
+                        .border_color(p.border)
+                        .text_size(px(12.))
+                        .text_color(p.text)
+                        .cursor_pointer()
+                        .hover(move |s| s.bg(p.hover))
+                        .child("閉じる")
+                        .on_click(|_, window, _| window.remove_window()),
+                ),
+            )
     }
 }

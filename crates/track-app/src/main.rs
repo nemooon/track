@@ -18,11 +18,14 @@ mod reports_tests;
 #[cfg(test)]
 mod settings_tests;
 
-use gpui::{App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions, px, size};
+use gpui::{App, AppContext};
 use gpui_component::Root;
 
 fn main() {
-    gpui_platform::application().with_assets(crate::ui::icons::AppAssets(gpui_kit_assets::Assets::new(""))).run(|cx: &mut App| {
+    let application = gpui_platform::application().with_assets(crate::ui::icons::AppAssets(gpui_kit_assets::Assets::new("")));
+    // Clicking the Dock icon with the main window closed opens it again.
+    application.on_reopen(|cx| app::show_main_window(None, cx));
+    application.run(|cx: &mut App| {
         gpui_component::init(cx);
         let setting = track_core::config::load_config(&track_core::guard::data_dir_from_env()).appearance;
         crate::ui::theme::apply_setting(setting, crate::ui::theme::is_dark(cx.window_appearance()), cx);
@@ -32,28 +35,11 @@ fn main() {
         // From the Track menu even while another window (settings, about) is in front.
         cx.on_action(|_: &actions::ShowAbout, cx| crate::ui::about::open_about(cx));
         cx.on_action(|_: &actions::CheckForUpdates, cx| crate::ui::update::open_update(cx));
-        // Dev/measurement: TRACK_GPUI_WINDOW=1440x900 sets the initial window size.
-        let (w, h) = std::env::var("TRACK_GPUI_WINDOW")
-            .ok()
-            .and_then(|v| v.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?))))
-            .unwrap_or((1200., 800.));
-        let bounds = Bounds::centered(None, size(px(w), px(h)), cx);
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: Some(TitlebarOptions {
-                    title: Some("Track (GPUI)".into()),
-                    appears_transparent: true,
-                    traffic_light_position: Some(crate::ui::theme::app_traffic_light_position()),
-                }),
-                window_min_size: Some(size(px(360.), px(480.))),
-                ..Default::default()
-            },
-            |window, cx| {
-                let view = cx.new(|cx| app::TrackApp::new(window, cx));
-                cx.new(|cx| Root::new(view, window, cx))
-            },
-        )
+        let options = app::main_window_options(cx);
+        cx.open_window(options, |window, cx| {
+            let view = cx.new(|cx| app::TrackApp::new(window, cx));
+            cx.new(|cx| Root::new(view, window, cx))
+        })
         .unwrap();
         cx.activate(true);
     });
