@@ -86,13 +86,18 @@ impl IntegrationsWindow {
             _ => ("Codex", format!("~/.codex/skills/{name}"), format!("${name}")),
         };
         let status = integration_status(&self.home, kind, DEV_NAMES);
-        let (label, colour, state_key) = match &status {
-            IntegrationStatus::NotInstalled => ("インストールしていません".to_string(), p.text_muted, "not-installed"),
-            IntegrationStatus::Installed => ("インストール済み".to_string(), p.success, "installed"),
-            IntegrationStatus::Outdated => ("古い版が入っています".to_string(), p.warning_text, "outdated"),
-            IntegrationStatus::Conflict(m) => (m.clone(), p.danger, "conflict"),
+        // (label, text colour, badge background, dot colour, selector key)
+        let (label, fg, bg, dot, state_key) = match &status {
+            IntegrationStatus::NotInstalled => ("未インストール".to_string(), p.text_muted, p.surface, p.text_faint, "not-installed"),
+            IntegrationStatus::Installed => ("インストール済み".to_string(), p.success, p.success_bg, p.success, "installed"),
+            IntegrationStatus::Outdated => ("古い版".to_string(), p.warning_text, p.warning_bg, p.warning, "outdated"),
+            IntegrationStatus::Conflict(_) => ("同じ名前の別のものがあります".to_string(), p.danger, p.danger_bg, p.danger, "conflict"),
         };
-        let installable = matches!(status, IntegrationStatus::NotInstalled | IntegrationStatus::Outdated | IntegrationStatus::Installed);
+        let conflict = match &status {
+            IntegrationStatus::Conflict(m) => Some(m.clone()),
+            _ => None,
+        };
+        let installable = !matches!(status, IntegrationStatus::Conflict(_));
         let removable = matches!(status, IntegrationStatus::Installed | IntegrationStatus::Outdated);
         let install_label = match status {
             IntegrationStatus::Outdated => "更新",
@@ -104,33 +109,62 @@ impl IntegrationsWindow {
                 .id(gpui::SharedString::from(id.clone()))
                 .debug_selector(move || id.clone())
                 .px_3()
-                .py_1()
+                .h(px(28.))
+                .flex()
+                .items_center()
                 .rounded_md()
-                .text_size(px(13.))
+                .text_size(px(12.))
                 .cursor_pointer()
                 .map(|d| if primary { d.bg(p.primary).text_color(p.on_color).hover(move |s| s.bg(p.primary_hover)) } else { d.border_1().border_color(p.border).text_color(p.text).hover(move |s| s.bg(p.hover)) })
                 .child(label)
         };
+        let badge = div()
+            .debug_selector(move || format!("integration-{key}-{state_key}"))
+            .flex()
+            .items_center()
+            .gap_1p5()
+            .px_2()
+            .py(px(2.))
+            .rounded_full()
+            .bg(bg)
+            .text_size(px(11.))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(fg)
+            .child(div().size(px(6.)).rounded_full().bg(dot))
+            .child(label);
+        let chip = div().px_1p5().py(px(1.)).rounded(RADIUS_SM).bg(p.surface).border_1().border_color(p.border_subtle).font_family(MONO).text_size(px(11.)).text_color(p.text).child(call);
         let message = self.messages[slot(kind)].clone();
         div()
             .debug_selector(move || format!("integration-{key}"))
             .flex()
             .flex_col()
-            .gap_1()
-            .py_4()
+            .gap_2()
+            .py_5()
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap_3()
-                    .child(div().flex_1().text_size(px(14.)).font_weight(FontWeight::SEMIBOLD).text_color(p.text).child(title))
+                    .gap_2()
+                    .child(div().text_size(px(15.)).font_weight(FontWeight::SEMIBOLD).text_color(p.text).child(title))
+                    .child(badge)
+                    .child(div().flex_1())
                     .when(removable, |d| d.child(button(format!("integration-{key}-uninstall"), "アンインストール", false).on_click(cx.listener(move |this, _, _, cx| this.uninstall(kind, cx)))))
                     .when(installable, |d| d.child(button(format!("integration-{key}-install"), install_label, true).on_click(cx.listener(move |this, _, _, cx| this.install(kind, cx))))),
             )
-            .child(div().debug_selector(move || format!("integration-{key}-{state_key}")).text_size(px(12.)).text_color(colour).child(label))
-            .child(div().text_size(px(12.)).text_color(p.text_muted).child(format!("{place}　呼び出し: {call}")))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .text_size(px(12.))
+                    .text_color(p.text_muted)
+                    .child("呼び出し")
+                    .child(chip)
+                    .child(div().ml_2().font_family(MONO).text_size(px(11.)).text_color(p.text_faint).child(place)),
+            )
+            .when_some(conflict, |d, m| d.child(div().text_size(px(12.)).text_color(p.danger).child(m)))
             .when_some(message, |d, m| match m {
-                Ok(text) => d.child(div().text_size(px(12.)).text_color(p.success).child(text)),
+                Ok(text) => d.child(div().text_size(px(12.)).text_color(p.text_muted).child(text)),
                 Err(e) => d.child(div().debug_selector(move || format!("integration-{key}-error")).text_size(px(12.)).text_color(p.danger).child(e)),
             })
     }
@@ -143,15 +177,17 @@ impl Render for IntegrationsWindow {
             .size_full()
             .flex()
             .flex_col()
-            .px_5()
-            .pt(px(44.))
+            .px_6()
+            .pt(px(48.))
             .pb_4()
             .bg(p.bg)
             .text_color(p.text)
-            .child(div().text_size(px(13.)).text_color(p.text_muted).child("AI から Track に工数を記録するためのスキルを、AI ツールごとに入れたり外したりします。"))
-            .when(DEV_NAMES, |d| d.child(div().mt_1().text_size(px(12.)).text_color(p.text_muted).child("開発版のため、本来の track とは別の名前（track-dev）で入れ、コピー DB（~/.track-gpui）を使います。")))
+            .child(div().text_size(px(18.)).font_weight(FontWeight::BOLD).child("AI 連携"))
+            .child(div().mt_1().text_size(px(12.)).text_color(p.text_muted).child("AI ツールから Track に工数を記録するためのスキルを入れます。"))
+            .when(DEV_NAMES, |d| d.child(div().mt_1().text_size(px(11.)).text_color(p.text_faint).child("開発版のため track-dev の名前で入れ、コピー DB（~/.track-gpui）を使います。")))
+            .child(div().mt_3().h(px(1.)).bg(p.border_subtle))
             .child(self.area(IntegrationKind::Codex, p, cx))
-            .child(div().debug_selector(|| "integration-divider".into()).h(px(1.)).bg(p.border))
+            .child(div().debug_selector(|| "integration-divider".into()).h(px(1.)).bg(p.border_subtle))
             .child(self.area(IntegrationKind::Claude, p, cx))
     }
 }
