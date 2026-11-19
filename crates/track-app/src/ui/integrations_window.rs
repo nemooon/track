@@ -1,4 +1,4 @@
-//! 「AI 連携…」: a window of its own with Codex and Claude Code in two areas split by a line. Each
+//! 「スキルのインストール…」: a window of its own with Codex and Claude Code in two areas split by a line. Each
 //! shows where it goes, how it stands, and install (update) / uninstall. Everyday (guarded)
 //! builds use the `track-dev` names, so the real `track` skill and command are left alone; the
 //! packaged app manages the real ones.
@@ -44,7 +44,7 @@ pub fn open_integrations(home: PathBuf, cx: &mut App) {
         return;
     }
     let bounds = gpui::Bounds::centered(None, size(px(520.), px(420.)), cx);
-    let title = if DEV_NAMES { "AI 連携（開発用）" } else { "AI 連携" };
+    let title = if DEV_NAMES { "スキルのインストール（開発用）" } else { "スキルのインストール" };
     let opened = cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -182,7 +182,7 @@ impl Render for IntegrationsWindow {
             .pb_4()
             .bg(p.bg)
             .text_color(p.text)
-            .child(div().text_size(px(18.)).font_weight(FontWeight::BOLD).child("AI 連携"))
+            .child(div().text_size(px(18.)).font_weight(FontWeight::BOLD).child("スキルのインストール"))
             .child(div().mt_1().text_size(px(12.)).text_color(p.text_muted).child("AI ツールから Track に工数を記録するためのスキルを入れます。"))
             .when(DEV_NAMES, |d| d.child(div().mt_1().text_size(px(11.)).text_color(p.text_faint).child("開発版のため track-dev の名前で入れ、コピー DB（~/.track-gpui）を使います。")))
             .child(div().mt_3().h(px(1.)).bg(p.border_subtle))

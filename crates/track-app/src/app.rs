@@ -437,7 +437,7 @@ pub struct TrackApp {
     pub calendar: Entity<CalendarView>,
     pub reports: Entity<ReportsView>,
     focus: FocusHandle,
-    /// Where 「AI 連携…」 installs the skills (tests point it at a tempdir).
+    /// Where 「スキルのインストール…」 installs the skills (tests point it at a tempdir).
     pub integrations_home: PathBuf,
     /// The notice history list is open above the status bar's bell.
     pub history_open: bool,
@@ -608,7 +608,7 @@ impl TrackApp {
         })
     }
 
-    /// 「AI 連携…」: the window that installs and uninstalls the AI skills.
+    /// 「スキルのインストール…」: the window that installs and uninstalls the AI skills.
     pub fn open_integrations(&mut self, _: &mut Window, cx: &mut Context<Self>) {
         crate::ui::integrations_window::open_integrations(self.integrations_home.clone(), cx);
     }

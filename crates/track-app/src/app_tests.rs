@@ -145,7 +145,7 @@ fn external_write_triggers_reload(cx: &mut TestAppContext) {
     assert_eq!(projects, Some(true), "reference data is reloaded too");
 }
 
-/// 「AI 連携…」 opens a window of its own: Codex and Claude Code in two areas split by a line,
+/// 「スキルのインストール…」 opens a window of its own: Codex and Claude Code in two areas split by a line,
 /// each with its state and install / uninstall (no 「両方」). Development builds use track-dev.
 #[gpui::test]
 fn the_integrations_window_installs_and_uninstalls_each_tool(cx: &mut TestAppContext) {

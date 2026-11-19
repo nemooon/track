@@ -45,11 +45,11 @@ scripts/package.sh    # target/package/Track.app と Track_<版>.dmg を作る�
 - `track-core` の `real-data` を付けてビルドするので、開発用ガードが外れて本物の `~/.track` を開く。普段のビルドとテストは付けないので、コピー DB しか触れない
 - `Contents/MacOS/` にアプリと `track-cli`、`Contents/Resources/` に Apple Intelligence ヘルパー（macOS 26 SDK が要る）とアイコン（`packaging/`）
 - 初回起動で本物の DB に移行 0016（AI の操作履歴）・0017（休暇・直行直帰）が当たる。Tauri 版は知らない移行を無視するので、戻しても開ける
-- 「AI 連携…」は本来の `track` の名前で入れる
+- 「スキルのインストール…」は本来の `track` の名前で入れる
 
-## AI 連携（開発用）
+## スキルのインストール（開発用）
 
-メニューの「Track → AI 連携…（開発用）」（右上の縦3点メニューからも）で専用のウインドウが開く。Codex と Claude Code のそれぞれで、今の状態を見て、インストール・更新・アンインストールができる。
+メニューの「Track → スキルのインストール…（開発用）」（右上の縦3点メニューからも）で専用のウインドウが開く。Codex と Claude Code のそれぞれで、今の状態を見て、インストール・更新・アンインストールができる。
 本物の `track` スキルを上書きしないよう、開発中は別名で入る。
 
 - Codex: `~/.codex/skills/track-dev/`（`$track-dev` で呼ぶ）
