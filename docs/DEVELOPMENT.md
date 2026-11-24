@@ -47,6 +47,7 @@ scripts/release.sh notes.md   # Track-<版>.zip を作って GitHub Release v<�
 - 版は `Cargo.toml` の `[workspace.package] version`（今は `0.8.0`）。名前と ID は Tauri 版と同じ `Track` / `com.nemooon.track` で、置き換えて使う
 - `track-core` の `real-data` を付けてビルドするので、開発用ガードが外れて本物の `~/.track` を開く。普段のビルドとテストは付けないので、コピー DB しか触れない
 - `Contents/MacOS/` にアプリと `track-cli`、`Contents/Resources/` に Apple Intelligence ヘルパー（macOS 26 SDK が要る）とアイコン（`packaging/`）
+- `Contents/Resources/THIRD_PARTY_LICENSES.html` に、同梱するクレートのライセンス文を入れる。`cargo-about` が `packaging/about.toml`（受け入れるライセンス）と `packaging/about.hbs`（ひな形。Lucide アイコンの分は手で載せている）から作る。先に `cargo install --locked cargo-about --features cli` が要る。受け入れていないライセンスの依存が増えると止まるので、中身を見てから `about.toml` に足す
 - 初回起動で本物の DB に移行 0016（AI の操作履歴）・0017（休暇・直行直帰）が当たる。Tauri 版は知らない移行を無視するので、戻しても開ける
 - 「スキルのインストール…」は本来の `track` の名前で入れる
 
