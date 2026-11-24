@@ -1,6 +1,22 @@
-# Track
+<p align="center">
+  <img src="packaging/icon-256.png" width="128" height="128" alt="Track のアイコン">
+</p>
 
-カレンダーに置いていくだけで稼働がたまる、Mac のための稼働記録アプリです。
+<h1 align="center">Track</h1>
+
+<p align="center">
+  <b>カレンダーに置くだけで、稼働がたまる。</b>
+</p>
+
+<p align="center">
+  <a href="https://github.com/nemooon/track/releases/latest"><img src="https://img.shields.io/github/v/release/nemooon/track?label=%E6%9C%80%E6%96%B0%E7%89%88&color=2fbfa0" alt="最新版"></a>
+  <a href="#インストール"><img src="https://img.shields.io/badge/Homebrew-nemooon%2Ftap%2Ftrack-fbb040?logo=homebrew&logoColor=white" alt="Homebrew"></a>
+  <img src="https://img.shields.io/badge/macOS-13%2B-555?logo=apple&logoColor=white" alt="macOS 13 以降">
+  <img src="https://img.shields.io/badge/Apple%20%E3%82%B7%E3%83%AA%E3%82%B3%E3%83%B3-M1%2B-555" alt="Apple シリコン">
+  <img src="https://img.shields.io/badge/Codex%20%2F%20Claude%20Code-%E5%AF%BE%E5%BF%9C-6b5bd6" alt="Codex / Claude Code 対応">
+</p>
+
+Mac のための稼働記録アプリです。空いた時間に予定のようにブロックを置いていくと、そのまま稼働の記録になります。
 記録は自分の Mac の中にだけ保存されます。Codex や Claude Code に「今日の作業を記録して」と頼むこともできます。
 
 ![カレンダー：1 週間の稼働をブロックで並べ、下に日ごとの合計を出す](docs/images/calendar.png)
