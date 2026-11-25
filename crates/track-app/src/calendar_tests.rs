@@ -1069,6 +1069,35 @@ fn footer_dots_wrap_after_twenty(cx: &mut TestAppContext) {
     assert!(footer.top() <= first.top() && last.bottom() <= footer.bottom(), "all inside the footer");
 }
 
+/// A narrow window keeps each day's total inside its own column: the dots give way instead
+/// of pushing the total into the next day's column (#6).
+#[gpui::test]
+fn footer_total_stays_in_its_column_when_narrow(cx: &mut TestAppContext) {
+    let (app, cx, _f) = open_app_db(cx, |db| {
+        insert_entry(db, "long", at(12, 6, 0), at(12, 22, 0), Some("p1"), "長い日");
+    });
+    cx.simulate_resize(gpui::size(px(800.), px(700.)));
+    app.update(cx, |a, cx| a.calendar.update(cx, |c, cx| {
+        c.anchor = day(12);
+        cx.notify();
+    }));
+    wait_io(cx);
+    for d in 9..=13 {
+        let date = day(d);
+        let cell = cx.debug_bounds(Box::leak(format!("day-foot-{date}").into_boxed_str())).expect("footer cell");
+        let total = cx.debug_bounds(Box::leak(format!("day-total-{date}").into_boxed_str())).expect("total");
+        assert!(cell.size.width < px(180.), "the column is narrow: {cell:?}");
+        assert!(cell.left() <= total.left() && total.right() <= cell.right(), "{date}: total {total:?} inside its column {cell:?}");
+    }
+    // The 12th's 21 dots wrap within the space left of the total.
+    let total = cx.debug_bounds("day-total-2026-11-12").unwrap();
+    let cell = cx.debug_bounds("day-foot-2026-11-12").unwrap();
+    for i in 0..21 {
+        let dot = cx.debug_bounds(Box::leak(format!("day-dot-2026-11-12-{i}").into_boxed_str())).expect("dot");
+        assert!(cell.left() <= dot.left() && dot.right() <= total.left(), "dot {i} {dot:?} left of the total {total:?}");
+    }
+}
+
 /// The arrows move the selection: → / ← to the nearest block beside, ↓ / ↑ in time order. They
 /// no longer move the entry itself.
 #[gpui::test]

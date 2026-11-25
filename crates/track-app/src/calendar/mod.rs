@@ -424,6 +424,7 @@ impl CalendarView {
                 let base = if matches!(self.leaves.get(&d), Some(track_core::model::LeaveKind::Am | track_core::model::LeaveKind::Pm)) { scheduled / 2 } else { scheduled };
                 let dots = crate::core::layout::day_dots(self.cache.entries(), d, base, FOOTER_DOTS);
                 div()
+                    .debug_selector(move || format!("day-foot-{d}"))
                     .flex_1()
                     .min_w_0()
                     .h(px(28.))
@@ -435,8 +436,11 @@ impl CalendarView {
                     .border_color(p.border)
                     .px_2()
                     .text_xs()
-                    // Twenty to a row (a long day wraps under the first twenty).
-                    .child(div().flex_none().w(px(FOOTER_DOT * FOOTER_ROW as f32 + FOOTER_DOT_GAP * (FOOTER_ROW - 1) as f32)).flex().flex_wrap().gap(px(FOOTER_DOT_GAP)).children(dots.into_iter().enumerate().map(|(i, project)| {
+                    // A narrow column keeps the total inside it: the dots give way, not the total.
+                    .overflow_hidden()
+                    // Twenty to a row (a long day wraps under the first twenty); a narrow column
+                    // squeezes the rows shorter so the dots wrap sooner.
+                    .child(div().debug_selector(move || format!("day-dots-{d}")).flex_1().min_w_0().max_w(px(FOOTER_DOT * FOOTER_ROW as f32 + FOOTER_DOT_GAP * (FOOTER_ROW - 1) as f32)).flex().flex_wrap().gap(px(FOOTER_DOT_GAP)).children(dots.into_iter().enumerate().map(|(i, project)| {
                         let color = project.and_then(|id| colors.get(&id).cloned()).filter(|c| !c.is_empty());
                         div()
                             .debug_selector(move || format!("day-dot-{d}-{i}"))
@@ -448,8 +452,8 @@ impl CalendarView {
                         div()
                             .debug_selector(move || format!("day-total-{d}"))
                             .flex_shrink_0()
+                            .font_family(MONO)
                             .text_color(p.text_muted)
-                            .font_weight(FontWeight::SEMIBOLD)
                             .child(self.duration(total, cx)),
                     )
             }))
